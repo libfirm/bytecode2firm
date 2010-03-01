@@ -2,4 +2,4 @@ build
 classes
 config.mak
 reader
-
+*.vcg
