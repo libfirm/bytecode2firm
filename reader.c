@@ -387,6 +387,33 @@ static void construct_cond(uint16_t pc_true, uint16_t pc_false,
 	set_cur_block(NULL);
 }
 
+static ir_node *simple_new_Div(ir_node *left, ir_node *right, ir_mode *mode)
+{
+	ir_node *mem     = get_store();
+	ir_node *div     = new_Div(mem, left, right, mode, op_pin_state_pinned);
+	ir_node *new_mem = new_Proj(div, mode_M, pn_Div_M);
+	set_store(new_mem);
+	return new_Proj(div, mode, pn_Div_res);
+}
+
+static ir_node *simple_new_Mod(ir_node *left, ir_node *right, ir_mode *mode)
+{
+	ir_node *mem     = get_store();
+	ir_node *div     = new_Mod(mem, left, right, mode, op_pin_state_pinned);
+	ir_node *new_mem = new_Proj(div, mode_M, pn_Div_M);
+	set_store(new_mem);
+	return new_Proj(div, mode, pn_Div_res);
+}
+
+static void construct_arith(ir_mode *mode,
+		ir_node *(*cons_func)(ir_node *, ir_node *, ir_mode *))
+{
+	ir_node *right  = symbolic_pop(mode);
+	ir_node *left   = symbolic_pop(mode);
+	ir_node *result = cons_func(left, right, mode);
+	symbolic_push(result);
+}
+
 static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 {
 	code = new_code;
@@ -431,6 +458,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			i++;
 			break;
 
+		case OPC_IINC:
 		case OPC_GETSTATIC:
 		case OPC_GETFIELD:
 		case OPC_INVOKEVIRTUAL:
@@ -494,22 +522,32 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ICONST_3:
 		case OPC_ICONST_4:
 		case OPC_ICONST_5:
-		case OPC_ALOAD_0:
-		case OPC_ALOAD_1:
-		case OPC_ALOAD_2:
-		case OPC_ALOAD_3:
 		case OPC_ILOAD_0:
 		case OPC_ILOAD_1:
 		case OPC_ILOAD_2:
 		case OPC_ILOAD_3:
+		case OPC_ALOAD_0:
+		case OPC_ALOAD_1:
+		case OPC_ALOAD_2:
+		case OPC_ALOAD_3:
 		case OPC_ISTORE_0:
 		case OPC_ISTORE_1:
 		case OPC_ISTORE_2:
 		case OPC_ISTORE_3:
-		case OPC_RETURN:
-		case OPC_IRETURN:
 		case OPC_IADD:
 		case OPC_ISUB:
+		case OPC_IMUL:
+		case OPC_IDIV:
+		case OPC_IREM:
+		case OPC_INEG:
+		case OPC_ISHL:
+		case OPC_ISHR:
+		case OPC_IUSHR:
+		case OPC_IAND:
+		case OPC_IOR:
+		case OPC_IXOR:
+		case OPC_RETURN:
+		case OPC_IRETURN:
 			break;
 		}
 	}
@@ -597,96 +635,31 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 
-		case OPC_IRETURN: {
-			ir_type *return_type = get_method_res_type(method_type, 0);
-			ir_mode *res_mode    = get_type_mode(return_type);
-			ir_node *val         = symbolic_pop(mode_int);
-			val = new_Conv(val, res_mode);
-			ir_node *in[1] = { val };
-			ir_node *ret   = new_Return(get_store(), 1, in);
-
-			if (stack_pointer != 0) {
-				fprintf(stderr,
-				        "Warning: stackpointer >0 after ireturn at %u\n", i);
-			}
-			
-			ir_node *end_block = get_irg_end_block(current_ir_graph);
-			add_immBlock_pred(end_block, ret);
-			set_cur_block(new_Bad());
+		case OPC_IADD:  construct_arith(mode_int, new_Add);        continue;
+		case OPC_ISUB:  construct_arith(mode_int, new_Sub);        continue;
+		case OPC_IMUL:  construct_arith(mode_int, new_Mul);        continue;
+		case OPC_IDIV:  construct_arith(mode_int, simple_new_Div); continue;
+		case OPC_IREM:  construct_arith(mode_int, simple_new_Mod); continue;
+		case OPC_INEG: {
+			ir_node *value = symbolic_pop(mode_int);
+			ir_node *minus = new_Minus(value, mode_int);
+			symbolic_push(minus);
 			continue;
 		}
+		case OPC_ISHL:  construct_arith(mode_int, new_Shl);        continue;
+		case OPC_ISHR:  construct_arith(mode_int, new_Shrs);       continue;
+		case OPC_IUSHR: construct_arith(mode_int, new_Shr);        continue;
+		case OPC_IAND:  construct_arith(mode_int, new_And);        continue;
+		case OPC_IOR:   construct_arith(mode_int, new_Or);         continue;
+		case OPC_IXOR:  construct_arith(mode_int, new_Eor);        continue;
 
-		case OPC_RETURN: {
-			if (stack_pointer != 0) {
-				fprintf(stderr,
-				        "Warning: stackpointer >0 after return at %u\n", i);
-			}
-
-			ir_node *ret       = new_Return(get_store(), 0, NULL);
-			ir_node *end_block = get_irg_end_block(current_ir_graph);
-			add_immBlock_pred(end_block, ret);
-			set_cur_block(new_Bad());
-			continue;
-		}
-
-		case OPC_IADD: {
-			ir_node *val2 = symbolic_pop(mode_int);
-			ir_node *val1 = symbolic_pop(mode_int);
-			symbolic_push(new_Add(val1, val2, mode_int));
-			continue;
-		}
-
-		case OPC_ISUB: {
-			ir_node *val2 = symbolic_pop(mode_int);
-			ir_node *val1 = symbolic_pop(mode_int);
-			symbolic_push(new_Sub(val1, val2, mode_int));
-			continue;
-		}
-
-		case OPC_GOTO: {
-			uint8_t  b1    = code->code[i++];
-			uint8_t  b2    = code->code[i++];
-			uint16_t index = (b1 << 8) | b2;
-			index += (i-3);
-
-			ir_node *jmp = new_Jmp();
-			ir_node *target_block 
-				= get_target_block_remember_stackpointer(index);
-			add_immBlock_pred(target_block, jmp);
-
-			set_cur_block(NULL);
-			continue;
-		}
-
-		case OPC_ACMPEQ:
-		case OPC_ACMPNE:
-		case OPC_IFNULL:
-		case OPC_IFNONNULL: {
-			uint8_t  b1    = code->code[i++];
-			uint8_t  b2    = code->code[i++];
-			uint16_t index = (b1 << 8) | b2;
-			index += (i-3);
-
-			ir_node *val1 = symbolic_pop(mode_reference);
-			ir_node *val2;
-			if (opcode == OPC_IFNULL || opcode == OPC_IFNONNULL) {
-				val2 = new_Const_long(mode_int, 0);
-			} else {
-				val2 = symbolic_pop(mode_reference);
-			}
-			ir_node *cmp  = new_Cmp(val1, val2);
-
-			long pnc;
-			switch(opcode) {
-			case OPC_ACMPEQ:
-			case OPC_IFNULL:    pnc = pn_Cmp_Eq; break;
-			case OPC_ACMPNE:
-			case OPC_IFNONNULL: pnc = pn_Cmp_Lg; break;
-			default: abort();
-			}
-
-			ir_node *proj = new_Proj(cmp, mode_b, pnc);
-			construct_cond(index, i, proj);
+		case OPC_IINC: {
+			uint8_t  index = code->code[i++];
+			int8_t   cnst  = (int8_t) code->code[i++];
+			ir_node *val   = get_local(index, mode_int);
+			ir_node *cnode = new_Const_long(mode_int, cnst);
+			ir_node *add   = new_Add(val, cnode, mode_int);
+			set_local(index, add);
 			continue;
 		}
 
@@ -736,6 +709,85 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 			ir_node *proj = new_Proj(cmp, mode_b, pnc);
 			construct_cond(index, i, proj);
+			continue;
+		}
+
+		case OPC_ACMPEQ:
+		case OPC_ACMPNE:
+		case OPC_IFNULL:
+		case OPC_IFNONNULL: {
+			uint8_t  b1    = code->code[i++];
+			uint8_t  b2    = code->code[i++];
+			uint16_t index = (b1 << 8) | b2;
+			index += (i-3);
+
+			ir_node *val1 = symbolic_pop(mode_reference);
+			ir_node *val2;
+			if (opcode == OPC_IFNULL || opcode == OPC_IFNONNULL) {
+				val2 = new_Const_long(mode_int, 0);
+			} else {
+				val2 = symbolic_pop(mode_reference);
+			}
+			ir_node *cmp  = new_Cmp(val1, val2);
+
+			long pnc;
+			switch(opcode) {
+			case OPC_ACMPEQ:
+			case OPC_IFNULL:    pnc = pn_Cmp_Eq; break;
+			case OPC_ACMPNE:
+			case OPC_IFNONNULL: pnc = pn_Cmp_Lg; break;
+			default: abort();
+			}
+
+			ir_node *proj = new_Proj(cmp, mode_b, pnc);
+			construct_cond(index, i, proj);
+			continue;
+		}
+
+		case OPC_GOTO: {
+			uint8_t  b1    = code->code[i++];
+			uint8_t  b2    = code->code[i++];
+			uint16_t index = (b1 << 8) | b2;
+			index += (i-3);
+
+			ir_node *jmp = new_Jmp();
+			ir_node *target_block 
+				= get_target_block_remember_stackpointer(index);
+			add_immBlock_pred(target_block, jmp);
+
+			set_cur_block(NULL);
+			continue;
+		}
+
+		case OPC_IRETURN: {
+			ir_type *return_type = get_method_res_type(method_type, 0);
+			ir_mode *res_mode    = get_type_mode(return_type);
+			ir_node *val         = symbolic_pop(mode_int);
+			val = new_Conv(val, res_mode);
+			ir_node *in[1] = { val };
+			ir_node *ret   = new_Return(get_store(), 1, in);
+
+			if (stack_pointer != 0) {
+				fprintf(stderr,
+				        "Warning: stackpointer >0 after ireturn at %u\n", i);
+			}
+			
+			ir_node *end_block = get_irg_end_block(current_ir_graph);
+			add_immBlock_pred(end_block, ret);
+			set_cur_block(new_Bad());
+			continue;
+		}
+
+		case OPC_RETURN: {
+			if (stack_pointer != 0) {
+				fprintf(stderr,
+				        "Warning: stackpointer >0 after return at %u\n", i);
+			}
+
+			ir_node *ret       = new_Return(get_store(), 0, NULL);
+			ir_node *end_block = get_irg_end_block(current_ir_graph);
+			add_immBlock_pred(end_block, ret);
+			set_cur_block(new_Bad());
 			continue;
 		}
 
