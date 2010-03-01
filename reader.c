@@ -473,6 +473,26 @@ static void pop_set_local(int idx, ir_mode *mode)
 	set_local(idx, value);
 }
 
+static void push_load_const(uint16_t index)
+{
+	const constant_t *constant = get_constant(index);
+	switch (constant->kind) {
+	case CONSTANT_INTEGER:
+		push_const(mode_int, (int32_t) constant->integer.value);
+		break;
+	case CONSTANT_FLOAT: {
+		float    val   = *((float*) &constant->floatc.value);
+		tarval  *tv    = new_tarval_from_double(val, mode_float);
+		ir_node *cnode = new_Const(tv);
+		symbolic_push(cnode);
+		break;
+	}
+	case CONSTANT_STRING:
+		panic("string constant not implemented yet");
+	default:
+		panic("ldc without int, float or string constant");
+	}
+}
 
 static void construct_vreturn(ir_type *method_type, ir_mode *mode)
 {
@@ -536,6 +556,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		opcode_kind_t opcode = code->code[i++];
 		switch(opcode) {
 		case OPC_BIPUSH:
+		case OPC_LDC:
 		case OPC_ALOAD:
 		case OPC_ILOAD:
 		case OPC_LLOAD:
@@ -549,6 +570,9 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			i++;
 			break;
 
+		case OPC_SIPUSH:
+		case OPC_LDC_W:
+		case OPC_LDC2_W:
 		case OPC_IINC:
 		case OPC_GETSTATIC:
 		case OPC_GETFIELD:
@@ -574,11 +598,18 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ICMPLT:
 		case OPC_ICMPLE:
 		case OPC_ICMPGT:
-		case OPC_ICMPGE: {
+		case OPC_ICMPGE:
+		case OPC_GOTO_W: {
 			uint8_t  b1 = code->code[i++];
 			uint8_t  b2 = code->code[i++];
 			uint16_t index = (b1 << 8) | b2;
-			index += (i-3);
+			if (opcode == OPC_GOTO_W) {
+				index = (index << 8) | code->code[i++];
+				index = (index << 8) | code->code[i++];
+				index += i-5;
+			} else {
+				index += i-3;
+			}
 
 			assert(index < code->code_length);
 			if (!rbitset_is_set(targets, index)) {
@@ -606,6 +637,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			break;
 		}
 
+		case OPC_NOP:
 		case OPC_ACONST_NULL:
 		case OPC_ICONST_M1:
 		case OPC_ICONST_0:
@@ -661,6 +693,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ASTORE_1:
 		case OPC_ASTORE_2:
 		case OPC_ASTORE_3:
+		case OPC_POP:
+		case OPC_POP2:
 		case OPC_IADD:
 		case OPC_LADD:
 		case OPC_FADD:
@@ -747,26 +781,38 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 		opcode_kind_t opcode = code->code[i++];
 		switch (opcode) {
-		case OPC_ACONST_NULL:
-			symbolic_push(new_Const_long(mode_reference, 0));
+		case OPC_NOP: continue;
+
+		case OPC_ACONST_NULL: push_const(mode_reference, 0); continue;
+		case OPC_ICONST_M1:   push_const(mode_int,      -1); continue;
+		case OPC_ICONST_0:    push_const(mode_int,       0); continue;
+		case OPC_ICONST_1:    push_const(mode_int,       1); continue;
+		case OPC_ICONST_2:    push_const(mode_int,       2); continue;
+		case OPC_ICONST_3:    push_const(mode_int,       3); continue;
+		case OPC_ICONST_4:    push_const(mode_int,       4); continue;
+		case OPC_ICONST_5:    push_const(mode_int,       5); continue;
+		case OPC_LCONST_0:    push_const(mode_long,      0); continue;
+		case OPC_LCONST_1:    push_const(mode_long,      1); continue;
+		case OPC_FCONST_0:    push_const(mode_float,     0); continue;
+		case OPC_FCONST_1:    push_const(mode_float,     1); continue;
+		case OPC_FCONST_2:    push_const(mode_float,     2); continue;
+		case OPC_DCONST_0:    push_const(mode_double,    0); continue;
+		case OPC_DCONST_1:    push_const(mode_double,    1); continue;
+		case OPC_BIPUSH:      push_const(mode_int, (int8_t) code->code[i++]); continue;
+		case OPC_SIPUSH: {
+			uint16_t val = code->code[i++];
+			val = (val << 8) | code->code[i++];
+			push_const(mode_int, (int16_t) code->code[i++]);
 			continue;
-		case OPC_ICONST_M1: push_const(mode_int, -1);   continue;
-		case OPC_ICONST_0:  push_const(mode_int,  0);   continue;
-		case OPC_ICONST_1:  push_const(mode_int,  1);   continue;
-		case OPC_ICONST_2:  push_const(mode_int,  2);   continue;
-		case OPC_ICONST_3:  push_const(mode_int,  3);   continue;
-		case OPC_ICONST_4:  push_const(mode_int,  4);   continue;
-		case OPC_ICONST_5:  push_const(mode_int,  5);   continue;
-		case OPC_LCONST_0:  push_const(mode_long, 0);   continue;
-		case OPC_LCONST_1:  push_const(mode_long, 1);   continue;
-		case OPC_FCONST_0:  push_const(mode_float, 0);  continue;
-		case OPC_FCONST_1:  push_const(mode_float, 1);  continue;
-		case OPC_FCONST_2:  push_const(mode_float, 2);  continue;
-		case OPC_DCONST_0:  push_const(mode_double, 0); continue;
-		case OPC_DCONST_1:  push_const(mode_double, 1); continue;
-		case OPC_BIPUSH: {
-			int8_t val = code->code[i++];
-			symbolic_push(new_Const_long(mode_int, val));
+		}
+
+		case OPC_LDC:       push_load_const(code->code[i++]); continue;
+		case OPC_LDC2_W:
+		case OPC_LDC_W: {
+			uint8_t  b1    = code->code[i++];
+			uint8_t  b2    = code->code[i++];
+			uint16_t index = (b1 << 8) | b2;
+			push_load_const(index);
 			continue;
 		}
 
@@ -822,6 +868,9 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ASTORE_1: pop_set_local(1, mode_reference); continue;
 		case OPC_ASTORE_2: pop_set_local(2, mode_reference); continue;
 		case OPC_ASTORE_3: pop_set_local(3, mode_reference); continue;
+
+		case OPC_POP:  --stack_pointer;    continue;
+		case OPC_POP2: stack_pointer -= 2; continue;
 
 		case OPC_IADD:  construct_arith(mode_int,    new_Add);        continue;
 		case OPC_LADD:  construct_arith(mode_long,   new_Add);        continue;
@@ -887,7 +936,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			uint8_t  b1    = code->code[i++];
 			uint8_t  b2    = code->code[i++];
 			uint16_t index = (b1 << 8) | b2;
-			index += (i-3);
+			index += i-3;
 
 			ir_node *val1 = symbolic_pop(mode_int);
 			ir_node *val2;
@@ -928,7 +977,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			uint8_t  b1    = code->code[i++];
 			uint8_t  b2    = code->code[i++];
 			uint16_t index = (b1 << 8) | b2;
-			index += (i-3);
+			index += i-3;
 
 			ir_node *val1 = symbolic_pop(mode_reference);
 			ir_node *val2;
@@ -953,11 +1002,18 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 
-		case OPC_GOTO: {
+		case OPC_GOTO:
+		case OPC_GOTO_W: {
 			uint8_t  b1    = code->code[i++];
 			uint8_t  b2    = code->code[i++];
 			uint16_t index = (b1 << 8) | b2;
-			index += (i-3);
+			if (opcode == OPC_GOTO_W) {
+				index = (index << 8) | code->code[i++];
+				index = (index << 8) | code->code[i++];
+				index += i-5;
+			} else {
+				index += i-3;
+			}
 
 			ir_node *jmp = new_Jmp();
 			ir_node *target_block 

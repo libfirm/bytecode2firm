@@ -2,6 +2,7 @@
 #define OPCODES_H
 
 typedef enum opcode_kind_t {
+	OPC_NOP           = 0x00,
 	OPC_ACONST_NULL   = 0x01,
 	OPC_ICONST_M1     = 0x02,
 	OPC_ICONST_0      = 0x03,
@@ -18,6 +19,10 @@ typedef enum opcode_kind_t {
 	OPC_DCONST_0      = 0x0E,
 	OPC_DCONST_1      = 0x0F,
 	OPC_BIPUSH        = 0x10,
+	OPC_SIPUSH        = 0x11,
+	OPC_LDC           = 0x12,
+	OPC_LDC_W         = 0x13,
+	OPC_LDC2_W        = 0x14,
 	OPC_ILOAD         = 0x15,
 	OPC_LLOAD         = 0x16,
 	OPC_FLOAD         = 0x17,
@@ -68,6 +73,8 @@ typedef enum opcode_kind_t {
 	OPC_ASTORE_1      = 0x4C,
 	OPC_ASTORE_2      = 0x4D,
 	OPC_ASTORE_3      = 0x4E,
+	OPC_POP           = 0x57,
+	OPC_POP2          = 0x58,
 	OPC_IADD          = 0x60,
 	OPC_LADD          = 0x61,
 	OPC_FADD          = 0x62,
@@ -132,7 +139,8 @@ typedef enum opcode_kind_t {
 	OPC_INVOKESTATIC  = 0xB8,
 	OPC_INVOKESPECIAL = 0xB7,
 	OPC_IFNULL        = 0xC6,
-	OPC_IFNONNULL     = 0xC7
+	OPC_IFNONNULL     = 0xC7,
+	OPC_GOTO_W        = 0xC8,
 } opcode_kind_t;
 
 #endif
