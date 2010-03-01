@@ -43,6 +43,9 @@ static ir_type *get_class_type(const char *name);
 
 static ir_mode *mode_byte;
 static ir_mode *mode_int;
+static ir_mode *mode_long;
+static ir_mode *mode_float;
+static ir_mode *mode_double;
 static ir_mode *mode_reference;
 
 static ir_type *type_byte;
@@ -72,7 +75,7 @@ static void init_types(void)
 		= new_ir_mode("I", irms_int_number, 32, 1, irma_twos_complement, 32);
 	type_int = new_type_primitive(mode_int);
 
-	ir_mode *mode_long
+	mode_long
 		= new_ir_mode("J", irms_int_number, 64, 1, irma_twos_complement, 32);
 	type_long = new_type_primitive(mode_long);
 
@@ -80,11 +83,11 @@ static void init_types(void)
 		= new_ir_mode("Z", irms_int_number, 8, 1, irma_twos_complement, 0);
 	type_boolean = new_type_primitive(mode_boolean);
 
-	ir_mode *mode_float
+	mode_float
 		= new_ir_mode("F", irms_float_number, 32, 1, irma_ieee754, 0);
 	type_float = new_type_primitive(mode_float);
 
-	ir_mode *mode_double
+	mode_double
 		= new_ir_mode("D", irms_float_number, 64, 1, irma_ieee754, 0);
 	type_double = new_type_primitive(mode_double);
 
@@ -251,10 +254,20 @@ static const attribute_code_t *code;
 static uint16_t                stack_pointer;
 static uint16_t                max_locals;
 
+static bool needs_two_slots(ir_mode *mode)
+{
+	return mode == mode_long || mode == mode_double;
+}
+
 static void symbolic_push(ir_node *node)
 {
 	if (stack_pointer >= code->max_stack)
 		panic("code exceeds stack limit");
+	ir_mode *mode = get_irn_mode(node);
+	/* double and long need 2 stackslots */
+	if (needs_two_slots(mode))
+		set_value(stack_pointer++, new_Bad());
+
 	set_value(stack_pointer++, node);
 }
 
@@ -262,17 +275,37 @@ static ir_node *symbolic_pop(ir_mode *mode)
 {
 	if (stack_pointer == 0)
 		panic("code produces stack underflow");
-	return get_value(--stack_pointer, mode);
+
+	ir_node *result = get_value(--stack_pointer, mode);
+	/* double and long need 2 stackslots */
+	if (needs_two_slots(mode)) {
+		ir_node *dummy = get_value(--stack_pointer, mode);
+		(void) dummy;
+		assert(is_Bad(dummy));
+	}
+
+	return result;
 }
 
 static void set_local(uint16_t n, ir_node *node)
 {
 	assert(n < max_locals);
 	set_value(code->max_stack + n, node);
+	ir_mode *mode = get_irn_mode(node);
+	if (needs_two_slots(mode)) {
+		assert(n+1 < max_locals);
+		set_value(code->max_stack + n+1, new_Bad());
+	}
 }
 
 static ir_node *get_local(uint16_t n, ir_mode *mode)
 {
+	if (needs_two_slots(mode)) {
+		assert(n+1 < max_locals);
+		ir_node *dummy = get_value(code->max_stack + n+1, mode);
+		(void) dummy;
+		assert(is_Bad(dummy));
+	}
 	assert(n < max_locals);
 	return get_value(code->max_stack + n, mode);
 }
@@ -406,12 +439,63 @@ static ir_node *simple_new_Mod(ir_node *left, ir_node *right, ir_mode *mode)
 }
 
 static void construct_arith(ir_mode *mode,
-		ir_node *(*cons_func)(ir_node *, ir_node *, ir_mode *))
+		ir_node *(*construct_func)(ir_node *, ir_node *, ir_mode *))
 {
 	ir_node *right  = symbolic_pop(mode);
 	ir_node *left   = symbolic_pop(mode);
-	ir_node *result = cons_func(left, right, mode);
+	ir_node *result = construct_func(left, right, mode);
 	symbolic_push(result);
+}
+
+static void construct_arith_unop(ir_mode *mode,
+		ir_node *(*construct_func)(ir_node *, ir_mode *))
+{
+	ir_node *value  = symbolic_pop(mode);
+	ir_node *result = construct_func(value, mode);
+	symbolic_push(result);
+}
+
+static void push_const(ir_mode *mode, long val)
+{
+	ir_node *cnst = new_Const_long(mode, val);
+	symbolic_push(cnst);
+}
+
+static void push_local(int idx, ir_mode *mode)
+{
+	ir_node *value = get_local(idx, mode);
+	symbolic_push(value);
+}
+
+static void pop_set_local(int idx, ir_mode *mode)
+{
+	ir_node *value = symbolic_pop(mode);
+	set_local(idx, value);
+}
+
+
+static void construct_vreturn(ir_type *method_type, ir_mode *mode)
+{
+	int      n_ins = 0;
+	ir_node *in[1];
+
+	if (mode != NULL) {
+		ir_type *return_type = get_method_res_type(method_type, 0);
+		ir_mode *res_mode    = get_type_mode(return_type);
+		ir_node *val         = symbolic_pop(mode);
+		n_ins = 1;
+		in[0] = new_Conv(val, res_mode);
+	}
+
+	ir_node *ret   = new_Return(get_store(), n_ins, in);
+
+	if (stack_pointer != 0) {
+		fprintf(stderr, "Warning: stackpointer >0 after return at\n");
+	}
+	
+	ir_node *end_block = get_irg_end_block(current_ir_graph);
+	add_immBlock_pred(end_block, ret);
+	set_cur_block(new_Bad());
 }
 
 static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
@@ -454,7 +538,14 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_BIPUSH:
 		case OPC_ALOAD:
 		case OPC_ILOAD:
+		case OPC_LLOAD:
+		case OPC_FLOAD:
+		case OPC_DLOAD:
 		case OPC_ISTORE:
+		case OPC_LSTORE:
+		case OPC_FSTORE:
+		case OPC_DSTORE:
+		case OPC_ASTORE:
 			i++;
 			break;
 
@@ -515,6 +606,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			break;
 		}
 
+		case OPC_ACONST_NULL:
 		case OPC_ICONST_M1:
 		case OPC_ICONST_0:
 		case OPC_ICONST_1:
@@ -522,10 +614,29 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ICONST_3:
 		case OPC_ICONST_4:
 		case OPC_ICONST_5:
+		case OPC_LCONST_0:
+		case OPC_LCONST_1:
+		case OPC_FCONST_0:
+		case OPC_FCONST_1:
+		case OPC_FCONST_2:
+		case OPC_DCONST_0:
+		case OPC_DCONST_1:
 		case OPC_ILOAD_0:
 		case OPC_ILOAD_1:
 		case OPC_ILOAD_2:
 		case OPC_ILOAD_3:
+		case OPC_LLOAD_0:
+		case OPC_LLOAD_1:
+		case OPC_LLOAD_2:
+		case OPC_LLOAD_3:
+		case OPC_FLOAD_0:
+		case OPC_FLOAD_1:
+		case OPC_FLOAD_2:
+		case OPC_FLOAD_3:
+		case OPC_DLOAD_0:
+		case OPC_DLOAD_1:
+		case OPC_DLOAD_2:
+		case OPC_DLOAD_3:
 		case OPC_ALOAD_0:
 		case OPC_ALOAD_1:
 		case OPC_ALOAD_2:
@@ -534,20 +645,64 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ISTORE_1:
 		case OPC_ISTORE_2:
 		case OPC_ISTORE_3:
+		case OPC_LSTORE_0:
+		case OPC_LSTORE_1:
+		case OPC_LSTORE_2:
+		case OPC_LSTORE_3:
+		case OPC_FSTORE_0:
+		case OPC_FSTORE_1:
+		case OPC_FSTORE_2:
+		case OPC_FSTORE_3:
+		case OPC_DSTORE_0:
+		case OPC_DSTORE_1:
+		case OPC_DSTORE_2:
+		case OPC_DSTORE_3:
+		case OPC_ASTORE_0:
+		case OPC_ASTORE_1:
+		case OPC_ASTORE_2:
+		case OPC_ASTORE_3:
 		case OPC_IADD:
+		case OPC_LADD:
+		case OPC_FADD:
+		case OPC_DADD:
 		case OPC_ISUB:
+		case OPC_LSUB:
+		case OPC_FSUB:
+		case OPC_DSUB:
 		case OPC_IMUL:
+		case OPC_LMUL:
+		case OPC_FMUL:
+		case OPC_DMUL:
 		case OPC_IDIV:
+		case OPC_LDIV:
+		case OPC_FDIV:
+		case OPC_DDIV:
 		case OPC_IREM:
+		case OPC_LREM:
+		case OPC_FREM:
+		case OPC_DREM:
 		case OPC_INEG:
+		case OPC_LNEG:
+		case OPC_FNEG:
+		case OPC_DNEG:
 		case OPC_ISHL:
+		case OPC_LSHL:
 		case OPC_ISHR:
+		case OPC_LSHR:
 		case OPC_IUSHR:
+		case OPC_LUSHR:
 		case OPC_IAND:
+		case OPC_LAND:
 		case OPC_IOR:
+		case OPC_LOR:
 		case OPC_IXOR:
-		case OPC_RETURN:
+		case OPC_LXOR:
 		case OPC_IRETURN:
+		case OPC_LRETURN:
+		case OPC_FRETURN:
+		case OPC_DRETURN:
+		case OPC_ARETURN:
+		case OPC_RETURN:
 			break;
 		}
 	}
@@ -592,66 +747,120 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 		opcode_kind_t opcode = code->code[i++];
 		switch (opcode) {
-		case OPC_ICONST_M1:symbolic_push(new_Const_long(mode_int,-1)); continue;
-		case OPC_ICONST_0: symbolic_push(new_Const_long(mode_int, 0)); continue;
-		case OPC_ICONST_1: symbolic_push(new_Const_long(mode_int, 1)); continue;
-		case OPC_ICONST_2: symbolic_push(new_Const_long(mode_int, 2)); continue;
-		case OPC_ICONST_3: symbolic_push(new_Const_long(mode_int, 3)); continue;
-		case OPC_ICONST_4: symbolic_push(new_Const_long(mode_int, 4)); continue;
-		case OPC_ICONST_5: symbolic_push(new_Const_long(mode_int, 5)); continue;
+		case OPC_ACONST_NULL:
+			symbolic_push(new_Const_long(mode_reference, 0));
+			continue;
+		case OPC_ICONST_M1: push_const(mode_int, -1);   continue;
+		case OPC_ICONST_0:  push_const(mode_int,  0);   continue;
+		case OPC_ICONST_1:  push_const(mode_int,  1);   continue;
+		case OPC_ICONST_2:  push_const(mode_int,  2);   continue;
+		case OPC_ICONST_3:  push_const(mode_int,  3);   continue;
+		case OPC_ICONST_4:  push_const(mode_int,  4);   continue;
+		case OPC_ICONST_5:  push_const(mode_int,  5);   continue;
+		case OPC_LCONST_0:  push_const(mode_long, 0);   continue;
+		case OPC_LCONST_1:  push_const(mode_long, 1);   continue;
+		case OPC_FCONST_0:  push_const(mode_float, 0);  continue;
+		case OPC_FCONST_1:  push_const(mode_float, 1);  continue;
+		case OPC_FCONST_2:  push_const(mode_float, 2);  continue;
+		case OPC_DCONST_0:  push_const(mode_double, 0); continue;
+		case OPC_DCONST_1:  push_const(mode_double, 1); continue;
 		case OPC_BIPUSH: {
 			int8_t val = code->code[i++];
 			symbolic_push(new_Const_long(mode_int, val));
 			continue;
 		}
 
-		case OPC_ALOAD_0: symbolic_push(get_local(0, mode_reference)); continue;
-		case OPC_ALOAD_1: symbolic_push(get_local(1, mode_reference)); continue;
-		case OPC_ALOAD_2: symbolic_push(get_local(2, mode_reference)); continue;
-		case OPC_ALOAD_3: symbolic_push(get_local(3, mode_reference)); continue;
-		case OPC_ALOAD: {
-			uint8_t index = code->code[i++];
-			symbolic_push(get_local(index, mode_reference));
-			continue;
-		}
+		case OPC_ILOAD:   push_local(code->code[i++], mode_int);       continue;
+		case OPC_LLOAD:   push_local(code->code[i++], mode_long);      continue;
+		case OPC_FLOAD:   push_local(code->code[i++], mode_float);     continue;
+		case OPC_DLOAD:   push_local(code->code[i++], mode_double);    continue;
+		case OPC_ALOAD:   push_local(code->code[i++], mode_reference); continue;
+		case OPC_ILOAD_0: push_local(0, mode_int);                     continue;
+		case OPC_ILOAD_1: push_local(1, mode_int);                     continue;
+		case OPC_ILOAD_2: push_local(2, mode_int);                     continue;
+		case OPC_ILOAD_3: push_local(3, mode_int);                     continue;
+		case OPC_LLOAD_0: push_local(0, mode_long);                    continue;
+		case OPC_LLOAD_1: push_local(1, mode_long);                    continue;
+		case OPC_LLOAD_2: push_local(2, mode_long);                    continue;
+		case OPC_LLOAD_3: push_local(3, mode_long);                    continue;
+		case OPC_FLOAD_0: push_local(0, mode_float);                   continue;
+		case OPC_FLOAD_1: push_local(1, mode_float);                   continue;
+		case OPC_FLOAD_2: push_local(2, mode_float);                   continue;
+		case OPC_FLOAD_3: push_local(3, mode_float);                   continue;
+		case OPC_DLOAD_0: push_local(0, mode_double);                  continue;
+		case OPC_DLOAD_1: push_local(1, mode_double);                  continue;
+		case OPC_DLOAD_2: push_local(2, mode_double);                  continue;
+		case OPC_DLOAD_3: push_local(3, mode_double);                  continue;
+		case OPC_ALOAD_0: push_local(0, mode_reference);               continue;
+		case OPC_ALOAD_1: push_local(1, mode_reference);               continue;
+		case OPC_ALOAD_2: push_local(2, mode_reference);               continue;
+		case OPC_ALOAD_3: push_local(3, mode_reference);               continue;
 
-		case OPC_ILOAD_0: symbolic_push(get_local(0, mode_int)); continue;
-		case OPC_ILOAD_1: symbolic_push(get_local(1, mode_int)); continue;
-		case OPC_ILOAD_2: symbolic_push(get_local(2, mode_int)); continue;
-		case OPC_ILOAD_3: symbolic_push(get_local(3, mode_int)); continue;
-		case OPC_ILOAD: {
-			uint8_t index = code->code[i++];
-			symbolic_push(get_local(index, mode_int));
-			continue;
-		}
+		case OPC_ISTORE:   pop_set_local(code->code[i++], mode_int);   continue;
+		case OPC_LSTORE:   pop_set_local(code->code[i++], mode_long);  continue;
+		case OPC_FSTORE:   pop_set_local(code->code[i++], mode_float); continue;
+		case OPC_DSTORE:   pop_set_local(code->code[i++], mode_double);continue;
+		case OPC_ASTORE:   pop_set_local(code->code[i++], mode_reference); continue;
 
-		case OPC_ISTORE_0: set_local(0, symbolic_pop(mode_int)); continue;
-		case OPC_ISTORE_1: set_local(1, symbolic_pop(mode_int)); continue;
-		case OPC_ISTORE_2: set_local(2, symbolic_pop(mode_int)); continue;
-		case OPC_ISTORE_3: set_local(3, symbolic_pop(mode_int)); continue;
-		case OPC_ISTORE: {
-			uint8_t index = code->code[i++];
-			set_local(index, symbolic_pop(mode_int));
-			continue;
-		}
+		case OPC_ISTORE_0: pop_set_local(0, mode_int);       continue;
+		case OPC_ISTORE_1: pop_set_local(1, mode_int);       continue;
+		case OPC_ISTORE_2: pop_set_local(2, mode_int);       continue;
+		case OPC_ISTORE_3: pop_set_local(3, mode_int);       continue;
+		case OPC_LSTORE_0: pop_set_local(0, mode_long);      continue;
+		case OPC_LSTORE_1: pop_set_local(1, mode_long);      continue;
+		case OPC_LSTORE_2: pop_set_local(2, mode_long);      continue;
+		case OPC_LSTORE_3: pop_set_local(3, mode_long);      continue;
+		case OPC_FSTORE_0: pop_set_local(0, mode_float);     continue;
+		case OPC_FSTORE_1: pop_set_local(1, mode_float);     continue;
+		case OPC_FSTORE_2: pop_set_local(2, mode_float);     continue;
+		case OPC_FSTORE_3: pop_set_local(3, mode_float);     continue;
+		case OPC_DSTORE_0: pop_set_local(0, mode_double);    continue;
+		case OPC_DSTORE_1: pop_set_local(1, mode_double);    continue;
+		case OPC_DSTORE_2: pop_set_local(2, mode_double);    continue;
+		case OPC_DSTORE_3: pop_set_local(3, mode_double);    continue;
+		case OPC_ASTORE_0: pop_set_local(0, mode_reference); continue;
+		case OPC_ASTORE_1: pop_set_local(1, mode_reference); continue;
+		case OPC_ASTORE_2: pop_set_local(2, mode_reference); continue;
+		case OPC_ASTORE_3: pop_set_local(3, mode_reference); continue;
 
-		case OPC_IADD:  construct_arith(mode_int, new_Add);        continue;
-		case OPC_ISUB:  construct_arith(mode_int, new_Sub);        continue;
-		case OPC_IMUL:  construct_arith(mode_int, new_Mul);        continue;
-		case OPC_IDIV:  construct_arith(mode_int, simple_new_Div); continue;
-		case OPC_IREM:  construct_arith(mode_int, simple_new_Mod); continue;
-		case OPC_INEG: {
-			ir_node *value = symbolic_pop(mode_int);
-			ir_node *minus = new_Minus(value, mode_int);
-			symbolic_push(minus);
-			continue;
-		}
-		case OPC_ISHL:  construct_arith(mode_int, new_Shl);        continue;
-		case OPC_ISHR:  construct_arith(mode_int, new_Shrs);       continue;
-		case OPC_IUSHR: construct_arith(mode_int, new_Shr);        continue;
-		case OPC_IAND:  construct_arith(mode_int, new_And);        continue;
-		case OPC_IOR:   construct_arith(mode_int, new_Or);         continue;
-		case OPC_IXOR:  construct_arith(mode_int, new_Eor);        continue;
+		case OPC_IADD:  construct_arith(mode_int,    new_Add);        continue;
+		case OPC_LADD:  construct_arith(mode_long,   new_Add);        continue;
+		case OPC_FADD:  construct_arith(mode_float,  new_Add);        continue;
+		case OPC_DADD:  construct_arith(mode_double, new_Add);        continue;
+		case OPC_ISUB:  construct_arith(mode_int,    new_Sub);        continue;
+		case OPC_LSUB:  construct_arith(mode_long,   new_Sub);        continue;
+		case OPC_FSUB:  construct_arith(mode_float,  new_Sub);        continue;
+		case OPC_DSUB:  construct_arith(mode_double, new_Sub);        continue;
+		case OPC_IMUL:  construct_arith(mode_int,    new_Mul);        continue;
+		case OPC_LMUL:  construct_arith(mode_long,   new_Mul);        continue;
+		case OPC_FMUL:  construct_arith(mode_float,  new_Mul);        continue;
+		case OPC_DMUL:  construct_arith(mode_double, new_Mul);        continue;
+		case OPC_IDIV:  construct_arith(mode_int,    simple_new_Div); continue;
+		case OPC_LDIV:  construct_arith(mode_long,   simple_new_Div); continue;
+		case OPC_FDIV:  construct_arith(mode_float,  simple_new_Div); continue;
+		case OPC_DDIV:  construct_arith(mode_double, simple_new_Div); continue;
+		case OPC_IREM:  construct_arith(mode_int,    simple_new_Mod); continue;
+		case OPC_LREM:  construct_arith(mode_long,   simple_new_Mod); continue;
+		case OPC_FREM:  construct_arith(mode_float,  simple_new_Mod); continue;
+		case OPC_DREM:  construct_arith(mode_double, simple_new_Mod); continue;
+
+		case OPC_INEG:  construct_arith_unop(mode_int,    new_Minus); continue;
+		case OPC_LNEG:  construct_arith_unop(mode_long,   new_Minus); continue;
+		case OPC_FNEG:  construct_arith_unop(mode_float,  new_Minus); continue;
+		case OPC_DNEG:  construct_arith_unop(mode_double, new_Minus); continue;
+
+		case OPC_ISHL:  construct_arith(mode_int,    new_Shl);        continue;
+		case OPC_LSHL:  construct_arith(mode_long,   new_Shl);        continue;
+		case OPC_ISHR:  construct_arith(mode_int,    new_Shrs);       continue;
+		case OPC_LSHR:  construct_arith(mode_long,   new_Shrs);       continue;
+		case OPC_IUSHR: construct_arith(mode_int,    new_Shr);        continue;
+		case OPC_LUSHR: construct_arith(mode_long,   new_Shr);        continue;
+		case OPC_IAND:  construct_arith(mode_int,    new_And);        continue;
+		case OPC_LAND:  construct_arith(mode_long,   new_And);        continue;
+		case OPC_IOR:   construct_arith(mode_int,    new_Or);         continue;
+		case OPC_LOR:   construct_arith(mode_long,   new_Or);         continue;
+		case OPC_IXOR:  construct_arith(mode_int,    new_Eor);        continue;
+		case OPC_LXOR:  construct_arith(mode_long,   new_Eor);        continue;
 
 		case OPC_IINC: {
 			uint8_t  index = code->code[i++];
@@ -759,37 +968,12 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 
-		case OPC_IRETURN: {
-			ir_type *return_type = get_method_res_type(method_type, 0);
-			ir_mode *res_mode    = get_type_mode(return_type);
-			ir_node *val         = symbolic_pop(mode_int);
-			val = new_Conv(val, res_mode);
-			ir_node *in[1] = { val };
-			ir_node *ret   = new_Return(get_store(), 1, in);
-
-			if (stack_pointer != 0) {
-				fprintf(stderr,
-				        "Warning: stackpointer >0 after ireturn at %u\n", i);
-			}
-			
-			ir_node *end_block = get_irg_end_block(current_ir_graph);
-			add_immBlock_pred(end_block, ret);
-			set_cur_block(new_Bad());
-			continue;
-		}
-
-		case OPC_RETURN: {
-			if (stack_pointer != 0) {
-				fprintf(stderr,
-				        "Warning: stackpointer >0 after return at %u\n", i);
-			}
-
-			ir_node *ret       = new_Return(get_store(), 0, NULL);
-			ir_node *end_block = get_irg_end_block(current_ir_graph);
-			add_immBlock_pred(end_block, ret);
-			set_cur_block(new_Bad());
-			continue;
-		}
+		case OPC_IRETURN: construct_vreturn(method_type, mode_int); continue;
+		case OPC_LRETURN: construct_vreturn(method_type, mode_int); continue;
+		case OPC_FRETURN: construct_vreturn(method_type, mode_int); continue;
+		case OPC_DRETURN: construct_vreturn(method_type, mode_int); continue;
+		case OPC_ARETURN: construct_vreturn(method_type, mode_reference); continue;
+		case OPC_RETURN:  construct_vreturn(method_type, NULL);     continue;
 
 		case OPC_INVOKESPECIAL: {
 			uint8_t    b1      = code->code[i++];
