@@ -15,6 +15,7 @@
 #include "adt/pdeq.h"
 #include "adt/cpmap.h"
 #include "adt/hashptr.h"
+#include "adt/xmalloc.h"
 
 #include <libfirm/firm.h>
 
@@ -756,14 +757,45 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 
+		case OPC_INVOKESTATIC: {
+			uint8_t    b1     = code->code[i++];
+			uint8_t    b2     = code->code[i++];
+			uint16_t   index  = (b1 << 8) | b2;
+			ir_entity *entity = get_method_entity(index);
+			ir_node   *callee = create_symconst(entity);
+			ir_type   *type   = get_entity_type(entity);
+			unsigned   n_args = get_method_n_params(type);
+			ir_node   *args[n_args];
+
+			for (int i = n_args-1; i >= 0; --i) {
+				ir_type *arg_type = get_method_param_type(type, i);
+				ir_mode *mode     = get_type_mode(arg_type);
+				args[i]           = symbolic_pop(mode);
+			}
+			ir_node *mem     = get_store();
+			ir_node *call    = new_Call(mem, callee, n_args, args, type);
+			ir_node *new_mem = new_Proj(call, mode_M, pn_Call_M);
+			set_store(new_mem);
+
+			int n_res = get_method_n_ress(type);
+			if (n_res > 0) {
+				assert(n_res == 1);
+				ir_type *res_type = get_method_res_type(type, 0);
+				ir_mode *mode     = get_type_mode(res_type);
+				ir_node *resproj  = new_Proj(call, mode_T, pn_Call_T_result);
+				ir_node *res      = new_Proj(resproj, mode, 0);
+				symbolic_push(res);
+			}
+			continue;
+		}
+
 		case OPC_GETSTATIC:
 		case OPC_GETFIELD:
 		case OPC_INVOKEVIRTUAL:
-		case OPC_INVOKESTATIC:
 			panic("Unimplemented opcode 0x%X found\n", opcode);
 		}
 
-		panic("Unimplemented opcode 0x%X found\n", opcode);
+		panic("Unknown opcode 0x%X found\n", opcode);
 	}
 
 	for (size_t t = 0; t < n_basic_blocks; ++t) {
