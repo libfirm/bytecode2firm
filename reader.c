@@ -1,6 +1,7 @@
 #include "class_file.h"
 #include "opcodes.h"
 #include "lower_oo.h"
+#include "types.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -48,14 +49,14 @@ static ir_mode *mode_float;
 static ir_mode *mode_double;
 static ir_mode *mode_reference;
 
-static ir_type *type_byte;
-static ir_type *type_char;
-static ir_type *type_short;
-static ir_type *type_int;
-static ir_type *type_long;
-static ir_type *type_boolean;
-static ir_type *type_float;
-static ir_type *type_double;
+ir_type *type_byte;
+ir_type *type_char;
+ir_type *type_short;
+ir_type *type_int;
+ir_type *type_long;
+ir_type *type_boolean;
+ir_type *type_float;
+ir_type *type_double;
 
 static void init_types(void)
 {
@@ -1116,6 +1117,9 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	                                                   method->access_flags);
 	ir_entity  *entity     = new_entity(owner, id, type);
 	set_entity_link(entity, method);
+
+	if (method->access_flags & ACCESS_FLAG_NATIVE)
+		set_entity_visibility(entity, ir_visibility_external);
 }
 
 static void create_method_code(ir_entity *entity)
