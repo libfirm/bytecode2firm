@@ -1026,9 +1026,9 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		}
 
 		case OPC_IRETURN: construct_vreturn(method_type, mode_int); continue;
-		case OPC_LRETURN: construct_vreturn(method_type, mode_int); continue;
-		case OPC_FRETURN: construct_vreturn(method_type, mode_int); continue;
-		case OPC_DRETURN: construct_vreturn(method_type, mode_int); continue;
+		case OPC_LRETURN: construct_vreturn(method_type, mode_long); continue;
+		case OPC_FRETURN: construct_vreturn(method_type, mode_float); continue;
+		case OPC_DRETURN: construct_vreturn(method_type, mode_double); continue;
 		case OPC_ARETURN: construct_vreturn(method_type, mode_reference); continue;
 		case OPC_RETURN:  construct_vreturn(method_type, NULL);     continue;
 
