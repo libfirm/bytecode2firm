@@ -7,6 +7,7 @@
 #include "types.h"
 
 static struct obstack obst;
+static ir_entity *malloc_entity;
 
 static void mangle_type(ir_type *type)
 {
@@ -168,7 +169,7 @@ name_finished: ;
 	return result;
 }
 
-static void lower_class_member(ir_entity *entity)
+static void move_to_global(ir_entity *entity)
 {
 	ident *mangled;
 	if (get_entity_visibility(entity) == ir_visibility_external) {
@@ -200,8 +201,52 @@ static void lower_type(type_or_ent tore, void *env)
 	int n_members = get_class_n_members(type);
 	for (int m = n_members-1; m >= 0; --m) {
 		ir_entity *entity = get_class_member(type, m);
-		lower_class_member(entity);
+		if (is_method_entity(entity) ||
+				get_entity_allocation(entity) == allocation_static) {
+			move_to_global(entity);
+		}
 	}
+
+	/* layout fields */
+	default_layout_compound_type(type);
+}
+
+static void lower_node(ir_node *node, void *env)
+{
+	(void) env;
+
+	if (!is_Alloc(node))
+		return;
+	if (get_Alloc_where(node) != heap_alloc)
+		return;
+
+	ir_graph *irg   = get_irn_irg(node);
+	ir_type  *type  = get_Alloc_type(node);
+	symconst_symbol value;
+	value.type_p = type;
+	ir_node  *size   = new_r_SymConst(irg, mode_Iu, value, symconst_type_size);
+	ir_node  *mem    = get_Alloc_mem(node);
+	ir_node  *block  = get_nodes_block(node);
+	value.entity_p   = malloc_entity;
+	ir_node  *callee = new_r_SymConst(irg, mode_reference, value, symconst_addr_ent);
+	ir_node  *in[1]  = { size };
+	ir_type  *call_type = get_entity_type(malloc_entity);
+	ir_node  *call   = new_r_Call(block, mem, callee, 1, in, call_type);
+
+	ir_node  *new_mem = new_r_Proj(call, mode_M, pn_Call_M);
+	ir_node  *ress    = new_r_Proj(call, mode_T, pn_Call_T_result);
+	ir_node  *res     = new_r_Proj(ress, mode_reference, 0);
+
+	turn_into_tuple(node, pn_Alloc_max);
+	set_irn_n(node, pn_Alloc_M, new_mem);
+	set_irn_n(node, pn_Alloc_X_regular, new_Bad());
+	set_irn_n(node, pn_Alloc_X_except, new_Bad());
+	set_irn_n(node, pn_Alloc_res, res);
+}
+
+static void lower_graph(ir_graph *irg)
+{
+	irg_walk_graph(irg, NULL, lower_node, NULL);
 }
 
 /**
@@ -210,6 +255,17 @@ static void lower_type(type_or_ent tore, void *env)
 void lower_oo(void)
 {
 	obstack_init(&obst);
+
+	ir_type *method_type = new_type_method(1, 1);
+	ir_type *t_size_t    = new_type_primitive(mode_Iu);
+	ir_type *t_ptr       = new_type_primitive(mode_reference);
+	set_method_param_type(method_type, 0, t_size_t);
+	set_method_res_type(method_type, 0, t_ptr);
+
+	ir_type *glob = get_glob_type();
+	ident   *id   = new_id_from_str("malloc");
+	malloc_entity = new_entity(glob, id, method_type);
+	set_entity_visibility(malloc_entity, ir_visibility_external);
 
 	set_type_link(type_byte, "c");
 	set_type_link(type_char, "w");
@@ -221,6 +277,14 @@ void lower_oo(void)
 	set_type_link(type_double, "d");
 
 	type_walk_prog(lower_type, NULL, NULL);
+
+	int n_irgs = get_irp_n_irgs();
+	for (int i = 0; i < n_irgs; ++i) {
+		ir_graph *irg = get_irp_irg(i);
+		lower_graph(irg);
+	}
+
+	lower_highlevel(0);
 
 	obstack_free(&obst, NULL);
 }
