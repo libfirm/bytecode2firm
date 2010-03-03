@@ -12,4 +12,11 @@ extern ir_type *type_boolean;
 extern ir_type *type_float;
 extern ir_type *type_double;
 
+extern ir_mode *mode_byte;
+extern ir_mode *mode_int;
+extern ir_mode *mode_long;
+extern ir_mode *mode_float;
+extern ir_mode *mode_double;
+extern ir_mode *mode_reference;
+
 #endif

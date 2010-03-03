@@ -42,11 +42,13 @@ static void * __attribute__((malloc)) allocate_zero(size_t size)
 static constant_utf8_string_t *read_constant_utf8_string(void)
 {
 	constant_utf8_string_t head;
+	memset(&head, 0, sizeof(head));
 	head.base.kind = CONSTANT_UTF8_STRING;
 	head.length    = read_u16();
 	
 	assert(obstack_object_size(&obst) == 0);
-	obstack_grow(&obst, &head, sizeof(head));
+	size_t size = (char*) &head.bytes - (char*) &head;
+	obstack_grow(&obst, &head, size);
 	for (size_t i = 0; i < (size_t) head.length; ++i) {
 		obstack_1grow(&obst, read_u8());
 	}

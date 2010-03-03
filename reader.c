@@ -25,10 +25,10 @@
 static pdeq    *worklist;
 static class_t *class_file;
 
-static const constant_t *get_constant(uint16_t index)
+static constant_t *get_constant(uint16_t index)
 {
 	assert(index < class_file->n_constants);
-	const constant_t *constant = class_file->constants[index];
+	constant_t *constant = class_file->constants[index];
 	assert(constant != NULL);
 	return constant;
 }
@@ -41,13 +41,14 @@ static const char *get_constant_string(uint16_t index)
 }
 
 static ir_type *get_class_type(const char *name);
+static ir_type *get_classref_type(uint16_t index);
 
-static ir_mode *mode_byte;
-static ir_mode *mode_int;
-static ir_mode *mode_long;
-static ir_mode *mode_float;
-static ir_mode *mode_double;
-static ir_mode *mode_reference;
+ir_mode *mode_byte;
+ir_mode *mode_int;
+ir_mode *mode_long;
+ir_mode *mode_float;
+ir_mode *mode_double;
+ir_mode *mode_reference;
 
 ir_type *type_byte;
 ir_type *type_char;
@@ -246,6 +247,10 @@ static void create_field_entity(field_t *field, ir_type *owner)
 	ir_entity  *entity     = new_entity(owner, id, type);
 	set_entity_link(entity, field);
 
+	if (field->access_flags & ACCESS_FLAG_STATIC) {
+		set_entity_allocation(entity, allocation_static);
+	}
+
 #ifdef VERBOSE
 	fprintf(stderr, "Field %s\n", name);
 #endif
@@ -320,32 +325,29 @@ static ir_node *create_symconst(ir_entity *entity)
 
 static ir_entity *get_method_entity(uint16_t methodref_index)
 {
-	const constant_t *methodref = get_constant(methodref_index);
+	constant_t *methodref = get_constant(methodref_index);
 	if (methodref->kind != CONSTANT_METHODREF) {
 		panic("get_method_entity index argumetn not a methodref");
 	}
-	const constant_t *name_and_type 
-		= get_constant(methodref->methodref.name_and_type_index);
-	if (name_and_type->kind != CONSTANT_NAMEANDTYPE) {
-		panic("invalid name_and_type in method %u", methodref_index);
-	}
-	const char *methodname
-		= get_constant_string(name_and_type->name_and_type.name_index);
+	ir_entity *entity = methodref->base.link;
+	if (entity == NULL) {
+		const constant_t *name_and_type 
+			= get_constant(methodref->methodref.name_and_type_index);
+		if (name_and_type->kind != CONSTANT_NAMEANDTYPE) {
+			panic("invalid name_and_type in method %u", methodref_index);
+		}
+		ir_type *classtype 
+			= get_classref_type(methodref->methodref.class_index);
 
-	const constant_t *classref
-		= get_constant(methodref->methodref.class_index);
-	if (classref->kind != CONSTANT_CLASSREF) {
-		panic("invalid classref in method %u", methodref_index);
+		/* TODO: walk class hierarchy */
+		/* TODO: we could have a field with the same name */
+		const char *methodname
+			= get_constant_string(name_and_type->name_and_type.name_index);
+		ident *methodid = new_id_from_str(methodname);
+		entity = get_class_member_by_name(classtype, methodid);
+		assert(is_method_entity(entity));
+		methodref->base.link = entity;
 	}
-	const char *classname
-		= get_constant_string(classref->classref.name_index);
-	ir_type *classtype = get_class_type(classname);
-
-	/* TODO: walk class hierarchy */
-	/* TODO: we could have a field with the same name */
-	ident     *methodid = new_id_from_str(methodname);
-	ir_entity *entity   = get_class_member_by_name(classtype, methodid);
-	assert(is_method_entity(entity));
 
 	return entity;
 }
@@ -580,6 +582,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_INVOKEVIRTUAL:
 		case OPC_INVOKESTATIC:
 		case OPC_INVOKESPECIAL:
+		case OPC_NEW:
 			i+=2;
 			break;
 
@@ -696,6 +699,13 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ASTORE_3:
 		case OPC_POP:
 		case OPC_POP2:
+		case OPC_DUP:
+		case OPC_DUP_X1:
+		case OPC_DUP_X2:
+		case OPC_DUP2:
+		case OPC_DUP2_X1:
+		case OPC_DUP2_X2:
+		case OPC_SWAP:
 		case OPC_IADD:
 		case OPC_LADD:
 		case OPC_FADD:
@@ -873,6 +883,45 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_POP:  --stack_pointer;    continue;
 		case OPC_POP2: stack_pointer -= 2; continue;
 
+		case OPC_DUP2:
+		case OPC_DUP: {
+			/* TODO: this only works for values defined in the same block */
+			ir_mode *mode = opcode == OPC_DUP2 ? mode_long : NULL;
+			ir_node *top  = symbolic_pop(mode);
+			symbolic_push(top);
+			symbolic_push(top);
+			continue;
+		}
+		case OPC_DUP2_X1:
+		case OPC_DUP_X1: {
+			ir_mode *mode = opcode == OPC_DUP2 ? mode_long : NULL;
+			ir_node *top1 = symbolic_pop(mode);
+			ir_node *top2 = symbolic_pop(mode);
+			symbolic_push(top1);
+			symbolic_push(top2);
+			symbolic_push(top1);
+			continue;
+		}
+		case OPC_DUP2_X2:
+		case OPC_DUP_X2: {
+			ir_mode *mode = opcode == OPC_DUP2 ? mode_long : NULL;
+			ir_node *top1 = symbolic_pop(mode);
+			ir_node *top2 = symbolic_pop(mode);
+			ir_node *top3 = symbolic_pop(mode);
+			symbolic_push(top1);
+			symbolic_push(top3);
+			symbolic_push(top2);
+			symbolic_push(top1);
+			continue;
+		}
+		case OPC_SWAP: {
+			ir_node *top1 = symbolic_pop(NULL);
+			ir_node *top2 = symbolic_pop(NULL);
+			symbolic_push(top1);
+			symbolic_push(top2);
+			continue;
+		}
+
 		case OPC_IADD:  construct_arith(mode_int,    new_Add);        continue;
 		case OPC_LADD:  construct_arith(mode_long,   new_Add);        continue;
 		case OPC_FADD:  construct_arith(mode_float,  new_Add);        continue;
@@ -1032,24 +1081,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ARETURN: construct_vreturn(method_type, mode_reference); continue;
 		case OPC_RETURN:  construct_vreturn(method_type, NULL);     continue;
 
-		case OPC_INVOKESPECIAL: {
-			uint8_t    b1      = code->code[i++];
-			uint8_t    b2      = code->code[i++];
-			uint16_t   index   = (b1 << 8) | b2;
-			ir_entity *entity  = get_method_entity(index);
-			ir_node   *callee  = create_symconst(entity);
-			/* TODO: construct real arguments */
-			ir_node   *args[1] = { symbolic_pop(mode_reference) };
-			ir_node   *mem     = get_store();
-			ir_type   *type    = get_entity_type(entity);
-			ir_node   *call    = new_Call(mem, callee, 1, args, type);
-
-			ir_node   *new_mem = new_Proj(call, mode_M, pn_Call_M);
-			set_store(new_mem);
-			
-			continue;
-		}
-
+		case OPC_INVOKEVIRTUAL:
 		case OPC_INVOKESTATIC: {
 			uint8_t    b1     = code->code[i++];
 			uint8_t    b2     = code->code[i++];
@@ -1082,9 +1114,40 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 
+		case OPC_INVOKESPECIAL: {
+			uint8_t    b1      = code->code[i++];
+			uint8_t    b2      = code->code[i++];
+			uint16_t   index   = (b1 << 8) | b2;
+			ir_entity *entity  = get_method_entity(index);
+			ir_node   *callee  = create_symconst(entity);
+			/* TODO: construct real arguments */
+			ir_node   *args[1] = { symbolic_pop(mode_reference) };
+			ir_node   *mem     = get_store();
+			ir_type   *type    = get_entity_type(entity);
+			ir_node   *call    = new_Call(mem, callee, 1, args, type);
+
+			ir_node   *new_mem = new_Proj(call, mode_M, pn_Call_M);
+			set_store(new_mem);
+			continue;
+		}
+
+		case OPC_NEW: {
+			uint8_t   b1        = code->code[i++];
+			uint8_t   b2        = code->code[i++];
+			uint16_t  index     = (b1 << 8) | b2;
+			ir_type  *classtype = get_classref_type(index);
+			ir_node  *mem       = get_store();
+			ir_node  *count     = new_Const_long(mode_Iu, 1);
+			ir_node  *alloc     = new_Alloc(mem, count, classtype, heap_alloc);
+			ir_node  *new_mem   = new_Proj(alloc, mode_M, pn_Alloc_M);
+			ir_node  *result    = new_Proj(alloc, mode_reference, pn_Alloc_res);
+			set_store(new_mem);
+			symbolic_push(result);
+			continue;
+		}
+
 		case OPC_GETSTATIC:
 		case OPC_GETFIELD:
-		case OPC_INVOKEVIRTUAL:
 			panic("Unimplemented opcode 0x%X found\n", opcode);
 		}
 
@@ -1156,12 +1219,7 @@ static ir_type *get_class_type(const char *name)
 	class_file = cls;
 
 	if (class_file->super_class != 0) {
-		const constant_t *classref = get_constant(class_file->super_class);
-		assert(classref->kind == CONSTANT_CLASSREF);
-		const char *supertype_name 
-			= get_constant_string(classref->classref.name_index);
-
-		ir_type *supertype = get_class_type(supertype_name);
+		ir_type *supertype = get_classref_type(class_file->super_class);
 		assert (supertype != type);
 		add_class_supertype(type, supertype);
 	} else {
@@ -1182,6 +1240,23 @@ static ir_type *get_class_type(const char *name)
 
 	/* put class in worklist so the method code is constructed later */
 	pdeq_putr(worklist, type);
+
+	return type;
+}
+
+static ir_type *get_classref_type(uint16_t index)
+{
+	constant_t *classref = get_constant(index);
+	if (classref->kind != CONSTANT_CLASSREF) {
+		panic("no classref at constant index %u", index);
+	}
+	ir_type *type = classref->base.link;
+	if (type == NULL) {
+		const char *classname
+			= get_constant_string(classref->classref.name_index);
+		type = get_class_type(classname);
+		classref->base.link = type;
+	}
 
 	return type;
 }

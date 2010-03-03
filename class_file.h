@@ -35,7 +35,8 @@ typedef enum access_flags_t {
 typedef uint16_t constref_t;
 
 typedef struct constant_base_t {
-	uint8_t kind;
+	uint8_t  kind;
+	void    *link;
 } constant_base_t;
 
 typedef struct constant_utf8_string_t {
