@@ -11,6 +11,14 @@ extern ir_type *type_long;
 extern ir_type *type_boolean;
 extern ir_type *type_float;
 extern ir_type *type_double;
+extern ir_type *type_array_byte_boolean;
+extern ir_type *type_array_char;
+extern ir_type *type_array_short;
+extern ir_type *type_array_int;
+extern ir_type *type_array_long;
+extern ir_type *type_array_float;
+extern ir_type *type_array_double;
+extern ir_type *type_array_reference;
 
 extern ir_mode *mode_byte;
 extern ir_mode *mode_int;

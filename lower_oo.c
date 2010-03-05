@@ -4,10 +4,11 @@
 #include <libfirm/firm.h>
 
 #include "adt/obst.h"
+#include "adt/error.h"
 #include "types.h"
 
 static struct obstack obst;
-static ir_entity *malloc_entity;
+static ir_entity *calloc_entity;
 
 static void mangle_type(ir_type *type)
 {
@@ -51,9 +52,17 @@ static void mangle_method_type_simple(ir_type *type)
 	else if (type == type_boolean) { obstack_1grow(&obst, 'Z'); }
 	else if (type == type_float)   { obstack_1grow(&obst, 'F'); }
 	else if (type == type_double)  { obstack_1grow(&obst, 'D'); }
+	else if (type == type_array_byte_boolean) { obstack_grow(&obst, "_3B", 3); }
+	else if (type == type_array_char)         { obstack_grow(&obst, "_3C", 3); }
+	else if (type == type_array_short)        { obstack_grow(&obst, "_3S", 3); }
+	else if (type == type_array_int)          { obstack_grow(&obst, "_3I", 3); }
+	else if (type == type_array_long)         { obstack_grow(&obst, "_3J", 3); }
+	else if (type == type_array_float)        { obstack_grow(&obst, "_3F", 3); }
+	else if (type == type_array_double)       { obstack_grow(&obst, "_3D", 3); }
+	else if (type == type_array_reference)    { obstack_grow(&obst, "_3R", 3); }
 	else {
 		/* TODO */
-		fprintf(stderr, "TODO: can't mangle type");
+		panic("TODO: can't mangle type");
 	}
 }
 
@@ -195,6 +204,7 @@ static void lower_type(type_or_ent tore, void *env)
 
 	ir_type *type = tore.typ;
 	if (!is_Class_type(type)) {
+		set_type_state(type, layout_fixed);
 		return;
 	}
 
@@ -214,6 +224,7 @@ static void lower_type(type_or_ent tore, void *env)
 static void lower_node(ir_node *node, void *env)
 {
 	(void) env;
+	unsigned addr_delta = 0;
 
 	if (!is_Alloc(node))
 		return;
@@ -222,20 +233,47 @@ static void lower_node(ir_node *node, void *env)
 
 	ir_graph *irg   = get_irn_irg(node);
 	ir_type  *type  = get_Alloc_type(node);
-	symconst_symbol value;
-	value.type_p = type;
-	ir_node  *size   = new_r_SymConst(irg, mode_Iu, value, symconst_type_size);
+	ir_node  *count = get_Alloc_count(node);
+	ir_node  *size;
+	if (is_Array_type(type)) {
+		ir_type *element_type = get_array_element_type(type);
+		ir_node *block = get_nodes_block(node);
+		count          = new_r_Conv(block, count, mode_Iu);
+		unsigned count_size   = get_mode_size_bytes(mode_int);
+		unsigned element_size = get_type_size_bytes(element_type);
+		/* increase element count so we have enough space for a counter
+		   at the front */
+		unsigned add_size = (element_size + (count_size-1)) / count_size;
+		ir_node *addv     = new_r_Const_long(irg, mode_Iu, add_size);
+		ir_node *add1     = new_r_Add(block, count, addv, mode_Iu);
+		ir_node *elsizev  = new_r_Const_long(irg, mode_Iu, element_size);
+
+		size = new_r_Mul(block, add1, elsizev, mode_Iu);
+		addr_delta = add_size * element_size;
+	} else {
+		assert(is_Const(count) && is_Const_one(count));
+		symconst_symbol value;
+		value.type_p = type;
+		size = new_r_SymConst(irg, mode_Iu, value, symconst_type_size);
+	}
 	ir_node  *mem    = get_Alloc_mem(node);
 	ir_node  *block  = get_nodes_block(node);
-	value.entity_p   = malloc_entity;
+	symconst_symbol value;
+	value.entity_p   = calloc_entity;
 	ir_node  *callee = new_r_SymConst(irg, mode_reference, value, symconst_addr_ent);
-	ir_node  *in[1]  = { size };
-	ir_type  *call_type = get_entity_type(malloc_entity);
-	ir_node  *call   = new_r_Call(block, mem, callee, 1, in, call_type);
+	ir_node  *one    = new_r_Const_long(irg, mode_Iu, 1);
+	ir_node  *in[2]  = { one, size };
+	ir_type  *call_type = get_entity_type(calloc_entity);
+	ir_node  *call   = new_r_Call(block, mem, callee, 2, in, call_type);
 
 	ir_node  *new_mem = new_r_Proj(call, mode_M, pn_Call_M);
 	ir_node  *ress    = new_r_Proj(call, mode_T, pn_Call_T_result);
 	ir_node  *res     = new_r_Proj(ress, mode_reference, 0);
+
+	if (addr_delta > 0) {
+		ir_node *delta = new_r_Const_long(irg, mode_reference, (int)addr_delta);
+		res = new_r_Add(block, res, delta, mode_reference);
+	}
 
 	turn_into_tuple(node, pn_Alloc_max);
 	set_irn_n(node, pn_Alloc_M, new_mem);
@@ -256,17 +294,6 @@ void lower_oo(void)
 {
 	obstack_init(&obst);
 
-	ir_type *method_type = new_type_method(1, 1);
-	ir_type *t_size_t    = new_type_primitive(mode_Iu);
-	ir_type *t_ptr       = new_type_primitive(mode_reference);
-	set_method_param_type(method_type, 0, t_size_t);
-	set_method_res_type(method_type, 0, t_ptr);
-
-	ir_type *glob = get_glob_type();
-	ident   *id   = new_id_from_str("malloc");
-	malloc_entity = new_entity(glob, id, method_type);
-	set_entity_visibility(malloc_entity, ir_visibility_external);
-
 	set_type_link(type_byte, "c");
 	set_type_link(type_char, "w");
 	set_type_link(type_short, "s");
@@ -277,6 +304,19 @@ void lower_oo(void)
 	set_type_link(type_double, "d");
 
 	type_walk_prog(lower_type, NULL, NULL);
+
+
+	ir_type *method_type = new_type_method(2, 1);
+	ir_type *t_size_t    = new_type_primitive(mode_Iu);
+	ir_type *t_ptr       = new_type_primitive(mode_reference);
+	set_method_param_type(method_type, 0, t_size_t);
+	set_method_param_type(method_type, 1, t_size_t);
+	set_method_res_type(method_type, 0, t_ptr);
+
+	ir_type *glob = get_glob_type();
+	ident   *id   = new_id_from_str("calloc");
+	calloc_entity = new_entity(glob, id, method_type);
+	set_entity_visibility(calloc_entity, ir_visibility_external);
 
 	int n_irgs = get_irp_n_irgs();
 	for (int i = 0; i < n_irgs; ++i) {

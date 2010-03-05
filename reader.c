@@ -59,6 +59,15 @@ ir_type *type_boolean;
 ir_type *type_float;
 ir_type *type_double;
 
+ir_type *type_array_byte_boolean;
+ir_type *type_array_char;
+ir_type *type_array_short;
+ir_type *type_array_int;
+ir_type *type_array_long;
+ir_type *type_array_float;
+ir_type *type_array_double;
+ir_type *type_array_reference;
+
 static void init_types(void)
 {
 	mode_byte
@@ -81,8 +90,7 @@ static void init_types(void)
 		= new_ir_mode("J", irms_int_number, 64, 1, irma_twos_complement, 32);
 	type_long = new_type_primitive(mode_long);
 
-	ir_mode *mode_boolean
-		= new_ir_mode("Z", irms_int_number, 8, 1, irma_twos_complement, 0);
+	ir_mode *mode_boolean = mode_byte;
 	type_boolean = new_type_primitive(mode_boolean);
 
 	mode_float
@@ -94,6 +102,17 @@ static void init_types(void)
 	type_double = new_type_primitive(mode_double);
 
 	mode_reference = mode_P;
+
+	type_array_byte_boolean = new_type_array(1, type_byte);
+	type_array_short        = new_type_array(1, type_short);
+	type_array_char         = new_type_array(1, type_char);
+	type_array_int          = new_type_array(1, type_int);
+	type_array_long         = new_type_array(1, type_long);
+	type_array_float        = new_type_array(1, type_float);
+	type_array_double       = new_type_array(1, type_double);
+
+	ir_type *type_reference = new_type_primitive(mode_reference);
+	type_array_reference    = new_type_array(1, type_reference);
 }
 
 static cpmap_t class_registry;
@@ -323,9 +342,9 @@ static ir_node *create_symconst(ir_entity *entity)
 	return new_SymConst(mode_reference, sym, symconst_addr_ent);
 }
 
-static ir_entity *get_method_entity(uint16_t methodref_index)
+static ir_entity *get_method_entity(uint16_t index)
 {
-	constant_t *methodref = get_constant(methodref_index);
+	constant_t *methodref = get_constant(index);
 	if (methodref->kind != CONSTANT_METHODREF) {
 		panic("get_method_entity index argumetn not a methodref");
 	}
@@ -334,7 +353,7 @@ static ir_entity *get_method_entity(uint16_t methodref_index)
 		const constant_t *name_and_type 
 			= get_constant(methodref->methodref.name_and_type_index);
 		if (name_and_type->kind != CONSTANT_NAMEANDTYPE) {
-			panic("invalid name_and_type in method %u", methodref_index);
+			panic("invalid name_and_type in method %u", index);
 		}
 		ir_type *classtype 
 			= get_classref_type(methodref->methodref.class_index);
@@ -347,6 +366,35 @@ static ir_entity *get_method_entity(uint16_t methodref_index)
 		entity = get_class_member_by_name(classtype, methodid);
 		assert(is_method_entity(entity));
 		methodref->base.link = entity;
+	}
+
+	return entity;
+}
+
+static ir_entity *get_field_entity(uint16_t index)
+{
+	constant_t *fieldref = get_constant(index);
+	if (fieldref->kind != CONSTANT_FIELDREF) {
+		panic("get_field_entity index argumetn not a fieldref");
+	}
+	ir_entity *entity = fieldref->base.link;
+	if (entity == NULL) {
+		const constant_t *name_and_type 
+			= get_constant(fieldref->fieldref.name_and_type_index);
+		if (name_and_type->kind != CONSTANT_NAMEANDTYPE) {
+			panic("invalid name_and_type in field %u", index);
+		}
+		ir_type *classtype 
+			= get_classref_type(fieldref->fieldref.class_index);
+
+		/* TODO: walk class hierarchy */
+		/* TODO: we could have a method with the same name */
+		const char *fieldname
+			= get_constant_string(name_and_type->name_and_type.name_index);
+		ident *fieldid = new_id_from_str(fieldname);
+		entity = get_class_member_by_name(classtype, fieldid);
+		assert(!is_method_entity(entity));
+		fieldref->base.link = entity;
 	}
 
 	return entity;
@@ -521,6 +569,83 @@ static void construct_vreturn(ir_type *method_type, ir_mode *mode)
 	set_cur_block(new_Bad());
 }
 
+static void construct_dup(int n_vals, bool transfer_2_slots)
+{
+	ir_node *vals[n_vals];
+
+	/* TODO: this only works for values defined in the same block */
+	for (int i = 0; i < n_vals; ++i) {
+		vals[i] = symbolic_pop(NULL);
+	}
+	if (transfer_2_slots)
+		symbolic_push(vals[1]);
+	symbolic_push(vals[0]);
+	for (int i = n_vals - 1; i >= 0; --i) {
+		symbolic_push(vals[i]);
+	}
+}
+
+/**
+ * transform value into value with arithmetic mode
+ * (= all integer calulations are done in mode_int so we transform integer
+ *  value not in mode_int to it)
+ */
+static ir_node *get_arith_value(ir_node *node)
+{
+	ir_mode *mode = get_irn_mode(node);
+	if (mode != mode_int && mode_is_int(mode))
+		node = new_Conv(node, mode_int);
+	return node;
+}
+
+static void construct_array_load(ir_type *array_type)
+{
+	ir_node   *index     = symbolic_pop(mode_int);
+	ir_node   *base_addr = symbolic_pop(mode_reference);
+	ir_node   *in[1]     = { index };
+	ir_entity *entity    = get_array_element_entity(array_type);
+	ir_node   *addr      = new_Sel(new_NoMem(), base_addr, 1, in, entity);
+
+	ir_node   *mem       = get_store();
+	ir_type   *type      = get_entity_type(entity);
+	ir_mode   *mode      = get_type_mode(type);
+	ir_node   *load      = new_Load(mem, addr, mode, cons_none);
+	ir_node   *new_mem   = new_Proj(load, mode_M, pn_Load_M);
+	ir_node   *value     = new_Proj(load, mode, pn_Load_res);
+	value = get_arith_value(value);
+	set_store(new_mem);
+	symbolic_push(value);
+}
+
+static void construct_array_store(ir_type *array_type)
+{
+	ir_entity *entity    = get_array_element_entity(array_type);
+	ir_type   *type      = get_entity_type(entity);
+	ir_mode   *mode      = get_type_mode(type);
+
+	ir_node   *value     = symbolic_pop(mode);
+	ir_node   *index     = symbolic_pop(mode_int);
+	ir_node   *base_addr = symbolic_pop(mode_reference);
+	ir_node   *in[1]     = { index };
+	ir_node   *addr      = new_Sel(new_NoMem(), base_addr, 1, in, entity);
+
+	ir_node   *mem       = get_store();
+	ir_node   *store     = new_Store(mem, addr, value, cons_none);
+	ir_node   *new_mem   = new_Proj(store, mode_M, pn_Store_M);
+	set_store(new_mem);
+}
+
+static void construct_new_array(ir_type *array_type, ir_node *count)
+{
+	ir_node *mem     = get_store();
+	count            = new_Conv(count, mode_Iu);
+	ir_node *alloc   = new_Alloc(mem, count, array_type, heap_alloc);
+	ir_node *new_mem = new_Proj(alloc, mode_M, pn_Alloc_M);
+	ir_node *res     = new_Proj(alloc, mode_reference, pn_Alloc_res);
+	set_store(new_mem);
+	symbolic_push(res);
+}
+
 static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 {
 	code = new_code;
@@ -539,9 +664,11 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	ir_node *args         = get_irg_args(irg);
 	int      n_parameters = get_method_n_params(method_type);
 	for (int i = 0; i < n_parameters; ++i) {
-		ir_type *type = get_method_param_type(method_type, i);
-		ir_node *val  = new_Proj(args, get_type_mode(type), i);
-		set_local(i, val);
+		ir_type *type  = get_method_param_type(method_type, i);
+		ir_mode *mode  = get_type_mode(type);
+		ir_node *value = new_Proj(args, mode, i);
+		value = get_arith_value(value);
+		set_local(i, value);
 	}
 
 	/* pass1: identify jump targets and create blocks for them */
@@ -570,6 +697,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_FSTORE:
 		case OPC_DSTORE:
 		case OPC_ASTORE:
+		case OPC_NEWARRAY:
 			i++;
 			break;
 
@@ -578,11 +706,14 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_LDC2_W:
 		case OPC_IINC:
 		case OPC_GETSTATIC:
+		case OPC_PUTSTATIC:
 		case OPC_GETFIELD:
+		case OPC_PUTFIELD:
 		case OPC_INVOKEVIRTUAL:
 		case OPC_INVOKESTATIC:
 		case OPC_INVOKESPECIAL:
 		case OPC_NEW:
+		case OPC_ANEWARRAY:
 			i+=2;
 			break;
 
@@ -677,6 +808,14 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ALOAD_1:
 		case OPC_ALOAD_2:
 		case OPC_ALOAD_3:
+		case OPC_IALOAD:
+		case OPC_LALOAD:
+		case OPC_FALOAD:
+		case OPC_DALOAD:
+		case OPC_AALOAD:
+		case OPC_BALOAD:
+		case OPC_CALOAD:
+		case OPC_SALOAD:
 		case OPC_ISTORE_0:
 		case OPC_ISTORE_1:
 		case OPC_ISTORE_2:
@@ -697,6 +836,14 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ASTORE_1:
 		case OPC_ASTORE_2:
 		case OPC_ASTORE_3:
+		case OPC_IASTORE:
+		case OPC_LASTORE:
+		case OPC_FASTORE:
+		case OPC_DASTORE:
+		case OPC_AASTORE:
+		case OPC_BASTORE:
+		case OPC_CASTORE:
+		case OPC_SASTORE:
 		case OPC_POP:
 		case OPC_POP2:
 		case OPC_DUP:
@@ -853,11 +1000,20 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ALOAD_2: push_local(2, mode_reference);               continue;
 		case OPC_ALOAD_3: push_local(3, mode_reference);               continue;
 
-		case OPC_ISTORE:   pop_set_local(code->code[i++], mode_int);   continue;
-		case OPC_LSTORE:   pop_set_local(code->code[i++], mode_long);  continue;
-		case OPC_FSTORE:   pop_set_local(code->code[i++], mode_float); continue;
-		case OPC_DSTORE:   pop_set_local(code->code[i++], mode_double);continue;
-		case OPC_ASTORE:   pop_set_local(code->code[i++], mode_reference); continue;
+		case OPC_IALOAD: construct_array_load(type_array_int);       continue;
+		case OPC_LALOAD: construct_array_load(type_array_long);      continue;
+		case OPC_FALOAD: construct_array_load(type_array_float);     continue;
+		case OPC_DALOAD: construct_array_load(type_array_double);    continue;
+		case OPC_AALOAD: construct_array_load(type_array_reference); continue;
+		case OPC_BALOAD: construct_array_load(type_array_byte_boolean);continue;
+		case OPC_CALOAD: construct_array_load(type_array_char);      continue;
+		case OPC_SALOAD: construct_array_load(type_array_short);     continue;
+
+		case OPC_ISTORE: pop_set_local(code->code[i++], mode_int);   continue;
+		case OPC_LSTORE: pop_set_local(code->code[i++], mode_long);  continue;
+		case OPC_FSTORE: pop_set_local(code->code[i++], mode_float); continue;
+		case OPC_DSTORE: pop_set_local(code->code[i++], mode_double);continue;
+		case OPC_ASTORE: pop_set_local(code->code[i++], mode_reference); continue;
 
 		case OPC_ISTORE_0: pop_set_local(0, mode_int);       continue;
 		case OPC_ISTORE_1: pop_set_local(1, mode_int);       continue;
@@ -880,40 +1036,24 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ASTORE_2: pop_set_local(2, mode_reference); continue;
 		case OPC_ASTORE_3: pop_set_local(3, mode_reference); continue;
 
+		case OPC_IASTORE: construct_array_store(type_array_int);       continue;
+		case OPC_LASTORE: construct_array_store(type_array_long);      continue;
+		case OPC_FASTORE: construct_array_store(type_array_float);     continue;
+		case OPC_DASTORE: construct_array_store(type_array_double);    continue;
+		case OPC_AASTORE: construct_array_store(type_array_reference); continue;
+		case OPC_BASTORE: construct_array_store(type_array_byte_boolean); continue;
+		case OPC_CASTORE: construct_array_store(type_array_char);      continue;
+		case OPC_SASTORE: construct_array_store(type_array_short);     continue;
+
 		case OPC_POP:  --stack_pointer;    continue;
 		case OPC_POP2: stack_pointer -= 2; continue;
 
-		case OPC_DUP2:
-		case OPC_DUP: {
-			/* TODO: this only works for values defined in the same block */
-			ir_mode *mode = opcode == OPC_DUP2 ? mode_long : NULL;
-			ir_node *top  = symbolic_pop(mode);
-			symbolic_push(top);
-			symbolic_push(top);
-			continue;
-		}
-		case OPC_DUP2_X1:
-		case OPC_DUP_X1: {
-			ir_mode *mode = opcode == OPC_DUP2 ? mode_long : NULL;
-			ir_node *top1 = symbolic_pop(mode);
-			ir_node *top2 = symbolic_pop(mode);
-			symbolic_push(top1);
-			symbolic_push(top2);
-			symbolic_push(top1);
-			continue;
-		}
-		case OPC_DUP2_X2:
-		case OPC_DUP_X2: {
-			ir_mode *mode = opcode == OPC_DUP2 ? mode_long : NULL;
-			ir_node *top1 = symbolic_pop(mode);
-			ir_node *top2 = symbolic_pop(mode);
-			ir_node *top3 = symbolic_pop(mode);
-			symbolic_push(top1);
-			symbolic_push(top3);
-			symbolic_push(top2);
-			symbolic_push(top1);
-			continue;
-		}
+		case OPC_DUP:     construct_dup(1, false); continue;
+		case OPC_DUP_X1:  construct_dup(2, false); continue;
+		case OPC_DUP_X2:  construct_dup(3, false); continue;
+		case OPC_DUP2:    construct_dup(2, true);  continue;
+		case OPC_DUP2_X1: construct_dup(3, true);  continue;
+		case OPC_DUP2_X2: construct_dup(4, true);  continue;
 		case OPC_SWAP: {
 			ir_node *top1 = symbolic_pop(NULL);
 			ir_node *top2 = symbolic_pop(NULL);
@@ -988,7 +1128,6 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			uint16_t index = (b1 << 8) | b2;
 			index += i-3;
 
-			ir_node *val1 = symbolic_pop(mode_int);
 			ir_node *val2;
 			if (opcode >= OPC_IFEQ && opcode <= OPC_IFLE) {
 				val2 = new_Const_long(mode_int, 0);
@@ -996,6 +1135,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				assert(opcode >= OPC_ICMPEQ && opcode <= OPC_ICMPLE);
 				val2 = symbolic_pop(mode_int);
 			}
+			ir_node *val1 = symbolic_pop(mode_int);
 			ir_node *cmp  = new_Cmp(val1, val2);
 
 			long pnc;
@@ -1081,6 +1221,47 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ARETURN: construct_vreturn(method_type, mode_reference); continue;
 		case OPC_RETURN:  construct_vreturn(method_type, NULL);     continue;
 
+		case OPC_GETSTATIC:
+		case OPC_PUTSTATIC:
+		case OPC_GETFIELD:
+		case OPC_PUTFIELD: {
+			uint8_t    b1      = code->code[i++];
+			uint8_t    b2      = code->code[i++];
+			uint16_t   index   = (b1 << 8) | b2;
+			ir_entity *entity  = get_field_entity(index);
+			ir_node   *value   = NULL;
+			ir_node   *addr;
+
+			ir_node *mem  = get_store();
+			ir_type *type = get_entity_type(entity);
+			ir_mode *mode = get_type_mode(type);
+
+			if (opcode == OPC_PUTSTATIC || opcode == OPC_PUTFIELD) {
+				value = symbolic_pop(mode);
+			}
+			
+			if (opcode == OPC_GETSTATIC || opcode == OPC_PUTSTATIC) {
+				addr = create_symconst(entity);
+			} else {
+				ir_node *object = symbolic_pop(mode_reference);
+				addr            = new_simpleSel(new_NoMem(), object, entity);
+			}
+
+			if (opcode == OPC_GETSTATIC || opcode == OPC_GETFIELD) {
+				ir_node *load    = new_Load(mem, addr, mode, cons_none);
+				ir_node *new_mem = new_Proj(load, mode_M, pn_Load_M);
+				ir_node *result  = new_Proj(load, mode, pn_Load_res);
+				set_store(new_mem);
+				symbolic_push(result);
+			} else {
+				assert(opcode == OPC_PUTSTATIC || opcode == OPC_PUTFIELD);
+				ir_node *store   = new_Store(mem, addr, value, cons_none);
+				ir_node *new_mem = new_Proj(store, mode_M, pn_Store_M);
+				set_store(new_mem);
+			}
+			continue;
+		}
+
 		case OPC_INVOKEVIRTUAL:
 		case OPC_INVOKESTATIC: {
 			uint8_t    b1     = code->code[i++];
@@ -1109,6 +1290,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				ir_mode *mode     = get_type_mode(res_type);
 				ir_node *resproj  = new_Proj(call, mode_T, pn_Call_T_result);
 				ir_node *res      = new_Proj(resproj, mode, 0);
+				res = get_arith_value(res);
 				symbolic_push(res);
 			}
 			continue;
@@ -1145,10 +1327,34 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			symbolic_push(result);
 			continue;
 		}
-
-		case OPC_GETSTATIC:
-		case OPC_GETFIELD:
-			panic("Unimplemented opcode 0x%X found\n", opcode);
+		case OPC_NEWARRAY: {
+			uint8_t ti = code->code[i++];
+			ir_type *type;
+			switch (ti) {
+			case 4:  type = type_array_byte_boolean; break;
+			case 5:  type = type_array_char;         break;
+			case 6:  type = type_array_float;        break;
+			case 7:  type = type_array_double;       break;
+			case 8:  type = type_array_byte_boolean; break;
+			case 9:  type = type_array_short;        break;
+			case 10: type = type_array_int;          break;
+			case 11: type = type_array_long;         break;
+			default: panic("invalid type %u for NEWARRAY opcode", ti);
+			}
+			ir_node *count = symbolic_pop(mode_int);
+			construct_new_array(type, count);
+			continue;
+		}
+		case OPC_ANEWARRAY: {
+			uint8_t  b1           = code->code[i++];
+			uint8_t  b2           = code->code[i++];
+			uint16_t index        = (b1 << 8) | b2;
+			ir_type *element_type = get_classref_type(index);
+			ir_type *type         = new_type_array(1, element_type);
+			ir_node *count        = symbolic_pop(mode_int);
+			construct_new_array(type, count);
+			continue;
+		}
 		}
 
 		panic("Unknown opcode 0x%X found\n", opcode);
@@ -1254,8 +1460,12 @@ static ir_type *get_classref_type(uint16_t index)
 	if (type == NULL) {
 		const char *classname
 			= get_constant_string(classref->classref.name_index);
-		type = get_class_type(classname);
-		classref->base.link = type;
+		if (classname[0] == '[') {
+			type = complete_descriptor_to_type(classname);
+		} else {
+			type = get_class_type(classname);
+			classref->base.link = type;
+		}
 	}
 
 	return type;
@@ -1328,12 +1538,14 @@ int main(int argc, char **argv)
 		optimize_cf(irg);
 		optimize_reassociation(irg);
 		optimize_graph_df(irg);
-		opt_jumpthreading(irg);
+		//opt_jumpthreading(irg);
+		optimize_load_store(irg);
 		optimize_graph_df(irg);
 		optimize_cf(irg);
 		/* TODO: This shouldn't be needed but the backend sometimes finds
 		   dead Phi nodes if we don't do this */
 		edges_deactivate(irg);
+		edges_activate(irg);
 	}
 
 	be_parse_arg("omitfp");
