@@ -18,6 +18,8 @@
 #include "adt/hashptr.h"
 #include "adt/xmalloc.h"
 
+#include "mangle.h"
+
 #include <libfirm/firm.h>
 
 #define VERBOSE
@@ -342,6 +344,18 @@ static ir_node *create_symconst(ir_entity *entity)
 	return new_SymConst(mode_reference, sym, symconst_addr_ent);
 }
 
+static ir_entity *find_method(ir_type *classtype, ident *id)
+{
+	ir_entity *entity = get_class_member_by_name(classtype, id);
+	if (entity == NULL && get_class_n_supertypes(classtype) > 0) {
+		classtype = get_class_supertype(classtype, 0);
+		return find_method(classtype, id);
+	}
+	assert(entity != NULL);
+	assert(is_method_entity(entity));
+	return entity;
+}
+
 static ir_entity *get_method_entity(uint16_t index)
 {
 	constant_t *methodref = get_constant(index);
@@ -358,13 +372,15 @@ static ir_entity *get_method_entity(uint16_t index)
 		ir_type *classtype 
 			= get_classref_type(methodref->methodref.class_index);
 
-		/* TODO: walk class hierarchy */
-		/* TODO: we could have a field with the same name */
 		const char *methodname
 			= get_constant_string(name_and_type->name_and_type.name_index);
 		ident *methodid = new_id_from_str(methodname);
-		entity = get_class_member_by_name(classtype, methodid);
-		assert(is_method_entity(entity));
+		const char *descriptor
+			= get_constant_string(name_and_type->name_and_type.descriptor_index);
+		ident *descriptorid = new_id_from_str(descriptor);
+		ident *name         = id_mangle_dot(methodid, descriptorid);
+
+		entity = find_method(classtype, name);
 		methodref->base.link = entity;
 	}
 
@@ -1276,7 +1292,10 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			for (int i = n_args-1; i >= 0; --i) {
 				ir_type *arg_type = get_method_param_type(type, i);
 				ir_mode *mode     = get_type_mode(arg_type);
-				args[i]           = symbolic_pop(mode);
+				ir_node *val      = symbolic_pop(mode);
+				if (get_irn_mode(val) != mode)
+					val = new_Conv(val, mode);
+				args[i]           = val;
 			}
 			ir_node *mem     = get_store();
 			ir_node *call    = new_Call(mem, callee, n_args, args, type);
@@ -1379,16 +1398,25 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 static void create_method_entity(method_t *method, ir_type *owner)
 {
-	const char *name       = get_constant_string(method->name_index);
-	const char *descriptor = get_constant_string(method->descriptor_index);
-	ident      *id         = new_id_from_str(name);
-	ir_type    *type       = method_descriptor_to_type(descriptor, owner,
-	                                                   method->access_flags);
-	ir_entity  *entity     = new_entity(owner, id, type);
+	const char *name         = get_constant_string(method->name_index);
+	ident      *id           = new_id_from_str(name);
+	const char *descriptor   = get_constant_string(method->descriptor_index);
+	ident      *descriptorid = new_id_from_str(descriptor);
+	ir_type    *type         = method_descriptor_to_type(descriptor, owner,
+	                                                     method->access_flags);
+	ident      *mangled_id   = id_mangle_dot(id, descriptorid);
+	ir_entity  *entity       = new_entity(owner, mangled_id, type);
 	set_entity_link(entity, method);
 
-	if (method->access_flags & ACCESS_FLAG_NATIVE)
+	ident *ld_ident;
+	if (method->access_flags & ACCESS_FLAG_NATIVE) {
 		set_entity_visibility(entity, ir_visibility_external);
+		ld_ident = mangle_native_func(owner, type, id);
+	} else {
+		ld_ident = mangle_entity_name(owner, type, id);
+		set_entity_ld_ident(entity, mangled_id);
+	}
+	set_entity_ld_ident(entity, ld_ident);
 }
 
 static void create_method_code(ir_entity *entity)
@@ -1505,6 +1533,7 @@ int main(int argc, char **argv)
 	ir_init(&params);
 	init_types();
 	class_registry_init();
+	init_mangle();
 
 	const char *classpath = "classes/";
 	class_file_init(classpath);
@@ -1552,6 +1581,7 @@ int main(int argc, char **argv)
 	be_main(stdout, "bytecode");
 
 	class_file_exit();
+	deinit_mangle();
 
 	return 0;
 }
