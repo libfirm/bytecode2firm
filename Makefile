@@ -12,8 +12,11 @@ OBJECTS = $(addprefix build/, $(addsuffix .o, $(basename $(SOURCES))))
 $(GOAL): $(OBJECTS)
 	$(CC) -o $@ $^ $(LFLAGS)
 
-build/%.o: %.c
+$(BUILDDIR)/%.o: %.c $(BUILDDIR)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
+
+$(BUILDDIR):
+	$(INSTALL) -d $(BUILDDIR) $(BUILDDIR)/adt
 
 clean:
 	rm -rf $(OBJECTS) $(GOAL)
