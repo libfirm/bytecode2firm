@@ -1408,6 +1408,28 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	ir_entity  *entity       = new_entity(owner, mangled_id, type);
 	set_entity_link(entity, method);
 
+	if (! (method->access_flags & ACCESS_FLAG_STATIC)) {
+		assert(is_Class_type(owner) != 0);
+		ir_type *superclass_type = owner;
+		ir_entity *superclass_method = NULL;
+
+		while(superclass_type != NULL && superclass_method == NULL) {
+			if (get_class_n_supertypes(superclass_type) > 0) {
+					superclass_type = get_class_supertype(superclass_type, 0);
+					ir_entity *member_in_superclass = get_class_member_by_name(superclass_type, mangled_id);
+					if (member_in_superclass != NULL && is_method_entity(member_in_superclass)) {
+						superclass_method = member_in_superclass;
+					}
+			} else {
+				superclass_type = NULL;
+			}
+		}
+
+		if (superclass_method != NULL) {
+			add_entity_overwrites(entity, superclass_method);
+		}
+	}
+
 	ident *ld_ident;
 	if (method->access_flags & ACCESS_FLAG_NATIVE) {
 		set_entity_visibility(entity, ir_visibility_external);
