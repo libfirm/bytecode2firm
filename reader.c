@@ -1409,7 +1409,7 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	set_entity_link(entity, method);
 
 	if (! (method->access_flags & ACCESS_FLAG_STATIC)) {
-		assert(is_Class_type(owner) != 0);
+		assert(is_Class_type(owner));
 		ir_type *superclass_type = owner;
 		ir_entity *superclass_method = NULL;
 
