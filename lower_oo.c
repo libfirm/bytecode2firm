@@ -13,7 +13,6 @@ static void move_to_global(ir_entity *entity)
 	/* move to global type */
 	ir_type *owner = get_entity_owner(entity);
 	assert(is_Class_type(owner));
-	remove_class_member(owner, entity);
 	set_entity_owner(entity, get_glob_type());
 }
 
