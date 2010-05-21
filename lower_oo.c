@@ -16,6 +16,21 @@ static void move_to_global(ir_entity *entity)
 	set_entity_owner(entity, get_glob_type());
 }
 
+#if 0
+static void create_vtable(ir_type *type)
+{
+	ir_type *vtable = new_type_struct(NULL);
+
+	/* VTable Layout:
+	 *  - ref instance of "class" / classinfo
+	 *  (- some info that makes dynamic_cast faster?)
+	 *  - func1
+	 *  - func2
+	 *  ...
+	 */
+}
+#endif
+
 static void lower_type(type_or_ent tore, void *env)
 {
 	(void) env;
