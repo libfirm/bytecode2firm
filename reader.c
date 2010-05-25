@@ -60,6 +60,7 @@ ir_type *type_long;
 ir_type *type_boolean;
 ir_type *type_float;
 ir_type *type_double;
+ir_type *type_reference;
 
 ir_type *type_array_byte_boolean;
 ir_type *type_array_char;
@@ -69,6 +70,9 @@ ir_type *type_array_long;
 ir_type *type_array_float;
 ir_type *type_array_double;
 ir_type *type_array_reference;
+unsigned type_reference_size;
+
+ir_type *global_type;
 
 static void init_types(void)
 {
@@ -113,8 +117,12 @@ static void init_types(void)
 	type_array_float        = new_type_array(1, type_float);
 	type_array_double       = new_type_array(1, type_double);
 
-	ir_type *type_reference = new_type_primitive(mode_reference);
+	type_reference          = new_type_primitive(mode_reference);
+	type_reference_size     = get_type_size_bytes(type_reference);
+
 	type_array_reference    = new_type_array(1, type_reference);
+
+	global_type = get_glob_type();
 }
 
 static cpmap_t class_registry;
@@ -1278,7 +1286,60 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 
-		case OPC_INVOKEVIRTUAL:
+		case OPC_INVOKEVIRTUAL: {
+			uint8_t    b1     = code->code[i++];
+			uint8_t    b2     = code->code[i++];
+			uint16_t   index  = (b1 << 8) | b2;
+			ir_entity *entity = get_method_entity(index);
+			ir_type   *type   = get_entity_type(entity);
+			unsigned   n_args = get_method_n_params(type);
+			ir_node   *args[n_args];
+
+			for (int i = n_args-1; i >= 0; --i) {
+				ir_type *arg_type = get_method_param_type(type, i);
+				ir_mode *mode     = get_type_mode(arg_type);
+				ir_node *val      = symbolic_pop(mode);
+				if (get_irn_mode(val) != mode)
+					val = new_Conv(val, mode);
+				args[i]           = val;
+			}
+
+			ir_node *objptr       = args[0];
+			ir_node *mem          = get_store();
+			ir_node *vtable_load   = new_Load(mem, objptr /*vptr is first member*/, mode_P, cons_none);
+			ir_node *vtable_addr   = new_Proj(vtable_load, mode_P, pn_Load_res);
+			ir_node *new_mem      = new_Proj(vtable_load, mode_M, pn_Load_M);
+			set_store(new_mem);
+
+			int vtable_id         = get_entity_vtable_number(entity);
+			assert(vtable_id >= 0);
+
+			ir_node *vtable_offset= new_Const_long(mode_P, vtable_id * type_reference_size);
+			ir_node *funcptr_addr = new_Add(vtable_addr, vtable_offset, mode_P);
+			         mem          = get_store();
+			ir_node *callee_load  = new_Load(mem, funcptr_addr, mode_P, cons_none);
+			ir_node *callee       = new_Proj(callee_load, mode_P, pn_Load_res);
+			         new_mem      = new_Proj(callee_load, mode_M, pn_Load_M);
+			set_store(new_mem);
+
+			         mem          = get_store();
+			ir_node *call         = new_Call(mem, callee, n_args, args, type);
+			         new_mem      = new_Proj(call, mode_M, pn_Call_M);
+			set_store(new_mem);
+
+			int n_res = get_method_n_ress(type);
+			if (n_res > 0) {
+				assert(n_res == 1);
+				ir_type *res_type = get_method_res_type(type, 0);
+				ir_mode *mode     = get_type_mode(res_type);
+				ir_node *resproj  = new_Proj(call, mode_T, pn_Call_T_result);
+				ir_node *res      = new_Proj(resproj, mode, 0);
+				res = get_arith_value(res);
+				symbolic_push(res);
+			}
+			continue;
+		}
+
 		case OPC_INVOKESTATIC: {
 			uint8_t    b1     = code->code[i++];
 			uint8_t    b2     = code->code[i++];
@@ -1344,6 +1405,18 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node  *result    = new_Proj(alloc, mode_reference, pn_Alloc_res);
 			set_store(new_mem);
 			symbolic_push(result);
+
+			ir_entity *vptr_entity    = get_class_member_by_name(classtype, new_id_from_str("vptr"));
+			ir_node   *vptr           = new_Sel(new_NoMem(), result, 0, NULL, vptr_entity);
+
+			ir_entity *vtable_entity  = get_class_member_by_name(global_type, mangle_vtable_name(classtype));
+			ir_node   *vtable_symconst= create_symconst(vtable_entity);
+
+			           mem            = get_store();
+			ir_node   *vptr_store     = new_Store(mem, vptr, vtable_symconst, cons_none);
+			           new_mem        = new_Proj(vptr_store, mode_M, pn_Store_M);
+			set_store(new_mem);
+
 			continue;
 		}
 		case OPC_NEWARRAY: {
@@ -1434,9 +1507,10 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	if (method->access_flags & ACCESS_FLAG_NATIVE) {
 		set_entity_visibility(entity, ir_visibility_external);
 		ld_ident = mangle_native_func(owner, type, id);
+	} else if (strcmp(name, "main") == 0) {
+		ld_ident = new_id_from_str("main");
 	} else {
 		ld_ident = mangle_entity_name(owner, type, id);
-		set_entity_ld_ident(entity, mangled_id);
 	}
 	set_entity_ld_ident(entity, ld_ident);
 }
@@ -1482,6 +1556,8 @@ static ir_type *get_class_type(const char *name)
 		/* this should only happen for java.lang.Object */
 		assert(strcmp(name, "java/lang/Object") == 0);
 	}
+
+	new_entity(type, new_id_from_str("vptr"), type_reference);
 
 	for (size_t f = 0; f < (size_t) class_file->n_fields; ++f) {
 		field_t *field = class_file->fields[f];
@@ -1569,6 +1645,8 @@ int main(int argc, char **argv)
 	/* trigger loading of the class specified on commandline */
 	get_class_type(argv[1]);
 
+	prepare_oo();
+
 	while (!pdeq_empty(worklist)) {
 		ir_type *classtype = pdeq_getl(worklist);
 		construct_class_methods(classtype);
@@ -1598,6 +1676,8 @@ int main(int argc, char **argv)
 		edges_deactivate(irg);
 		edges_activate(irg);
 	}
+
+	dump_all_types("__before_be");
 
 	be_parse_arg("omitfp");
 	be_main(stdout, "bytecode");

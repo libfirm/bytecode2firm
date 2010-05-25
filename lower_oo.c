@@ -7,14 +7,17 @@
 #include "types.h"
 
 #include "class_file.h"
-
-#define VTABLE_ENTITY_ID(type) id_mangle(new_id_from_str("vtable_"), get_class_ident(type))
+#include "mangle.h"
 
 static ir_type *type_reference;
+static unsigned type_reference_size;
+static ir_type *global_type;
 
 static void init_types(void)
 {
 	type_reference = new_type_primitive(mode_reference);
+	type_reference_size = get_type_size_bytes(type_reference);
+	global_type = get_glob_type();
 }
 
 static ir_entity *calloc_entity;
@@ -25,7 +28,7 @@ static void move_to_global(ir_entity *entity)
 	ir_type *owner = get_entity_owner(entity);
 	assert(is_Class_type(owner));
 	remove_class_member(owner, entity);
-	set_entity_owner(entity, get_glob_type());
+	set_entity_owner(entity, global_type);
 }
 
 static void setup_vtable(ir_type *clazz, void *env)
@@ -47,7 +50,8 @@ static void setup_vtable(ir_type *clazz, void *env)
 		if (is_method_entity(member)
 			&& ! (((method_t *)get_entity_link(member))->access_flags & ACCESS_FLAG_STATIC)) {
 			if (get_entity_n_overwrites(member) > 0) { // this method already has a vtable id, copy it from the superclass' implementation
-				set_entity_vtable_number(member, get_entity_vtable_number(get_entity_overwrites(member, 0)));
+				ir_entity *overwritten_entity = get_entity_overwrites(member, 0);
+				set_entity_vtable_number(member, get_entity_vtable_number(overwritten_entity));
 			} else {
 				set_entity_vtable_number(member, vtable_size);
 				set_class_vtable_size(clazz, ++vtable_size);
@@ -58,24 +62,24 @@ static void setup_vtable(ir_type *clazz, void *env)
 	// the vtable currently is an array of pointers
 	ir_type *vtable_type = new_type_array(1, type_reference);
 	set_array_bounds_int(vtable_type, 0, 0, vtable_size);
+	set_type_size_bytes(vtable_type, type_reference_size * vtable_size);
 	set_type_state(vtable_type, layout_fixed);
 
-	ir_entity *vtable = new_entity(
-			get_glob_type(),
-			VTABLE_ENTITY_ID(clazz), vtable_type);
+	ir_entity *vtable = new_entity(global_type, mangle_vtable_name(clazz), vtable_type);
 
 	ir_graph *const_code = get_const_code_irg();
 	ir_initializer_t * init = create_initializer_compound(vtable_size);
 
 	if (superclass != NULL) {
 		int superclass_vtable_size = get_class_vtable_size(superclass);
-		ir_entity *superclass_vtable = get_class_member_by_name(superclass, VTABLE_ENTITY_ID(superclass));
-		assert (superclass_vtable != NULL);
-		ir_initializer_t *superclass_vtable_init = get_entity_initializer(superclass_vtable);
+		ir_entity *superclass_vtable_entity = get_class_member_by_name(global_type, mangle_vtable_name(superclass));
+		assert (superclass_vtable_entity != NULL);
+		ir_initializer_t *superclass_vtable_init = get_entity_initializer(superclass_vtable_entity);
 
 		// copy vtable initialization from superclass
 		for (int i = 0; i < superclass_vtable_size; i++) {
-				set_initializer_compound_value (init, i, get_initializer_compound_value(superclass_vtable_init, i));
+				ir_initializer_t *superclass_vtable_init_value = get_initializer_compound_value(superclass_vtable_init, i);
+				set_initializer_compound_value (init, i, superclass_vtable_init_value);
 		}
 	}
 
@@ -94,11 +98,10 @@ static void setup_vtable(ir_type *clazz, void *env)
 		}
 	}
 
-	set_entity_allocation(vtable, allocation_static);
 	set_entity_initializer(vtable, init);
-	add_class_member(clazz, vtable);
 
-	dump_entity(vtable);
+//	dump_type(clazz);
+//	dump_entity(vtable);
 }
 
 static void lower_type(type_or_ent tore, void *env)
@@ -112,6 +115,9 @@ static void lower_type(type_or_ent tore, void *env)
 		set_type_state(type, layout_fixed);
 		return;
 	}
+
+	if (type == global_type)
+		return;
 
 	int n_members = get_class_n_members(type);
 	for (int m = n_members-1; m >= 0; --m) {
@@ -197,10 +203,6 @@ static void lower_graph(ir_graph *irg)
  */
 void lower_oo(void)
 {
-	init_types();
-
-	class_walk_super2sub(setup_vtable, NULL, NULL);
-
 	type_walk_prog(lower_type, NULL, NULL);
 
 	ir_type *method_type = new_type_method(2, 1);
@@ -222,4 +224,10 @@ void lower_oo(void)
 	}
 
 	lower_highlevel(0);
+}
+
+void prepare_oo(void) {
+	init_types();
+
+	class_walk_super2sub(setup_vtable, NULL, NULL);
 }
