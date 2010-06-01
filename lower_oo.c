@@ -36,6 +36,10 @@ static void setup_vtable(ir_type *clazz, void *env)
 	(void) env;
 	assert(is_Class_type(clazz));
 
+	ident *vtable_name = mangle_vtable_name(clazz);
+
+	assert (get_class_member_by_name(global_type, vtable_name) == NULL);
+
 	ir_type *superclass = NULL;
 	int vtable_size = 0;
 	if (get_class_n_supertypes(clazz) > 0) {
@@ -65,7 +69,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 	set_type_size_bytes(vtable_type, type_reference_size * vtable_size);
 	set_type_state(vtable_type, layout_fixed);
 
-	ir_entity *vtable = new_entity(global_type, mangle_vtable_name(clazz), vtable_type);
+	ir_entity *vtable = new_entity(global_type, vtable_name, vtable_type);
 
 	ir_graph *const_code = get_const_code_irg();
 	ir_initializer_t * init = create_initializer_compound(vtable_size);

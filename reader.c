@@ -1306,8 +1306,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 			ir_node *objptr       = args[0];
 			ir_node *mem          = get_store();
-			ir_node *vtable_load   = new_Load(mem, objptr /*vptr is first member*/, mode_P, cons_none);
-			ir_node *vtable_addr   = new_Proj(vtable_load, mode_P, pn_Load_res);
+			ir_node *vtable_load  = new_Load(mem, objptr /*vptr is first member*/, mode_P, cons_none);
+			ir_node *vtable_addr  = new_Proj(vtable_load, mode_P, pn_Load_res);
 			ir_node *new_mem      = new_Proj(vtable_load, mode_M, pn_Load_M);
 			set_store(new_mem);
 
@@ -1507,7 +1507,7 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	if (method->access_flags & ACCESS_FLAG_NATIVE) {
 		set_entity_visibility(entity, ir_visibility_external);
 		ld_ident = mangle_native_func(owner, type, id);
-	} else if (strcmp(name, "main") == 0) {
+	} else if (strcmp(name, "main") == 0 && strcmp(descriptor, "([Ljava/lang/String;)V") == 0) {
 		ld_ident = new_id_from_str("main");
 	} else {
 		ld_ident = mangle_entity_name(owner, type, id);
@@ -1567,6 +1567,15 @@ static ir_type *get_class_type(const char *name)
 		method_t *method = class_file->methods[m];
 		create_method_entity(method, type);
 	}
+
+	// trigger loading of all referenced classes
+	for (int i = 1; i < cls->n_constants; i++) {
+		if (cls->constants[i]->kind == CONSTANT_CLASSREF) {
+			const char* referenced_class_name = get_constant_string(cls->constants[i]->classref.name_index);
+			get_class_type(referenced_class_name);
+		}
+	}
+
 	assert(class_file == cls);
 	class_file = old_class_file;
 
