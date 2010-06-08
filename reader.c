@@ -72,7 +72,7 @@ ir_type *type_array_double;
 ir_type *type_array_reference;
 unsigned type_reference_size;
 
-ir_type *global_type;
+ident *  vptr_ident;
 
 static void init_types(void)
 {
@@ -122,7 +122,7 @@ static void init_types(void)
 
 	type_array_reference    = new_type_array(1, type_reference);
 
-	global_type = get_glob_type();
+	vptr_ident = new_id_from_str(VPTR_ID);
 }
 
 static cpmap_t class_registry;
@@ -1304,27 +1304,10 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				args[i]           = val;
 			}
 
-			ir_node *objptr       = args[0];
-			ir_node *mem          = get_store();
-			ir_node *vtable_load  = new_Load(mem, objptr /*vptr is first member*/, mode_P, cons_none);
-			ir_node *vtable_addr  = new_Proj(vtable_load, mode_P, pn_Load_res);
-			ir_node *new_mem      = new_Proj(vtable_load, mode_M, pn_Load_M);
-			set_store(new_mem);
-
-			int vtable_id         = get_entity_vtable_number(entity);
-			assert(vtable_id >= 0);
-
-			ir_node *vtable_offset= new_Const_long(mode_P, vtable_id * type_reference_size);
-			ir_node *funcptr_addr = new_Add(vtable_addr, vtable_offset, mode_P);
-			         mem          = get_store();
-			ir_node *callee_load  = new_Load(mem, funcptr_addr, mode_P, cons_none);
-			ir_node *callee       = new_Proj(callee_load, mode_P, pn_Load_res);
-			         new_mem      = new_Proj(callee_load, mode_M, pn_Load_M);
-			set_store(new_mem);
-
-			         mem          = get_store();
-			ir_node *call         = new_Call(mem, callee, n_args, args, type);
-			         new_mem      = new_Proj(call, mode_M, pn_Call_M);
+			ir_node *mem      = get_store();
+			ir_node *callee   = new_Sel(new_NoMem(), args[0], 0, NULL, entity); // TODO: NoMem ok?
+			ir_node *call     = new_Call(mem, callee, n_args, args, type);
+			ir_node *new_mem  = new_Proj(call, mode_M, pn_Call_M);
 			set_store(new_mem);
 
 			int n_res = get_method_n_ress(type);
@@ -1405,18 +1388,6 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node  *result    = new_Proj(alloc, mode_reference, pn_Alloc_res);
 			set_store(new_mem);
 			symbolic_push(result);
-
-			ir_entity *vptr_entity    = get_class_member_by_name(classtype, new_id_from_str("vptr"));
-			ir_node   *vptr           = new_Sel(new_NoMem(), result, 0, NULL, vptr_entity);
-
-			ir_entity *vtable_entity  = get_class_member_by_name(global_type, mangle_vtable_name(classtype));
-			ir_node   *vtable_symconst= create_symconst(vtable_entity);
-
-			           mem            = get_store();
-			ir_node   *vptr_store     = new_Store(mem, vptr, vtable_symconst, cons_none);
-			           new_mem        = new_Proj(vptr_store, mode_M, pn_Store_M);
-			set_store(new_mem);
-
 			continue;
 		}
 		case OPC_NEWARRAY: {
@@ -1552,12 +1523,14 @@ static ir_type *get_class_type(const char *name)
 		ir_type *supertype = get_classref_type(class_file->super_class);
 		assert (supertype != type);
 		add_class_supertype(type, supertype);
+		ir_entity *superclass_vptr = get_class_member_by_name(supertype, vptr_ident);
+		ir_entity *vptr = new_entity(type, vptr_ident, type_reference);
+		add_entity_overwrites(vptr, superclass_vptr);
 	} else {
 		/* this should only happen for java.lang.Object */
 		assert(strcmp(name, "java/lang/Object") == 0);
+		new_entity(type, vptr_ident, type_reference);
 	}
-
-	new_entity(type, new_id_from_str("vptr"), type_reference);
 
 	for (size_t f = 0; f < (size_t) class_file->n_fields; ++f) {
 		field_t *field = class_file->fields[f];
@@ -1566,14 +1539,6 @@ static ir_type *get_class_type(const char *name)
 	for (size_t m = 0; m < (size_t) class_file->n_methods; ++m) {
 		method_t *method = class_file->methods[m];
 		create_method_entity(method, type);
-	}
-
-	// trigger loading of all referenced classes
-	for (int i = 1; i < cls->n_constants; i++) {
-		if (cls->constants[i]->kind == CONSTANT_CLASSREF) {
-			const char* referenced_class_name = get_constant_string(cls->constants[i]->classref.name_index);
-			get_class_type(referenced_class_name);
-		}
 	}
 
 	assert(class_file == cls);
@@ -1654,14 +1619,13 @@ int main(int argc, char **argv)
 	/* trigger loading of the class specified on commandline */
 	get_class_type(argv[1]);
 
-	prepare_oo();
-
 	while (!pdeq_empty(worklist)) {
 		ir_type *classtype = pdeq_getl(worklist);
 		construct_class_methods(classtype);
 	}
 
 	irp_finalize_cons();
+
 	lower_oo();
 
 	int n_irgs = get_irp_n_irgs();
