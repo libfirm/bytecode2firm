@@ -167,6 +167,40 @@ name_finished: ;
 	return result;
 }
 
+ident *mangle_vtable_name(ir_type *clazz)
+{
+	assert(obstack_object_size(&obst) == 0);
+	assert(clazz != NULL && is_Class_type(clazz));
+
+	obstack_grow(&obst, "vtable_", 7);
+	/* mangle in a C++ like fashion so we can use c++filt to demangle */
+	obstack_grow(&obst, "_ZN", 3);
+
+	/* mangle class name */
+	ident      *class_ident = get_class_ident(clazz);
+	const char *string      = get_id_str(class_ident);
+	const char *p           = string;
+	while (*p != '\0') {
+		while (*p == '/')
+			++p;
+		/* search for '/' or '\0' */
+		size_t l;
+		for (l = 0; p[l] != '\0' && p[l] != '/'; ++l) {
+		}
+		obstack_printf(&obst, "%d", l);
+		for ( ; l > 0; --l) {
+			obstack_1grow(&obst, *(p++));
+		}
+	}
+
+	size_t  result_len    = obstack_object_size(&obst);
+	char   *result_string = obstack_finish(&obst);
+	ident  *result        = new_id_from_chars(result_string, result_len);
+	obstack_free(&obst, result_string);
+
+	return result;
+}
+
 void init_mangle(void)
 {
 	obstack_init(&obst);

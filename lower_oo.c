@@ -6,6 +6,22 @@
 #include "adt/error.h"
 #include "types.h"
 
+#include "class_file.h"
+#include "mangle.h"
+
+static ir_type *type_reference;
+static unsigned type_reference_size;
+static ir_type *global_type;
+static ident* vptr_ident;
+
+static void init_types(void)
+{
+	type_reference = new_type_primitive(mode_reference);
+	type_reference_size = get_type_size_bytes(type_reference);
+	global_type = get_glob_type();
+	vptr_ident = new_id_from_str(VPTR_ID);
+}
+
 static ir_entity *calloc_entity;
 
 static void move_to_global(ir_entity *entity)
@@ -13,23 +29,83 @@ static void move_to_global(ir_entity *entity)
 	/* move to global type */
 	ir_type *owner = get_entity_owner(entity);
 	assert(is_Class_type(owner));
-	set_entity_owner(entity, get_glob_type());
+	remove_class_member(owner, entity);
+	set_entity_owner(entity, global_type);
 }
 
-#if 0
-static void create_vtable(ir_type *type)
+static void setup_vtable(ir_type *clazz, void *env)
 {
-	ir_type *vtable = new_type_struct(NULL);
+	(void) env;
+	assert(is_Class_type(clazz));
 
-	/* VTable Layout:
-	 *  - ref instance of "class" / classinfo
-	 *  (- some info that makes dynamic_cast faster?)
-	 *  - func1
-	 *  - func2
-	 *  ...
-	 */
+	ident *vtable_name = mangle_vtable_name(clazz);
+
+	assert (get_class_member_by_name(global_type, vtable_name) == NULL);
+
+	ir_type *superclass = NULL;
+	int vtable_size = 0;
+	if (get_class_n_supertypes(clazz) > 0) {
+		 superclass = get_class_supertype(clazz, 0);
+		 vtable_size = get_class_vtable_size(superclass);
+	}
+	set_class_vtable_size(clazz, vtable_size);
+
+	// assign vtable ids
+	for (int i = 0; i < get_class_n_members(clazz); i++) {
+		ir_entity *member = get_class_member(clazz, i);
+		if (is_method_entity(member)
+			&& ! (((method_t *)get_entity_link(member))->access_flags & ACCESS_FLAG_STATIC)) {
+			if (get_entity_n_overwrites(member) > 0) { // this method already has a vtable id, copy it from the superclass' implementation
+				ir_entity *overwritten_entity = get_entity_overwrites(member, 0);
+				set_entity_vtable_number(member, get_entity_vtable_number(overwritten_entity));
+			} else {
+				set_entity_vtable_number(member, vtable_size);
+				set_class_vtable_size(clazz, ++vtable_size);
+			}
+		}
+	}
+
+	// the vtable currently is an array of pointers
+	ir_type *vtable_type = new_type_array(1, type_reference);
+	set_array_bounds_int(vtable_type, 0, 0, vtable_size);
+	set_type_size_bytes(vtable_type, type_reference_size * vtable_size);
+	set_type_state(vtable_type, layout_fixed);
+
+	ir_entity *vtable = new_entity(global_type, vtable_name, vtable_type);
+
+	ir_graph *const_code = get_const_code_irg();
+	ir_initializer_t * init = create_initializer_compound(vtable_size);
+
+	if (superclass != NULL) {
+		int superclass_vtable_size = get_class_vtable_size(superclass);
+		ir_entity *superclass_vtable_entity = get_class_member_by_name(global_type, mangle_vtable_name(superclass));
+		assert (superclass_vtable_entity != NULL);
+		ir_initializer_t *superclass_vtable_init = get_entity_initializer(superclass_vtable_entity);
+
+		// copy vtable initialization from superclass
+		for (int i = 0; i < superclass_vtable_size; i++) {
+				ir_initializer_t *superclass_vtable_init_value = get_initializer_compound_value(superclass_vtable_init, i);
+				set_initializer_compound_value (init, i, superclass_vtable_init_value);
+		}
+	}
+
+	// setup / replace vtable entries to point to clazz's implementation
+	for (int i = 0; i < get_class_n_members(clazz); i++) {
+		ir_entity *member = get_class_member(clazz, i);
+		if (is_method_entity(member)) {
+			int member_vtid = get_entity_vtable_number(member);
+			if (member_vtid >= 0) {
+				union symconst_symbol sym;
+				sym.entity_p = member;
+				ir_node *symconst_node = new_r_SymConst(const_code, mode_P, sym, symconst_addr_ent);
+				ir_initializer_t *val = create_initializer_const(symconst_node);
+				set_initializer_compound_value (init, member_vtid, val);
+			}
+		}
+	}
+
+	set_entity_initializer(vtable, init);
 }
-#endif
 
 static void lower_type(type_or_ent tore, void *env)
 {
@@ -42,6 +118,9 @@ static void lower_type(type_or_ent tore, void *env)
 		set_type_state(type, layout_fixed);
 		return;
 	}
+
+	if (type == global_type)
+		return;
 
 	int n_members = get_class_n_members(type);
 	for (int m = n_members-1; m >= 0; --m) {
@@ -56,15 +135,14 @@ static void lower_type(type_or_ent tore, void *env)
 	default_layout_compound_type(type);
 }
 
-static void lower_node(ir_node *node, void *env)
+static void lower_Alloc(ir_node *node)
 {
-	(void) env;
-	unsigned addr_delta = 0;
+	assert(is_Alloc(node));
 
-	if (!is_Alloc(node))
-		return;
 	if (get_Alloc_where(node) != heap_alloc)
 		return;
+
+	unsigned addr_delta = 0;
 
 	ir_graph *irg   = get_irn_irg(node);
 	ir_type  *type  = get_Alloc_type(node);
@@ -110,12 +188,78 @@ static void lower_node(ir_node *node, void *env)
 		res = new_r_Add(block, res, delta, mode_reference);
 	}
 
+	if (is_Class_type(type)) {
+		ir_entity *vptr_entity    = get_class_member_by_name(type, vptr_ident);
+		ir_node   *vptr           = new_r_Sel(block, new_NoMem(), res, 0, NULL, vptr_entity);
+
+		ir_entity *vtable_entity  = get_class_member_by_name(global_type, mangle_vtable_name(type));
+		union symconst_symbol sym;
+		sym.entity_p = vtable_entity;
+		ir_node   *vtable_symconst= new_r_SymConst(irg, mode_reference, sym, symconst_addr_ent);
+		ir_node   *vptr_store     = new_r_Store(block, new_mem, vptr, vtable_symconst, cons_none);
+		           new_mem        = new_r_Proj(vptr_store, mode_M, pn_Store_M);
+	}
+
 	turn_into_tuple(node, pn_Alloc_max);
 	set_irn_n(node, pn_Alloc_M, new_mem);
 	set_irn_n(node, pn_Alloc_X_regular, new_Bad());
 	set_irn_n(node, pn_Alloc_X_except, new_Bad());
 	set_irn_n(node, pn_Alloc_res, res);
 }
+
+static void lower_Sel_Call(ir_node* call)
+{
+	assert(is_Call(call));
+
+	ir_node *callee = get_Call_ptr(call);
+	if (! is_Sel(callee))
+		return;
+
+	ir_node *objptr = get_Sel_ptr(callee);
+	ir_entity *method_entity = get_Sel_entity(callee);
+	if (! is_method_entity(method_entity))
+		return;
+
+	ir_type *classtype    = get_entity_owner(method_entity);
+	if (! is_Class_type(classtype))
+		return;
+
+	ir_graph *irg         = get_irn_irg(call);
+	ir_node  *block       = get_nodes_block(call);
+
+	ir_entity *vptr_entity= get_class_member_by_name(classtype, vptr_ident);
+	ir_node *vptr         = new_r_Sel(block, new_NoMem(), objptr, 0, NULL, vptr_entity);
+
+	ir_node *mem          = get_Call_mem(call);
+	ir_node *vtable_load  = new_r_Load(block, mem, vptr, mode_P, cons_none);
+	ir_node *vtable_addr  = new_r_Proj(vtable_load, mode_P, pn_Load_res);
+	ir_node *new_mem      = new_r_Proj(vtable_load, mode_M, pn_Load_M);
+
+	int vtable_id         = get_entity_vtable_number(method_entity);
+	assert(vtable_id >= 0);
+
+	ir_node *vtable_offset= new_r_Const_long(irg, mode_P, vtable_id * type_reference_size);
+	ir_node *funcptr_addr = new_r_Add(block, vtable_addr, vtable_offset, mode_P);
+	ir_node *callee_load  = new_r_Load(block, new_mem, funcptr_addr, mode_P, cons_none);
+	ir_node *real_callee  = new_r_Proj(callee_load, mode_P, pn_Load_res);
+	         new_mem      = new_r_Proj(callee_load, mode_M, pn_Load_M);
+
+	set_Call_ptr(call, real_callee);
+	set_Call_mem(call, new_mem);
+
+	// TODO: Alternativ: nur Sel lowern -> was macht man mit dem new_mem?
+}
+
+static void lower_node(ir_node *node, void *env)
+{
+	(void) env;
+	if (is_Alloc(node)) {
+		lower_Alloc(node);
+	} else if (is_Call(node)) {
+		lower_Sel_Call(node);
+	}
+}
+
 
 static void lower_graph(ir_graph *irg)
 {
@@ -127,7 +271,9 @@ static void lower_graph(ir_graph *irg)
  */
 void lower_oo(void)
 {
-	type_walk_prog(lower_type, NULL, NULL);
+	init_types();
+
+	class_walk_super2sub(setup_vtable, NULL, NULL);
 
 	ir_type *method_type = new_type_method(2, 1);
 	ir_type *t_size_t    = new_type_primitive(mode_Iu);
@@ -147,5 +293,8 @@ void lower_oo(void)
 		lower_graph(irg);
 	}
 
+	type_walk_prog(lower_type, NULL, NULL);
+
+	dump_all_ir_graphs(dump_ir_graph, "__before_highlevel");
 	lower_highlevel(0);
 }
