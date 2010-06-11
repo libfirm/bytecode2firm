@@ -9,6 +9,8 @@
 #include "class_file.h"
 #include "mangle.h"
 
+#define VTABLE_NUM_NOT_SET ((unsigned)-1) // see: "libfirm/ir/tr/entity_t.h"
+
 static ir_type *type_reference;
 static unsigned type_reference_size;
 static ir_type *global_type;
@@ -93,7 +95,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 		ir_entity *member = get_class_member(clazz, i);
 		if (is_method_entity(member)) {
 			unsigned member_vtid = get_entity_vtable_number(member);
-			if (member_vtid >= 0) {
+			if (member_vtid != VTABLE_NUM_NOT_SET) {
 				union symconst_symbol sym;
 				sym.entity_p = member;
 				ir_node *symconst_node = new_r_SymConst(const_code, mode_P, sym, symconst_addr_ent);
@@ -235,7 +237,7 @@ static void lower_Sel_Call(ir_node* call)
 	ir_node *new_mem      = new_r_Proj(vtable_load, mode_M, pn_Load_M);
 
 	unsigned vtable_id    = get_entity_vtable_number(method_entity);
-	assert(vtable_id >= 0);
+	assert(vtable_id != VTABLE_NUM_NOT_SET);
 
 	ir_node *vtable_offset= new_r_Const_long(irg, mode_P, vtable_id * type_reference_size);
 	ir_node *funcptr_addr = new_r_Add(block, vtable_addr, vtable_offset, mode_P);
