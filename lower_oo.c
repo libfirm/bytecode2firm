@@ -29,7 +29,6 @@ static void move_to_global(ir_entity *entity)
 	/* move to global type */
 	ir_type *owner = get_entity_owner(entity);
 	assert(is_Class_type(owner));
-	remove_class_member(owner, entity);
 	set_entity_owner(entity, global_type);
 }
 
@@ -247,7 +246,7 @@ static void lower_Sel_Call(ir_node* call)
 	set_Call_ptr(call, real_callee);
 	set_Call_mem(call, new_mem);
 
-	// TODO: Alternativ: nur Sel lowern -> was macht man mit dem new_mem?
+	// TODO: Or could we lower just the Sel node and propagate the new Mem to its successors somehow?
 }
 
 static void lower_node(ir_node *node, void *env)
