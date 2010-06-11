@@ -42,7 +42,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 	assert (get_class_member_by_name(global_type, vtable_name) == NULL);
 
 	ir_type *superclass = NULL;
-	int vtable_size = 0;
+	unsigned vtable_size = 0;
 	if (get_class_n_supertypes(clazz) > 0) {
 		 superclass = get_class_supertype(clazz, 0);
 		 vtable_size = get_class_vtable_size(superclass);
@@ -76,13 +76,13 @@ static void setup_vtable(ir_type *clazz, void *env)
 	ir_initializer_t * init = create_initializer_compound(vtable_size);
 
 	if (superclass != NULL) {
-		int superclass_vtable_size = get_class_vtable_size(superclass);
+		unsigned superclass_vtable_size = get_class_vtable_size(superclass);
 		ir_entity *superclass_vtable_entity = get_class_member_by_name(global_type, mangle_vtable_name(superclass));
 		assert (superclass_vtable_entity != NULL);
 		ir_initializer_t *superclass_vtable_init = get_entity_initializer(superclass_vtable_entity);
 
 		// copy vtable initialization from superclass
-		for (int i = 0; i < superclass_vtable_size; i++) {
+		for (unsigned i = 0; i < superclass_vtable_size; i++) {
 				ir_initializer_t *superclass_vtable_init_value = get_initializer_compound_value(superclass_vtable_init, i);
 				set_initializer_compound_value (init, i, superclass_vtable_init_value);
 		}
@@ -92,7 +92,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 	for (int i = 0; i < get_class_n_members(clazz); i++) {
 		ir_entity *member = get_class_member(clazz, i);
 		if (is_method_entity(member)) {
-			int member_vtid = get_entity_vtable_number(member);
+			unsigned member_vtid = get_entity_vtable_number(member);
 			if (member_vtid >= 0) {
 				union symconst_symbol sym;
 				sym.entity_p = member;
@@ -234,7 +234,7 @@ static void lower_Sel_Call(ir_node* call)
 	ir_node *vtable_addr  = new_r_Proj(vtable_load, mode_P, pn_Load_res);
 	ir_node *new_mem      = new_r_Proj(vtable_load, mode_M, pn_Load_M);
 
-	int vtable_id         = get_entity_vtable_number(method_entity);
+	unsigned vtable_id    = get_entity_vtable_number(method_entity);
 	assert(vtable_id >= 0);
 
 	ir_node *vtable_offset= new_r_Const_long(irg, mode_P, vtable_id * type_reference_size);
