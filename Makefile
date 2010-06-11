@@ -9,6 +9,8 @@ LFLAGS = $(FIRM_LIBS)
 SOURCES = $(wildcard *.c) $(wildcard adt/*.c)
 OBJECTS = $(addprefix build/, $(addsuffix .o, $(basename $(SOURCES))))
 
+all: $(GOAL)
+
 $(GOAL): $(OBJECTS)
 	$(CC) -o $@ $^ $(LFLAGS)
 
