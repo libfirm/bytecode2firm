@@ -8,17 +8,6 @@
 
 static struct obstack obst;
 
-static void mangle_type(ir_type *type)
-{
-	if (is_Primitive_type(type)) {
-		const char *tag = get_type_link(type);
-		size_t      len = strlen(tag);
-		obstack_grow(&obst, tag, len);
-	} else {
-		/* TODO */
-	}
-}
-
 static void mangle_java_ident(ident *ident)
 {
 	const char *name = get_id_str(ident);
@@ -27,6 +16,47 @@ static void mangle_java_ident(ident *ident)
 		if (c == '/')
 			c = '_';
 		obstack_1grow(&obst, c);
+	}
+}
+/**
+ * Hint: you must emit "N" before and "E" after a call to this method.
+ */
+static void mangle_qualified_class_name(ident *class_ident)
+{
+	const char *string      = get_id_str(class_ident);
+	const char *p           = string;
+	while (*p != '\0') {
+		while (*p == '/')
+			++p;
+		/* search for '/' or '\0' */
+		size_t l;
+		for (l = 0; p[l] != '\0' && p[l] != '/'; ++l) {
+		}
+		obstack_printf(&obst, "%d", l);
+		for ( ; l > 0; --l) {
+			obstack_1grow(&obst, *(p++));
+		}
+	}
+}
+
+static void mangle_type(ir_type *type)
+{
+	if (is_Primitive_type(type)) {
+		const char *tag = get_type_link(type);
+		size_t      len = strlen(tag);
+		obstack_grow(&obst, tag, len);
+	} else if (is_Pointer_type(type)) {
+		ir_type *pointsto = get_pointer_points_to_type(type);
+		if (is_Class_type(pointsto)) {
+			ident *class_ident = get_class_ident(pointsto);
+			obstack_grow(&obst, "PN", 2);
+			mangle_qualified_class_name(class_ident);
+			obstack_1grow(&obst, 'E');
+		} else {
+			// assume it's an array
+			obstack_1grow(&obst, 'P');
+			mangle_type(pointsto);
+		}
 	}
 }
 
@@ -102,31 +132,18 @@ name_finished: ;
 	return result;
 }
 
+/**
+ *  mangles in a C++ like fashion so we can use c++filt to demangle
+ */
 ident *mangle_entity_name(ir_type *owner, ir_type *type, ident *id)
 {
-	assert(obstack_object_size(&obst) == 0);
+	assert (obstack_object_size(&obst) == 0);
+	assert (owner != NULL);
 
-	if (owner != NULL) {
-		/* mangle in a C++ like fashion so we can use c++filt to demangle */
-		obstack_grow(&obst, "_ZN", 3);
+	obstack_grow(&obst, "_ZN", 3);
 
-		/* mangle class name */
-		ident      *class_ident = get_class_ident(owner);
-		const char *string      = get_id_str(class_ident);
-		const char *p           = string;
-		while (*p != '\0') {
-			while (*p == '/')
-				++p;
-			/* search for '/' or '\0' */
-			size_t l;
-			for (l = 0; p[l] != '\0' && p[l] != '/'; ++l) {
-			}
-			obstack_printf(&obst, "%d", l);
-			for ( ; l > 0; --l) {
-				obstack_1grow(&obst, *(p++));
-			}
-		}
-	}
+	ident *class_ident = get_class_ident(owner);
+	mangle_qualified_class_name(class_ident);
 
 	/* mangle entity name */
 	const char *string = get_id_str(id);
@@ -141,21 +158,28 @@ ident *mangle_entity_name(ir_type *owner, ir_type *type, ident *id)
 	if (!is_Method_type(type))
 		goto name_finished;
 
+	int n_ress = get_method_n_ress(type);
+	int n_params = get_method_n_params(type);
+
+	if (n_ress == 0 && n_params == 0) {
+		obstack_1grow(&obst, 'v');
+		goto name_finished;
+	}
+
 	obstack_1grow(&obst, 'J');
 
+	/* mangle return type */
+	if (n_ress == 0) {
+		obstack_1grow(&obst, 'v');
+	} else {
+		assert(n_ress == 1);
+		mangle_type(get_method_res_type(type, 0));
+	}
+
 	/* mangle parameter types */
-	int n_params = get_method_n_params(type);
 	for (int i = 0; i < n_params; ++i) {
 		ir_type *parameter = get_method_param_type(type, i);
 		mangle_type(parameter);
-	}
-
-	/* mangle return type */
-	if (get_method_n_ress(type) == 0) {
-		obstack_1grow(&obst, 'v');
-	} else {
-		assert(get_method_n_ress(type) == 1);
-		mangle_type(get_method_res_type(type, 0));
 	}
 
 name_finished: ;
@@ -172,26 +196,13 @@ ident *mangle_vtable_name(ir_type *clazz)
 	assert(obstack_object_size(&obst) == 0);
 	assert(clazz != NULL && is_Class_type(clazz));
 
-	obstack_grow(&obst, "vtable_", 7);
-	/* mangle in a C++ like fashion so we can use c++filt to demangle */
 	obstack_grow(&obst, "_ZN", 3);
+	obstack_grow(&obst, "6vtable2__", 10);
 
-	/* mangle class name */
 	ident      *class_ident = get_class_ident(clazz);
-	const char *string      = get_id_str(class_ident);
-	const char *p           = string;
-	while (*p != '\0') {
-		while (*p == '/')
-			++p;
-		/* search for '/' or '\0' */
-		size_t l;
-		for (l = 0; p[l] != '\0' && p[l] != '/'; ++l) {
-		}
-		obstack_printf(&obst, "%d", l);
-		for ( ; l > 0; --l) {
-			obstack_1grow(&obst, *(p++));
-		}
-	}
+	mangle_qualified_class_name(class_ident);
+
+	obstack_1grow(&obst, 'E');
 
 	size_t  result_len    = obstack_object_size(&obst);
 	char   *result_string = obstack_finish(&obst);
