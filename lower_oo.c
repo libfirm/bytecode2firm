@@ -1,6 +1,7 @@
 #include "lower_oo.h"
 
 #include <assert.h>
+#include <string.h>
 #include <libfirm/firm.h>
 
 #include "adt/error.h"
@@ -55,7 +56,8 @@ static void setup_vtable(ir_type *clazz, void *env)
 	for (int i = 0; i < get_class_n_members(clazz); i++) {
 		ir_entity *member = get_class_member(clazz, i);
 		if (is_method_entity(member)
-			&& ! (((method_t *)get_entity_link(member))->access_flags & ACCESS_FLAG_STATIC)) {
+			&& ! (((method_t *)get_entity_link(member))->access_flags & ACCESS_FLAG_STATIC)
+			&& ! (strncmp(get_entity_name(member), "<init>", 6) == 0)) {
 			if (get_entity_n_overwrites(member) > 0) { // this method already has a vtable id, copy it from the superclass' implementation
 				ir_entity *overwritten_entity = get_entity_overwrites(member, 0);
 				set_entity_vtable_number(member, get_entity_vtable_number(overwritten_entity));
