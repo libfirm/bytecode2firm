@@ -13,7 +13,7 @@ static void mangle_java_ident(ident *ident)
 	const char *name = get_id_str(ident);
 	for (const char *p = name; *p != '\0'; ++p) {
 		char c = *p;
-		if (c == '/')
+		if (c == '/' || c == '$')
 			c = '_';
 		obstack_1grow(&obst, c);
 	}
