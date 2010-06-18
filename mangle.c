@@ -67,12 +67,17 @@ static void mangle_method_type_simple(ir_type *type)
 {
 	if (is_Pointer_type(type)) {
 		ir_type *pointsto = get_pointer_points_to_type(type);
-		assert(is_Class_type(pointsto));
-		obstack_1grow(&obst, 'L');
-		mangle_java_ident(get_class_ident(pointsto));
-		obstack_grow(&obst, "_2", 2);
+		if (is_Class_type(pointsto)) {
+			obstack_1grow(&obst, 'L');
+			mangle_java_ident(get_class_ident(pointsto));
+			obstack_grow(&obst, "_2", 2);
+		} else {
+			// assume it's an array
+			obstack_grow(&obst, "_3", 2);
+			type = pointsto;
+		}
 	}
-	else if (type == type_byte)    { obstack_1grow(&obst, 'B'); }
+	     if (type == type_byte)    { obstack_1grow(&obst, 'B'); }
 	else if (type == type_char)    { obstack_1grow(&obst, 'C'); }
 	else if (type == type_short)   { obstack_1grow(&obst, 'S'); }
 	else if (type == type_int)     { obstack_1grow(&obst, 'I'); }
@@ -80,14 +85,8 @@ static void mangle_method_type_simple(ir_type *type)
 	else if (type == type_boolean) { obstack_1grow(&obst, 'Z'); }
 	else if (type == type_float)   { obstack_1grow(&obst, 'F'); }
 	else if (type == type_double)  { obstack_1grow(&obst, 'D'); }
-	else if (type == type_array_byte_boolean) { obstack_grow(&obst, "_3B", 3); }
-	else if (type == type_array_char)         { obstack_grow(&obst, "_3C", 3); }
-	else if (type == type_array_short)        { obstack_grow(&obst, "_3S", 3); }
-	else if (type == type_array_int)          { obstack_grow(&obst, "_3I", 3); }
-	else if (type == type_array_long)         { obstack_grow(&obst, "_3J", 3); }
-	else if (type == type_array_float)        { obstack_grow(&obst, "_3F", 3); }
-	else if (type == type_array_double)       { obstack_grow(&obst, "_3D", 3); }
-	else if (type == type_array_reference)    { obstack_grow(&obst, "_3R", 3); }
+	// the method descriptors consist of primitive and pointer types
+	// array types are not used directly.
 	else {
 		/* TODO */
 		panic("TODO: can't mangle type");

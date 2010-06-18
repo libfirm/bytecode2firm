@@ -12,19 +12,6 @@
 
 #define VTABLE_NUM_NOT_SET ((unsigned)-1) // see: "libfirm/ir/tr/entity_t.h"
 
-static ir_type *type_reference;
-static unsigned type_reference_size;
-static ir_type *global_type;
-static ident* vptr_ident;
-
-static void init_types(void)
-{
-	type_reference = new_type_primitive(mode_reference);
-	type_reference_size = get_type_size_bytes(type_reference);
-	global_type = get_glob_type();
-	vptr_ident = new_id_from_str(VPTR_ID);
-}
-
 static ir_entity *calloc_entity;
 
 static void move_to_global(ir_entity *entity)
@@ -69,6 +56,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 	}
 
 	// the vtable currently is an array of pointers
+	unsigned type_reference_size = get_type_size_bytes(type_reference);
 	ir_type *vtable_type = new_type_array(1, type_reference);
 	set_array_bounds_int(vtable_type, 0, 0, vtable_size);
 	set_type_size_bytes(vtable_type, type_reference_size * vtable_size);
@@ -241,6 +229,7 @@ static void lower_Sel_Call(ir_node* call)
 	unsigned vtable_id    = get_entity_vtable_number(method_entity);
 	assert(vtable_id != VTABLE_NUM_NOT_SET);
 
+	unsigned type_reference_size = get_type_size_bytes(type_reference);
 	ir_node *vtable_offset= new_r_Const_long(irg, mode_P, vtable_id * type_reference_size);
 	ir_node *funcptr_addr = new_r_Add(block, vtable_addr, vtable_offset, mode_P);
 	ir_node *callee_load  = new_r_Load(block, new_mem, funcptr_addr, mode_P, cons_none);
@@ -249,8 +238,6 @@ static void lower_Sel_Call(ir_node* call)
 
 	set_Call_ptr(call, real_callee);
 	set_Call_mem(call, new_mem);
-
-	// TODO: Or could we lower just the Sel node and propagate the new Mem to its successors somehow?
 }
 
 static void lower_node(ir_node *node, void *env)
@@ -274,8 +261,6 @@ static void lower_graph(ir_graph *irg)
  */
 void lower_oo(void)
 {
-	init_types();
-
 	class_walk_super2sub(setup_vtable, NULL, NULL);
 
 	ir_type *method_type = new_type_method(2, 1);

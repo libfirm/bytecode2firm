@@ -70,9 +70,9 @@ ir_type *type_array_long;
 ir_type *type_array_float;
 ir_type *type_array_double;
 ir_type *type_array_reference;
-unsigned type_reference_size;
 
-ident *  vptr_ident;
+ident   *vptr_ident;
+ir_type *global_type;
 
 static void init_types(void)
 {
@@ -118,11 +118,10 @@ static void init_types(void)
 	type_array_double       = new_type_array(1, type_double);
 
 	type_reference          = new_type_primitive(mode_reference);
-	type_reference_size     = get_type_size_bytes(type_reference);
-
 	type_array_reference    = new_type_array(1, type_reference);
 
-	vptr_ident = new_id_from_str(VPTR_ID);
+	vptr_ident              = new_id_from_str(VPTR_ID);
+	global_type             = get_glob_type();
 }
 
 static cpmap_t class_registry;
@@ -548,6 +547,79 @@ static void pop_set_local(int idx, ir_mode *mode)
 	set_local(idx, value);
 }
 
+/*
+ * Creates an entity initialized to the given string.
+ * The string is written bytewise.
+ */
+static ir_entity *string_to_firm(const char *bytes, size_t length)
+{
+	ir_mode   *element_mode = mode_Bu;
+	ir_type   *element_type = new_type_primitive(element_mode);
+	ir_type   *array_type   = new_type_array(1, element_type);
+
+    ident     *id           = id_unique("str_%u");
+    ir_entity *entity       = new_entity(global_type, id, array_type);
+    set_entity_ld_ident(entity, id);
+    set_entity_visibility(entity, ir_visibility_private);
+    add_entity_linkage(entity, IR_LINKAGE_CONSTANT);
+
+    set_array_lower_bound_int(array_type, 0, 0);
+    set_array_upper_bound_int(array_type, 0, length+1);
+    set_type_size_bytes(array_type, length+1);
+    set_type_state(array_type, layout_fixed);
+
+    // initialize each array element to an input byte
+    ir_initializer_t *initializer = create_initializer_compound(length+1);
+    for (size_t i = 0; i < length; ++i) {
+        tarval           *tv  = new_tarval_from_long(bytes[i], element_mode);
+        ir_initializer_t *val = create_initializer_tarval(tv);
+        set_initializer_compound_value(initializer, i, val);
+    }
+
+    // append null byte
+    tarval *tv  = new_tarval_from_long('\0', element_mode);
+    ir_initializer_t *val = create_initializer_tarval(tv);
+    set_initializer_compound_value(initializer, length, val);
+
+    set_entity_initializer(entity, initializer);
+
+    return entity;
+}
+
+static ir_node *new_string_literal(const char* bytes, size_t length)
+{
+	ir_type *java_lang_String = get_class_type("java/lang/String");
+	assert (java_lang_String != NULL);
+
+	// allocate String instance
+	ir_node   *mem       = get_store();
+	ir_node   *alloc     = new_Alloc(mem, new_Const_long(mode_Iu, 1), java_lang_String, heap_alloc);
+	ir_node   *res       = new_Proj(alloc, mode_reference, pn_Alloc_res);
+	ir_node   *new_mem   = new_Proj(alloc, mode_M, pn_Alloc_M);
+	set_store(new_mem);
+
+	// create string const
+	ir_entity *string_constant = string_to_firm(bytes, length);
+	ir_node   *string_symc = create_symconst(string_constant);
+
+	// call constructor
+	ir_node *args[2];
+	args[0] = res;
+	args[1] = string_symc;
+
+	ir_entity *ctor      = get_class_member_by_name(java_lang_String, new_id_from_str("<init>.([C)V"));
+	ir_node   *ctor_symc = create_symconst(ctor);
+	ir_type   *ctor_type = get_entity_type(ctor);
+	assert (ctor != NULL);
+
+	           mem       = get_store();
+	ir_node   *call      = new_Call(mem, ctor_symc, 2, args, ctor_type);
+	           new_mem   = new_Proj(call, mode_M, pn_Call_M);
+	set_store(new_mem);
+
+	return res;
+}
+
 static void push_load_const(uint16_t index)
 {
 	const constant_t *constant = get_constant(index);
@@ -562,8 +634,12 @@ static void push_load_const(uint16_t index)
 		symbolic_push(cnode);
 		break;
 	}
-	case CONSTANT_STRING:
-		panic("string constant not implemented yet");
+	case CONSTANT_STRING: {
+		constant_t *utf8_const = get_constant(constant->string.string_index);
+		ir_node *string_literal = new_string_literal(utf8_const->utf8_string.bytes, utf8_const->utf8_string.length);
+		symbolic_push(string_literal);
+		break;
+	}
 	default:
 		panic("ldc without int, float or string constant");
 	}
@@ -1305,7 +1381,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			}
 
 			ir_node *mem      = get_store();
-			ir_node *callee   = new_Sel(new_NoMem(), args[0], 0, NULL, entity); // TODO: NoMem ok?
+			ir_node *callee   = new_Sel(new_NoMem(), args[0], 0, NULL, entity);
 			ir_node *call     = new_Call(mem, callee, n_args, args, type);
 			ir_node *new_mem  = new_Proj(call, mode_M, pn_Call_M);
 			set_store(new_mem);
