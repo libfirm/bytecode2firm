@@ -33,9 +33,11 @@ static void setup_vtable(ir_type *clazz, void *env)
 
 	ir_type *superclass = NULL;
 	unsigned vtable_size = 0;
-	if (get_class_n_supertypes(clazz) > 0) {
-		 superclass = get_class_supertype(clazz, 0);
-		 vtable_size = get_class_vtable_size(superclass);
+	int n_supertypes = get_class_n_supertypes(clazz);
+	if (n_supertypes > 0) {
+		assert (n_supertypes == 1);
+		superclass = get_class_supertype(clazz, 0);
+		vtable_size = get_class_vtable_size(superclass);
 	}
 	set_class_vtable_size(clazz, vtable_size);
 
@@ -45,9 +47,13 @@ static void setup_vtable(ir_type *clazz, void *env)
 		if (is_method_entity(member)
 			&& ! (((method_t *)get_entity_link(member))->access_flags & ACCESS_FLAG_STATIC)
 			&& ! (strncmp(get_entity_name(member), "<init>", 6) == 0)) {
-			if (get_entity_n_overwrites(member) > 0) { // this method already has a vtable id, copy it from the superclass' implementation
+			int n_overwrites = get_entity_n_overwrites(member);
+			if (n_overwrites > 0) { // this method already has a vtable id, copy it from the superclass' implementation
+				assert (n_overwrites == 1);
 				ir_entity *overwritten_entity = get_entity_overwrites(member, 0);
-				set_entity_vtable_number(member, get_entity_vtable_number(overwritten_entity));
+				unsigned vtable_id = get_entity_vtable_number(overwritten_entity);
+				assert (vtable_id != VTABLE_NUM_NOT_SET);
+				set_entity_vtable_number(member, vtable_id);
 			} else {
 				set_entity_vtable_number(member, vtable_size);
 				set_class_vtable_size(clazz, ++vtable_size);

@@ -1586,7 +1586,9 @@ static void create_method_entity(method_t *method, ir_type *owner)
 		ir_entity *superclass_method = NULL;
 
 		while(superclass_type != NULL && superclass_method == NULL) {
-			if (get_class_n_supertypes(superclass_type) > 0) {
+			int n_supertypes = get_class_n_supertypes(superclass_type);
+			if (n_supertypes > 0) {
+					assert (n_supertypes == 1);
 					superclass_type = get_class_supertype(superclass_type, 0);
 					ir_entity *member_in_superclass = get_class_member_by_name(superclass_type, mangled_id);
 					if (member_in_superclass != NULL && is_method_entity(member_in_superclass)) {
