@@ -662,6 +662,16 @@ static void construct_new_array(ir_type *array_type, ir_node *count)
 	symbolic_push(res);
 }
 
+static uint16_t get_16bit_arg(uint32_t *pos)
+{
+	uint32_t p     = *pos;
+	uint8_t  b1    = code->code[p++];
+	uint8_t  b2    = code->code[p++];
+	uint16_t value = (b1 << 8) | b2;
+	*pos = p;
+	return value;
+}
+
 static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 {
 	code = new_code;
@@ -700,7 +710,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 	for (uint32_t i = 0; i < code->code_length; /* nothing */) {
 		opcode_kind_t opcode = code->code[i++];
-		switch(opcode) {
+		switch (opcode) {
 		case OPC_BIPUSH:
 		case OPC_LDC:
 		case OPC_ALOAD:
@@ -715,7 +725,30 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ASTORE:
 		case OPC_NEWARRAY:
 			i++;
-			break;
+			continue;
+
+		case OPC_WIDE:
+			opcode = code->code[i++];
+			switch (opcode) {
+			case OPC_ILOAD:
+			case OPC_FLOAD:
+			case OPC_ALOAD:
+			case OPC_LLOAD:
+			case OPC_DLOAD:
+			case OPC_ISTORE:
+			case OPC_FSTORE:
+			case OPC_ASTORE:
+			case OPC_LSTORE:
+			case OPC_DSTORE:
+			//case OPC_RET:
+				i += 2;
+				continue;
+			case OPC_IINC:
+				i += 4;
+				continue;
+			default:
+				panic("unexpected wide prefix to opcode 0x%X", opcode);
+			}
 
 		case OPC_SIPUSH:
 		case OPC_LDC_W:
@@ -731,7 +764,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_NEW:
 		case OPC_ANEWARRAY:
 			i+=2;
-			break;
+			continue;
 
 		case OPC_GOTO:
 		case OPC_IFNULL:
@@ -785,7 +818,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 					ARR_APP1(basic_block_t, basic_blocks, target);
 				}
 			}
-			break;
+			continue;
 		}
 
 		case OPC_NOP:
@@ -911,8 +944,9 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_DRETURN:
 		case OPC_ARETURN:
 		case OPC_RETURN:
-			break;
+			continue;
 		}
+		panic("unknown/unimplemented opcode 0x%X", opcode);
 	}
 	xfree(targets);
 
@@ -973,22 +1007,13 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_DCONST_0:    push_const(mode_double,    0); continue;
 		case OPC_DCONST_1:    push_const(mode_double,    1); continue;
 		case OPC_BIPUSH:      push_const(mode_int, (int8_t) code->code[i++]); continue;
-		case OPC_SIPUSH: {
-			uint16_t val = code->code[i++];
-			val = (val << 8) | code->code[i++];
-			push_const(mode_int, (int16_t) code->code[i++]);
+		case OPC_SIPUSH:      
+			push_const(mode_int, (int16_t) get_16bit_arg(&i));
 			continue;
-		}
 
-		case OPC_LDC:       push_load_const(code->code[i++]); continue;
+		case OPC_LDC:       push_load_const(code->code[i++]);   continue;
 		case OPC_LDC2_W:
-		case OPC_LDC_W: {
-			uint8_t  b1    = code->code[i++];
-			uint8_t  b2    = code->code[i++];
-			uint16_t index = (b1 << 8) | b2;
-			push_load_const(index);
-			continue;
-		}
+		case OPC_LDC_W:     push_load_const(get_16bit_arg(&i)); continue;
 
 		case OPC_ILOAD:   push_local(code->code[i++], mode_int);       continue;
 		case OPC_LLOAD:   push_local(code->code[i++], mode_long);      continue;
@@ -1127,6 +1152,47 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 
+		case OPC_WIDE:
+			opcode = code->code[i++];
+			switch (opcode) {
+			case OPC_ILOAD: push_local(get_16bit_arg(&i), mode_int);   continue;
+			case OPC_LLOAD: push_local(get_16bit_arg(&i), mode_long);  continue;
+			case OPC_FLOAD: push_local(get_16bit_arg(&i), mode_float); continue;
+			case OPC_DLOAD:
+				push_local(get_16bit_arg(&i), mode_double);
+				continue;
+			case OPC_ALOAD:
+				push_local(get_16bit_arg(&i), mode_reference);
+				continue;
+			case OPC_ISTORE:
+				pop_set_local(get_16bit_arg(&i), mode_int);
+				continue;
+			case OPC_LSTORE:
+				pop_set_local(get_16bit_arg(&i), mode_long);
+				continue;
+			case OPC_FSTORE:
+				pop_set_local(get_16bit_arg(&i), mode_float);
+				continue;
+			case OPC_DSTORE:
+				pop_set_local(get_16bit_arg(&i), mode_double);
+				continue;
+			case OPC_ASTORE:
+				pop_set_local(get_16bit_arg(&i), mode_reference);
+				continue;
+			/* case OPC_RET: */
+			case OPC_IINC: {
+				uint16_t index = get_16bit_arg(&i);
+				int16_t  cnst  = (int16_t) get_16bit_arg(&i);
+				ir_node *val   = get_local(index, mode_int);
+				ir_node *cnode = new_Const_long(mode_int, cnst);
+				ir_node *add   = new_Add(val, cnode, mode_int);
+				set_local(index, add);
+				continue;
+			}
+			default:
+				panic("unexpected wide prefix to opcode 0x%X", opcode);
+			}
+
 		case OPC_IFEQ:
 		case OPC_IFNE:
 		case OPC_IFLT:
@@ -1139,9 +1205,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ICMPLE:
 		case OPC_ICMPGT:
 		case OPC_ICMPGE: {
-			uint8_t  b1    = code->code[i++];
-			uint8_t  b2    = code->code[i++];
-			uint16_t index = (b1 << 8) | b2;
+			uint16_t index = get_16bit_arg(&i);
 			index += i-3;
 
 			ir_node *val2;
@@ -1180,9 +1244,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ACMPNE:
 		case OPC_IFNULL:
 		case OPC_IFNONNULL: {
-			uint8_t  b1    = code->code[i++];
-			uint8_t  b2    = code->code[i++];
-			uint16_t index = (b1 << 8) | b2;
+			uint16_t index = get_16bit_arg(&i);
 			index += i-3;
 
 			ir_node *val1 = symbolic_pop(mode_reference);
@@ -1241,9 +1303,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_PUTSTATIC:
 		case OPC_GETFIELD:
 		case OPC_PUTFIELD: {
-			uint8_t    b1      = code->code[i++];
-			uint8_t    b2      = code->code[i++];
-			uint16_t   index   = (b1 << 8) | b2;
+			uint16_t   index   = get_16bit_arg(&i);
 			ir_entity *entity  = get_field_entity(index);
 			ir_node   *value   = NULL;
 			ir_node   *addr;
@@ -1280,9 +1340,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 		case OPC_INVOKEVIRTUAL:
 		case OPC_INVOKESTATIC: {
-			uint8_t    b1     = code->code[i++];
-			uint8_t    b2     = code->code[i++];
-			uint16_t   index  = (b1 << 8) | b2;
+			uint16_t   index  = get_16bit_arg(&i);
 			ir_entity *entity = get_method_entity(index);
 			ir_node   *callee = create_symconst(entity);
 			ir_type   *type   = get_entity_type(entity);
@@ -1316,9 +1374,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		}
 
 		case OPC_INVOKESPECIAL: {
-			uint8_t    b1      = code->code[i++];
-			uint8_t    b2      = code->code[i++];
-			uint16_t   index   = (b1 << 8) | b2;
+			uint16_t   index   = get_16bit_arg(&i);
 			ir_entity *entity  = get_method_entity(index);
 			ir_node   *callee  = create_symconst(entity);
 			/* TODO: construct real arguments */
@@ -1333,9 +1389,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		}
 
 		case OPC_NEW: {
-			uint8_t   b1        = code->code[i++];
-			uint8_t   b2        = code->code[i++];
-			uint16_t  index     = (b1 << 8) | b2;
+			uint16_t  index     = get_16bit_arg(&i);
 			ir_type  *classtype = get_classref_type(index);
 			ir_node  *mem       = get_store();
 			ir_node  *count     = new_Const_long(mode_Iu, 1);
@@ -1365,9 +1419,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 		case OPC_ANEWARRAY: {
-			uint8_t  b1           = code->code[i++];
-			uint8_t  b2           = code->code[i++];
-			uint16_t index        = (b1 << 8) | b2;
+			uint16_t index        = get_16bit_arg(&i);
 			ir_type *element_type = get_classref_type(index);
 			ir_type *type         = new_type_array(1, element_type);
 			ir_node *count        = symbolic_pop(mode_int);
@@ -1376,7 +1428,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		}
 		}
 
-		panic("Unknown opcode 0x%X found\n", opcode);
+		panic("unknown/unimplemented opcode 0x%X found\n", opcode);
 	}
 
 	for (size_t t = 0; t < n_basic_blocks; ++t) {

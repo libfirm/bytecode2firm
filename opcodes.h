@@ -183,7 +183,9 @@ typedef enum opcode_kind_t {
 	OPC_INSTANCEOF      = 0xC1,
 	OPC_MONITORENTER    = 0xC2,
 	OPC_MONITOREXIT     = 0xC3,
+#endif
 	OPC_WIDE            = 0xC4,
+#if 0
 	OPC_MULTIANEWARRAY  = 0xC5,
 #endif
 	OPC_IFNULL          = 0xC6,
