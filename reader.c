@@ -1408,14 +1408,13 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	ir_entity  *entity       = new_entity(owner, mangled_id, type);
 	set_entity_link(entity, method);
 
-	ident *ld_ident;
+	if (method->access_flags & ACCESS_FLAG_STATIC) {
+		set_entity_allocation(entity, allocation_static);
+	}
 	if (method->access_flags & ACCESS_FLAG_NATIVE) {
 		set_entity_visibility(entity, ir_visibility_external);
-		ld_ident = mangle_native_func(owner, type, id);
-	} else {
-		ld_ident = mangle_entity_name(owner, type, id);
-		set_entity_ld_ident(entity, mangled_id);
 	}
+	ident *ld_ident = mangle_entity_name(entity, id);
 	set_entity_ld_ident(entity, ld_ident);
 }
 
