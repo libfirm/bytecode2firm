@@ -1551,13 +1551,16 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	}
 
 	ident *ld_ident;
+	if (method->access_flags & ACCESS_FLAG_STATIC) {
+		set_entity_allocation(entity, allocation_static);
+	}
 	if (method->access_flags & ACCESS_FLAG_NATIVE) {
 		set_entity_visibility(entity, ir_visibility_external);
-		ld_ident = mangle_native_func(owner, type, id);
-	} else if (strcmp(name, "main") == 0 && strcmp(descriptor, "([Ljava/lang/String;)V") == 0) {
+	}
+	if (strcmp(name, "main") == 0 && strcmp(descriptor, "([Ljava/lang/String;)V") == 0) {
 		ld_ident = new_id_from_str("main");
 	} else {
-		ld_ident = mangle_entity_name(owner, type, id);
+		ld_ident = mangle_entity_name(entity, id);
 	}
 	set_entity_ld_ident(entity, ld_ident);
 }
