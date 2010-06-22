@@ -9,6 +9,8 @@
  */
 ident *mangle_entity_name(ir_entity *entity, ident *id);
 
+ident *mangle_vtable_name(ir_type *clazz);
+
 void init_mangle(void);
 void deinit_mangle(void);
 

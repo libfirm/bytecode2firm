@@ -4,3 +4,5 @@ FIRM_CFLAGS = -I$(FIRM_HOME)/libfirm/include -I$(FIRM_HOME)/obstack -I$(FIRM_HOM
 FIRM_LIBS   = -L$(FIRM_BUILD) -lfirm -llpp -lcore -lm -lz -ldl
 LIBFIRM_FILE = $(FIRM_BUILD)/libfirm.a
 
+INSTALL = /usr/bin/install
+
