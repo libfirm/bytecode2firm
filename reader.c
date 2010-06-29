@@ -1564,8 +1564,6 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	set_type_size_bytes(frame_type, 0);
 	set_type_alignment_bytes(frame_type, 4);
 	set_type_state(frame_type, layout_fixed);
-
-	dump_ir_block_graph(irg, "");
 }
 
 static void create_method_entity(method_t *method, ir_type *owner)
@@ -1756,6 +1754,7 @@ int main(int argc, char **argv)
 	}
 
 	irp_finalize_cons();
+	dump_all_ir_graphs("");
 
 	lower_oo();
 
@@ -1781,7 +1780,7 @@ int main(int argc, char **argv)
 		edges_activate(irg);
 	}
 
-	dump_all_types("__before_be");
+	dump_ir_prog_ext(dump_typegraph, "types.vcg");
 
 	be_parse_arg("omitfp");
 	be_main(stdout, "bytecode");

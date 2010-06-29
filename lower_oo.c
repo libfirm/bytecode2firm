@@ -283,6 +283,6 @@ void lower_oo(void)
 
 	type_walk_prog(lower_type, NULL, NULL);
 
-	dump_all_ir_graphs(dump_ir_graph, "__before_highlevel");
+	dump_all_ir_graphs("before_highlevel");
 	lower_highlevel(0);
 }
