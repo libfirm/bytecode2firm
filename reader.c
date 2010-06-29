@@ -120,7 +120,7 @@ static void init_types(void)
 	type_reference          = new_type_primitive(mode_reference);
 	type_array_reference    = new_type_array(1, type_reference);
 
-	vptr_ident              = new_id_from_str(VPTR_ID);
+	vptr_ident              = new_id_from_str("vptr");
 	global_type             = get_glob_type();
 }
 
@@ -1564,8 +1564,6 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	set_type_size_bytes(frame_type, 0);
 	set_type_alignment_bytes(frame_type, 4);
 	set_type_state(frame_type, layout_fixed);
-
-	dump_ir_block_graph(irg, "");
 }
 
 static void create_method_entity(method_t *method, ir_type *owner)
@@ -1782,8 +1780,6 @@ int main(int argc, char **argv)
 		edges_deactivate(irg);
 		edges_activate(irg);
 	}
-
-	dump_all_types("__before_be");
 
 	be_parse_arg("omitfp");
 	be_main(stdout, "bytecode");
