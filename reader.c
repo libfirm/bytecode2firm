@@ -149,7 +149,6 @@ static ir_type *class_registry_get(const char *classname)
 	if (type == NULL) {
 		ident *id = new_id_from_str(classname);
 		type      = new_type_class(id);
-		set_type_link(type, NULL);
 
 		cpmap_set(&class_registry, classname, type);
 	}

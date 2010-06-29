@@ -277,6 +277,7 @@ void lower_oo(void)
 	ident   *id   = new_id_from_str("calloc");
 	calloc_entity = new_entity(glob, id, method_type);
 	set_entity_visibility(calloc_entity, ir_visibility_external);
+	set_method_additional_property(method_type, mtp_property_malloc);
 
 	int n_irgs = get_irp_n_irgs();
 	for (int i = 0; i < n_irgs; ++i) {
