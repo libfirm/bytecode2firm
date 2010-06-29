@@ -71,7 +71,8 @@ ir_type *type_array_float;
 ir_type *type_array_double;
 ir_type *type_array_reference;
 
-ident   *vptr_ident;
+ident     *vptr_ident;
+ir_entity *builtin_arraylength;
 
 static void init_types(void)
 {
@@ -120,6 +121,18 @@ static void init_types(void)
 	type_array_reference    = new_type_array(1, type_reference);
 
 	vptr_ident              = new_id_from_str(VPTR_ID);
+
+	ir_type *arraylength_type = new_type_method(1, 1);
+	set_method_param_type(arraylength_type, 0, type_array_reference);
+	set_method_res_type(arraylength_type, 0, type_int);
+	set_method_additional_property(arraylength_type, mtp_property_pure);
+
+	ir_type *global_type    = get_glob_type();
+	ident   *arraylength_id = new_id_from_str("$builtin_arraylength");
+	builtin_arraylength     = new_entity(global_type, arraylength_id,
+	                                     arraylength_type);
+	set_entity_additional_property(builtin_arraylength,
+	                               mtp_property_intrinsic|mtp_property_private);
 }
 
 static cpmap_t class_registry;
@@ -744,6 +757,22 @@ static void construct_new_array(ir_type *array_type, ir_node *count)
 	symbolic_push(res);
 }
 
+static void construct_arraylength(void)
+{
+	ir_node *mem      = get_store();
+	ir_node *arrayref = symbolic_pop(mode_reference);
+	ir_node *symc     = create_symconst(builtin_arraylength);
+	ir_node *in[]     = { arrayref };
+	ir_type *type     = get_entity_type(builtin_arraylength);
+	ir_node *call     = new_Call(mem, symc, sizeof(in)/sizeof(*in), in, type);
+	ir_node *new_mem  = new_Proj(call, mode_M, pn_Call_M);
+	set_store(new_mem);
+
+	ir_node *ress = new_Proj(call, mode_T, pn_Call_T_result);
+	ir_node *res  = new_Proj(ress, mode_int, 0);
+	symbolic_push(res);
+}
+
 static uint16_t get_16bit_arg(uint32_t *pos)
 {
 	uint32_t p     = *pos;
@@ -1026,6 +1055,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_DRETURN:
 		case OPC_ARETURN:
 		case OPC_RETURN:
+		case OPC_ARRAYLENGTH:
 			continue;
 		}
 		panic("unknown/unimplemented opcode 0x%X", opcode);
@@ -1374,12 +1404,12 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 
-		case OPC_IRETURN: construct_vreturn(method_type, mode_int); continue;
-		case OPC_LRETURN: construct_vreturn(method_type, mode_long); continue;
-		case OPC_FRETURN: construct_vreturn(method_type, mode_float); continue;
+		case OPC_IRETURN: construct_vreturn(method_type, mode_int);    continue;
+		case OPC_LRETURN: construct_vreturn(method_type, mode_long);   continue;
+		case OPC_FRETURN: construct_vreturn(method_type, mode_float);  continue;
 		case OPC_DRETURN: construct_vreturn(method_type, mode_double); continue;
 		case OPC_ARETURN: construct_vreturn(method_type, mode_reference); continue;
-		case OPC_RETURN:  construct_vreturn(method_type, NULL);     continue;
+		case OPC_RETURN:  construct_vreturn(method_type, NULL);        continue;
 
 		case OPC_GETSTATIC:
 		case OPC_PUTSTATIC:
@@ -1544,6 +1574,9 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			construct_new_array(type, count);
 			continue;
 		}
+		case OPC_ARRAYLENGTH:
+			construct_arraylength();
+			continue;
 		}
 
 		panic("unknown/unimplemented opcode 0x%X found\n", opcode);

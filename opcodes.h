@@ -176,8 +176,8 @@ typedef enum opcode_kind_t {
 	OPC_NEW             = 0xBB,
 	OPC_NEWARRAY        = 0xBC,
 	OPC_ANEWARRAY       = 0xBD,
-#if 0
 	OPC_ARRAYLENGTH     = 0xBE,
+#if 0
 	OPC_ATHROW          = 0xBF,
 	OPC_CHECKCAST       = 0xC0,
 	OPC_INSTANCEOF      = 0xC1,
