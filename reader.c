@@ -1423,9 +1423,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		}
 
 		case OPC_INVOKEVIRTUAL: {
-			uint8_t    b1     = code->code[i++];
-			uint8_t    b2     = code->code[i++];
-			uint16_t   index  = (b1 << 8) | b2;
+			uint16_t   index  = get_16bit_arg(&i);
 			ir_entity *entity = get_method_entity(index);
 			ir_type   *type   = get_entity_type(entity);
 			unsigned   n_args = get_method_n_params(type);
@@ -1497,12 +1495,20 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			uint16_t   index   = get_16bit_arg(&i);
 			ir_entity *entity  = get_method_entity(index);
 			ir_node   *callee  = create_symconst(entity);
-			/* TODO: construct real arguments */
-			ir_node   *args[1] = { symbolic_pop(mode_reference) };
-			ir_node   *mem     = get_store();
-			ir_type   *type    = get_entity_type(entity);
-			ir_node   *call    = new_Call(mem, callee, 1, args, type);
+			ir_type   *type   = get_entity_type(entity);
+			unsigned   n_args = get_method_n_params(type);
+			ir_node   *args[n_args];
 
+			for (int i = n_args-1; i >= 0; --i) {
+				ir_type *arg_type = get_method_param_type(type, i);
+				ir_mode *mode     = get_type_mode(arg_type);
+				ir_node *val      = symbolic_pop(mode);
+				if (get_irn_mode(val) != mode)
+					val = new_Conv(val, mode);
+				args[i]           = val;
+			}
+			ir_node   *mem     = get_store();
+			ir_node   *call    = new_Call(mem, callee, n_args, args, type);
 			ir_node   *new_mem = new_Proj(call, mode_M, pn_Call_M);
 			set_store(new_mem);
 			continue;
