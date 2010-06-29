@@ -72,7 +72,6 @@ ir_type *type_array_double;
 ir_type *type_array_reference;
 
 ident   *vptr_ident;
-ir_type *global_type;
 
 static void init_types(void)
 {
@@ -121,7 +120,6 @@ static void init_types(void)
 	type_array_reference    = new_type_array(1, type_reference);
 
 	vptr_ident              = new_id_from_str(VPTR_ID);
-	global_type             = get_glob_type();
 }
 
 static cpmap_t class_registry;
@@ -558,6 +556,7 @@ static ir_entity *string_to_firm(const char *bytes, size_t length)
 	ir_type   *array_type   = new_type_array(1, element_type);
 
     ident     *id           = id_unique("str_%u");
+    ir_type   *global_type  = get_glob_type();
     ir_entity *entity       = new_entity(global_type, id, array_type);
     set_entity_ld_ident(entity, id);
     set_entity_visibility(entity, ir_visibility_private);

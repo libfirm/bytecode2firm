@@ -17,6 +17,7 @@ static void move_to_global(ir_entity *entity)
 	/* move to global type */
 	ir_type *owner = get_entity_owner(entity);
 	assert(is_Class_type(owner));
+	ir_type *global_type = get_glob_type();
 	set_entity_owner(entity, global_type);
 }
 
@@ -27,6 +28,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 
 	ident *vtable_name = mangle_vtable_name(clazz);
 
+	ir_type *global_type = get_glob_type();
 	assert (get_class_member_by_name(global_type, vtable_name) == NULL);
 
 	ir_type *superclass = NULL;
@@ -108,6 +110,7 @@ static void lower_type(type_or_ent tore, void *env)
 		return;
 	}
 
+	ir_type *global_type = get_glob_type();
 	if (type == global_type)
 		return;
 
@@ -181,12 +184,14 @@ static void lower_Alloc(ir_node *node)
 		ir_entity *vptr_entity    = get_class_member_by_name(type, vptr_ident);
 		ir_node   *vptr           = new_r_Sel(block, new_NoMem(), res, 0, NULL, vptr_entity);
 
-		ir_entity *vtable_entity  = get_class_member_by_name(global_type, mangle_vtable_name(type));
+		ir_type   *global_type   = get_glob_type();
+		ir_entity *vtable_entity = get_class_member_by_name(global_type, mangle_vtable_name(type));
+
 		union symconst_symbol sym;
 		sym.entity_p = vtable_entity;
-		ir_node   *vtable_symconst= new_r_SymConst(irg, mode_reference, sym, symconst_addr_ent);
-		ir_node   *vptr_store     = new_r_Store(block, new_mem, vptr, vtable_symconst, cons_none);
-		           new_mem        = new_r_Proj(vptr_store, mode_M, pn_Store_M);
+		ir_node   *vtable_symconst = new_r_SymConst(irg, mode_reference, sym, symconst_addr_ent);
+		ir_node   *vptr_store      = new_r_Store(block, new_mem, vptr, vtable_symconst, cons_none);
+		           new_mem         = new_r_Proj(vptr_store, mode_M, pn_Store_M);
 	}
 
 	turn_into_tuple(node, pn_Alloc_max);
