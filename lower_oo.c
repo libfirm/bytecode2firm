@@ -17,6 +17,7 @@ static void move_to_global(ir_entity *entity)
 	/* move to global type */
 	ir_type *owner = get_entity_owner(entity);
 	assert(is_Class_type(owner));
+	ir_type *global_type = get_glob_type();
 	set_entity_owner(entity, global_type);
 }
 
@@ -27,6 +28,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 
 	ident *vtable_name = mangle_vtable_name(clazz);
 
+	ir_type *global_type = get_glob_type();
 	assert (get_class_member_by_name(global_type, vtable_name) == NULL);
 
 	ir_type *superclass = NULL;
@@ -114,6 +116,7 @@ static void lower_type(type_or_ent tore, void *env)
 		return;
 	}
 
+	ir_type *global_type = get_glob_type();
 	if (type == global_type)
 		return;
 
@@ -164,49 +167,100 @@ static void lower_Alloc(ir_node *node)
 		value.type_p = type;
 		size = new_r_SymConst(irg, mode_Iu, value, symconst_type_size);
 	}
+
+	/* create call to "calloc" */
+	dbg_info *dbgi   = get_irn_dbg_info(node);
 	ir_node  *mem    = get_Alloc_mem(node);
 	ir_node  *block  = get_nodes_block(node);
 	symconst_symbol value;
 	value.entity_p   = calloc_entity;
-	ir_node  *callee = new_r_SymConst(irg, mode_reference, value, symconst_addr_ent);
+	ir_node  *callee = new_r_SymConst(irg, mode_reference, value,
+	                                  symconst_addr_ent);
 	ir_node  *one    = new_r_Const_long(irg, mode_Iu, 1);
 	ir_node  *in[2]  = { one, size };
 	ir_type  *call_type = get_entity_type(calloc_entity);
-	ir_node  *call   = new_r_Call(block, mem, callee, 2, in, call_type);
+	ir_node  *call   = new_rd_Call(dbgi, block, mem, callee, 2, in, call_type);
 
 	ir_node  *new_mem = new_r_Proj(call, mode_M, pn_Call_M);
 	ir_node  *ress    = new_r_Proj(call, mode_T, pn_Call_T_result);
 	ir_node  *res     = new_r_Proj(ress, mode_reference, 0);
 
-	if (addr_delta > 0) {
-		ir_node *delta = new_r_Const_long(irg, mode_reference, (int)addr_delta);
-		res = new_r_Add(block, res, delta, mode_reference);
+	if (is_Array_type(type)) {
+		/* write length of array */
+		mem = new_mem;
+		ir_node *len_value = count;
+		assert(get_irn_mode(len_value) == mode_Iu);
+		ir_node *len_delta = new_r_Const_long(irg, mode_reference,
+		                                      (int)addr_delta-4);
+		ir_node *len_addr  = new_r_Add(block, res, len_delta, mode_reference);
+		ir_node *store     = new_rd_Store(dbgi, block, mem, len_addr,
+		                                  len_value, cons_none);
+		new_mem            = new_r_Proj(store, mode_M, pn_Store_M);
+
+		if (addr_delta > 0) {
+			ir_node *delta = new_r_Const_long(irg, mode_reference,
+			                                  (int)addr_delta);
+			res = new_r_Add(block, res, delta, mode_reference);
+		}
 	}
 
 	if (is_Class_type(type)) {
-		ir_entity *vptr_entity    = get_class_member_by_name(type, vptr_ident);
-		ir_node   *vptr           = new_r_Sel(block, new_NoMem(), res, 0, NULL, vptr_entity);
+		ir_entity *vptr_entity   = get_class_member_by_name(type, vptr_ident);
+		ir_node   *vptr          = new_r_Sel(block, new_NoMem(), res, 0, NULL, vptr_entity);
 
-		ir_entity *vtable_entity  = get_class_member_by_name(global_type, mangle_vtable_name(type));
+		ir_type   *global_type   = get_glob_type();
+		ir_entity *vtable_entity = get_class_member_by_name(global_type, mangle_vtable_name(type));
+
 		union symconst_symbol sym;
 		sym.entity_p = vtable_entity;
-		ir_node   *vtable_symconst= new_r_SymConst(irg, mode_reference, sym, symconst_addr_ent);
-		ir_node   *vptr_store     = new_r_Store(block, new_mem, vptr, vtable_symconst, cons_none);
-		           new_mem        = new_r_Proj(vptr_store, mode_M, pn_Store_M);
+		ir_node   *vtable_symconst = new_r_SymConst(irg, mode_reference, sym, symconst_addr_ent);
+		ir_node   *vptr_store      = new_r_Store(block, new_mem, vptr, vtable_symconst, cons_none);
+		           new_mem         = new_r_Proj(vptr_store, mode_M, pn_Store_M);
 	}
 
 	turn_into_tuple(node, pn_Alloc_max);
 	set_irn_n(node, pn_Alloc_M, new_mem);
-	set_irn_n(node, pn_Alloc_X_regular, new_Bad());
-	set_irn_n(node, pn_Alloc_X_except, new_Bad());
 	set_irn_n(node, pn_Alloc_res, res);
 }
 
-static void lower_Sel_Call(ir_node* call)
+static void lower_arraylength(ir_node *call)
+{
+	dbg_info *dbgi      = get_irn_dbg_info(call);
+	ir_node  *array_ref = get_Call_param(call, 0);
+
+	/* calculate address of arraylength field */
+	ir_node  *block       = get_nodes_block(call);
+	ir_graph *irg         = get_irn_irg(block);
+	int       length_len  = get_type_size_bytes(type_int);
+	ir_node  *cnst        = new_rd_Const_long(dbgi, irg, mode_reference,
+	                                          -length_len);
+	ir_node  *length_addr = new_rd_Add(dbgi, block, array_ref, cnst,
+	                                   mode_reference);
+
+	ir_node  *mem         = get_Call_mem(call);
+	ir_node  *load        = new_rd_Load(dbgi, block, mem, length_addr,
+	                                    mode_int, cons_none);
+	ir_node  *new_mem     = new_r_Proj(load, mode_M, pn_Load_M);
+	ir_node  *len         = new_r_Proj(load, mode_int, pn_Load_res);
+	ir_node  *in[]        = { len };
+	ir_node  *lent        = new_r_Tuple(block, sizeof(in)/sizeof(*in), in);
+
+	turn_into_tuple(call, pn_Call_max);
+	set_irn_n(call, pn_Call_M, new_mem);
+	set_irn_n(call, pn_Call_T_result, lent);
+}
+
+static void lower_Call(ir_node* call)
 {
 	assert(is_Call(call));
 
 	ir_node *callee = get_Call_ptr(call);
+	if (is_SymConst(callee)
+			&& get_SymConst_entity(callee) == builtin_arraylength) {
+		lower_arraylength(call);
+		return;
+	}
+
 	if (! is_Sel(callee))
 		return;
 
@@ -250,10 +304,9 @@ static void lower_node(ir_node *node, void *env)
 	if (is_Alloc(node)) {
 		lower_Alloc(node);
 	} else if (is_Call(node)) {
-		lower_Sel_Call(node);
+		lower_Call(node);
 	}
 }
-
 
 static void lower_graph(ir_graph *irg)
 {
@@ -273,11 +326,13 @@ void lower_oo(void)
 	set_method_param_type(method_type, 0, t_size_t);
 	set_method_param_type(method_type, 1, t_size_t);
 	set_method_res_type(method_type, 0, t_ptr);
+	set_method_additional_property(method_type, mtp_property_malloc);
 
 	ir_type *glob = get_glob_type();
 	ident   *id   = new_id_from_str("calloc");
 	calloc_entity = new_entity(glob, id, method_type);
 	set_entity_visibility(calloc_entity, ir_visibility_external);
+	set_method_additional_property(method_type, mtp_property_malloc);
 
 	int n_irgs = get_irp_n_irgs();
 	for (int i = 0; i < n_irgs; ++i) {
@@ -287,5 +342,6 @@ void lower_oo(void)
 
 	type_walk_prog(lower_type, NULL, NULL);
 
+	dump_all_ir_graphs("before_highlevel");
 	lower_highlevel(0);
 }

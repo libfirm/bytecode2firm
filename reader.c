@@ -71,8 +71,8 @@ ir_type *type_array_float;
 ir_type *type_array_double;
 ir_type *type_array_reference;
 
-ident   *vptr_ident;
-ir_type *global_type;
+ident     *vptr_ident;
+ir_entity *builtin_arraylength;
 
 static void init_types(void)
 {
@@ -121,7 +121,18 @@ static void init_types(void)
 	type_array_reference    = new_type_array(1, type_reference);
 
 	vptr_ident              = new_id_from_str("vptr");
-	global_type             = get_glob_type();
+
+	ir_type *arraylength_type = new_type_method(1, 1);
+	set_method_param_type(arraylength_type, 0, type_array_reference);
+	set_method_res_type(arraylength_type, 0, type_int);
+	set_method_additional_property(arraylength_type, mtp_property_pure);
+
+	ir_type *global_type    = get_glob_type();
+	ident   *arraylength_id = new_id_from_str("$builtin_arraylength");
+	builtin_arraylength     = new_entity(global_type, arraylength_id,
+	                                     arraylength_type);
+	set_entity_additional_property(builtin_arraylength,
+	                               mtp_property_intrinsic|mtp_property_private);
 }
 
 static cpmap_t class_registry;
@@ -151,7 +162,6 @@ static ir_type *class_registry_get(const char *classname)
 	if (type == NULL) {
 		ident *id = new_id_from_str(classname);
 		type      = new_type_class(id);
-		set_type_link(type, NULL);
 
 		cpmap_set(&class_registry, classname, type);
 	}
@@ -565,6 +575,7 @@ static ir_entity *string_to_firm(const char *bytes, size_t length)
 	ir_type   *array_type   = new_type_array(1, element_type);
 
     ident     *id           = id_unique("str_%u");
+    ir_type   *global_type  = get_glob_type();
     ir_entity *entity       = new_entity(global_type, id, array_type);
     set_entity_ld_ident(entity, id);
     set_entity_visibility(entity, ir_visibility_private);
@@ -752,6 +763,22 @@ static void construct_new_array(ir_type *array_type, ir_node *count)
 	ir_node *new_mem = new_Proj(alloc, mode_M, pn_Alloc_M);
 	ir_node *res     = new_Proj(alloc, mode_reference, pn_Alloc_res);
 	set_store(new_mem);
+	symbolic_push(res);
+}
+
+static void construct_arraylength(void)
+{
+	ir_node *mem      = get_store();
+	ir_node *arrayref = symbolic_pop(mode_reference);
+	ir_node *symc     = create_symconst(builtin_arraylength);
+	ir_node *in[]     = { arrayref };
+	ir_type *type     = get_entity_type(builtin_arraylength);
+	ir_node *call     = new_Call(mem, symc, sizeof(in)/sizeof(*in), in, type);
+	ir_node *new_mem  = new_Proj(call, mode_M, pn_Call_M);
+	set_store(new_mem);
+
+	ir_node *ress = new_Proj(call, mode_T, pn_Call_T_result);
+	ir_node *res  = new_Proj(ress, mode_int, 0);
 	symbolic_push(res);
 }
 
@@ -1040,6 +1067,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_DRETURN:
 		case OPC_ARETURN:
 		case OPC_RETURN:
+		case OPC_ARRAYLENGTH:
 			continue;
 		}
 		panic("unknown/unimplemented opcode 0x%X", opcode);
@@ -1388,12 +1416,12 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 
-		case OPC_IRETURN: construct_vreturn(method_type, mode_int); continue;
-		case OPC_LRETURN: construct_vreturn(method_type, mode_long); continue;
-		case OPC_FRETURN: construct_vreturn(method_type, mode_float); continue;
+		case OPC_IRETURN: construct_vreturn(method_type, mode_int);    continue;
+		case OPC_LRETURN: construct_vreturn(method_type, mode_long);   continue;
+		case OPC_FRETURN: construct_vreturn(method_type, mode_float);  continue;
 		case OPC_DRETURN: construct_vreturn(method_type, mode_double); continue;
 		case OPC_ARETURN: construct_vreturn(method_type, mode_reference); continue;
-		case OPC_RETURN:  construct_vreturn(method_type, NULL);     continue;
+		case OPC_RETURN:  construct_vreturn(method_type, NULL);        continue;
 
 		case OPC_GETSTATIC:
 		case OPC_PUTSTATIC:
@@ -1564,6 +1592,9 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			construct_new_array(type, count);
 			continue;
 		}
+		case OPC_ARRAYLENGTH:
+			construct_arraylength();
+			continue;
 		}
 
 		panic("unknown/unimplemented opcode 0x%X found\n", opcode);
@@ -1774,6 +1805,7 @@ int main(int argc, char **argv)
 	}
 
 	irp_finalize_cons();
+	dump_all_ir_graphs("");
 
 	lower_oo();
 
@@ -1814,6 +1846,8 @@ int main(int argc, char **argv)
 		edges_deactivate(irg);
 		edges_activate(irg);
 	}
+
+	dump_ir_prog_ext(dump_typegraph, "types.vcg");
 
 	be_parse_arg("omitfp");
 	be_main(stdout, "bytecode");
