@@ -93,7 +93,7 @@ static void init_types(void)
 	type_int = new_type_primitive(mode_int);
 
 	mode_long
-		= new_ir_mode("J", irms_int_number, 64, 1, irma_twos_complement, 32);
+		= new_ir_mode("J", irms_int_number, 64, 1, irma_twos_complement, 64);
 	type_long = new_type_primitive(mode_long);
 
 	ir_mode *mode_boolean = mode_byte;
@@ -334,12 +334,13 @@ static void set_local(uint16_t n, ir_node *node)
 
 static ir_node *get_local(uint16_t n, ir_mode *mode)
 {
-	if (needs_two_slots(mode)) {
-		assert(n+1 < max_locals);
-		ir_node *dummy = get_value(code->max_stack + n+1, mode);
-		(void) dummy;
-		assert(is_Bad(dummy));
-	}
+	// the Bad nodes can mystically become Phi nodes...
+//	if (needs_two_slots(mode)) {
+//		assert(n+1 < max_locals);
+//		ir_node *dummy = get_value(code->max_stack + n+1, mode);
+//		(void) dummy;
+//		assert(is_Bad(dummy));
+//	}
 	assert(n < max_locals);
 	return get_value(code->max_stack + n, mode);
 }
@@ -535,6 +536,12 @@ static void push_const(ir_mode *mode, long val)
 	symbolic_push(cnst);
 }
 
+static void push_const_tarval(tarval *tv)
+{
+	ir_node *cnst = new_Const(tv);
+	symbolic_push(cnst);
+}
+
 static void push_local(int idx, ir_mode *mode)
 {
 	ir_node *value = get_local(idx, mode);
@@ -630,8 +637,15 @@ static void push_load_const(uint16_t index)
 	case CONSTANT_FLOAT: {
 		float    val   = *((float*) &constant->floatc.value);
 		tarval  *tv    = new_tarval_from_double(val, mode_float);
-		ir_node *cnode = new_Const(tv);
-		symbolic_push(cnode);
+		push_const_tarval(tv);
+		break;
+	}
+	case CONSTANT_LONG: {
+		char buf[128];
+		uint64_t val = ((uint64_t)constant->longc.high_bytes << 32) | constant->longc.low_bytes;
+		snprintf(buf, sizeof(buf), "%lld", (int64_t) val);
+		tarval *tv = new_tarval_from_str(buf, strlen(buf), mode_long);
+		push_const_tarval(tv);
 		break;
 	}
 	case CONSTANT_STRING: {
@@ -693,7 +707,7 @@ static void construct_dup(int n_vals, bool transfer_2_slots)
 static ir_node *get_arith_value(ir_node *node)
 {
 	ir_mode *mode = get_irn_mode(node);
-	if (mode != mode_int && mode_is_int(mode))
+	if (mode != mode_int && mode != mode_long && mode_is_int(mode))
 		node = new_Conv(node, mode_int);
 	return node;
 }
@@ -773,12 +787,15 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 	ir_node *args         = get_irg_args(irg);
 	int      n_parameters = get_method_n_params(method_type);
+	int      local_idx    = 0;
 	for (int i = 0; i < n_parameters; ++i) {
 		ir_type *type  = get_method_param_type(method_type, i);
 		ir_mode *mode  = get_type_mode(type);
 		ir_node *value = new_Proj(args, mode, i);
 		value = get_arith_value(value);
-		set_local(i, value);
+		set_local(local_idx, value);
+		local_idx++;
+		if (needs_two_slots(mode)) local_idx++;
 	}
 
 	/* pass1: identify jump targets and create blocks for them */
@@ -1781,8 +1798,24 @@ int main(int argc, char **argv)
 		optimize_load_store(irg);
 		optimize_graph_df(irg);
 		optimize_cf(irg);
+	}
+
+	lwrdw_param_t param = {
+			.enable        = 1,
+			.little_endian = 1,
+			.high_signed   = mode_long,
+			.high_unsigned = mode_Lu, // Java does not have unsigned long
+			.low_signed    = mode_Is,
+			.low_unsigned  = mode_Iu,
+			.create_intrinsic = be_params->arch_create_intrinsic_fkt,
+			.ctx           = be_params->create_intrinsic_ctx
+	};
+
+	lower_dw_ops(&param);
+	for (int p = 0; p < n_irgs; ++p) {
+		ir_graph *irg = get_irp_irg(p);
 		/* TODO: This shouldn't be needed but the backend sometimes finds
-		   dead Phi nodes if we don't do this */
+			     dead Phi nodes if we don't do this */
 		edges_deactivate(irg);
 		edges_activate(irg);
 	}
