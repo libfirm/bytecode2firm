@@ -571,22 +571,17 @@ static ir_entity *string_to_firm(const char *bytes, size_t length)
     add_entity_linkage(entity, IR_LINKAGE_CONSTANT);
 
     set_array_lower_bound_int(array_type, 0, 0);
-    set_array_upper_bound_int(array_type, 0, length+1);
-    set_type_size_bytes(array_type, length+1);
+    set_array_upper_bound_int(array_type, 0, length);
+    set_type_size_bytes(array_type, length);
     set_type_state(array_type, layout_fixed);
 
     // initialize each array element to an input byte
-    ir_initializer_t *initializer = create_initializer_compound(length+1);
+    ir_initializer_t *initializer = create_initializer_compound(length);
     for (size_t i = 0; i < length; ++i) {
         tarval           *tv  = new_tarval_from_long(bytes[i], element_mode);
         ir_initializer_t *val = create_initializer_tarval(tv);
         set_initializer_compound_value(initializer, i, val);
     }
-
-    // append null byte
-    tarval *tv  = new_tarval_from_long('\0', element_mode);
-    ir_initializer_t *val = create_initializer_tarval(tv);
-    set_initializer_compound_value(initializer, length, val);
 
     set_entity_initializer(entity, initializer);
 
