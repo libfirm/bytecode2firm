@@ -276,7 +276,7 @@ class_t *read_class_file(void)
 	}
 	uint16_t minor_version = read_u16();
 	uint16_t major_version = read_u16();
-	assert(major_version == 50 && minor_version == 0);
+	assert((major_version == 49 || major_version == 50) && minor_version == 0);
 
 	class_file = allocate_zero(sizeof(*class_file));
 	class_file->n_constants = read_u16();
@@ -332,8 +332,11 @@ class_t *read_class_file(void)
 class_t *read_class(const char *classname)
 {
 	assert(obstack_object_size(&obst) == 0);
-	obstack_printf(&obst, "%s%s.class", classpath, classname);
+	unsigned len = obstack_printf(&obst, "%s%s.class", classpath, classname);
 	char *classfilename = obstack_finish(&obst);
+
+	assert (len == 8 + strlen(classname) + 6);
+	if (len != strlen(classfilename)) classfilename[len] = '\0'; // FIXME: remove!
 
 	in = fopen(classfilename, "r");
 	if (in == NULL) {
