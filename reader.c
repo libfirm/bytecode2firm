@@ -374,11 +374,25 @@ static ir_entity *find_method(ir_type *classtype, ident *id)
 	return entity;
 }
 
+static ir_entity *find_field(ir_type *classtype, ident *id)
+{
+	ir_entity *entity = get_class_member_by_name(classtype, id);
+	int n_superclasses = get_class_n_supertypes(classtype);
+	if (entity == NULL && n_superclasses > 0) {
+		assert (n_superclasses == 1);
+		classtype = get_class_supertype(classtype, 0);
+		return find_field(classtype, id);
+	}
+	assert(entity != NULL);
+	assert(! is_method_entity(entity));
+	return entity;
+}
+
 static ir_entity *get_method_entity(uint16_t index)
 {
 	constant_t *methodref = get_constant(index);
 	if (methodref->kind != CONSTANT_METHODREF) {
-		panic("get_method_entity index argumetn not a methodref");
+		panic("get_method_entity index argument not a methodref");
 	}
 	ir_entity *entity = methodref->base.link;
 	if (entity == NULL) {
@@ -405,6 +419,40 @@ static ir_entity *get_method_entity(uint16_t index)
 	return entity;
 }
 
+static ir_entity *get_interface_entity(uint16_t index)
+{
+	constant_t *interfacemethodref = get_constant(index);
+	if (interfacemethodref->kind != CONSTANT_INTERFACEMETHODREF) {
+		panic("get_method_entity index argument not an interfacemethodref");
+	}
+	ir_entity *entity = interfacemethodref->base.link;
+	if (entity == NULL) {
+		const constant_t *name_and_type
+			= get_constant(interfacemethodref->interfacemethodref.name_and_type_index);
+		if (name_and_type->kind != CONSTANT_NAMEANDTYPE) {
+			panic("invalid name_and_type in interface method %u", index);
+		}
+
+		ir_type *classtype
+			= get_classref_type(interfacemethodref->interfacemethodref.class_index);
+
+		const char *methodname
+			= get_constant_string(name_and_type->name_and_type.name_index);
+		ident *methodid = new_id_from_str(methodname);
+
+		const char *descriptor
+			= get_constant_string(name_and_type->name_and_type.descriptor_index);
+
+		ident *descriptorid = new_id_from_str(descriptor);
+		ident *name         = id_mangle_dot(methodid, descriptorid);
+
+		entity = find_method(classtype, name);
+		interfacemethodref->base.link = entity;
+	}
+
+	return entity;
+}
+
 static ir_entity *get_field_entity(uint16_t index)
 {
 	constant_t *fieldref = get_constant(index);
@@ -421,13 +469,11 @@ static ir_entity *get_field_entity(uint16_t index)
 		ir_type *classtype 
 			= get_classref_type(fieldref->fieldref.class_index);
 
-		/* TODO: walk class hierarchy */
 		/* TODO: we could have a method with the same name */
 		const char *fieldname
 			= get_constant_string(name_and_type->name_and_type.name_index);
 		ident *fieldid = new_id_from_str(fieldname);
-		entity = get_class_member_by_name(classtype, fieldid);
-		assert(!is_method_entity(entity));
+		entity = find_field(classtype, fieldid);
 		fieldref->base.link = entity;
 	}
 
@@ -889,6 +935,10 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			i+=2;
 			continue;
 
+		case OPC_INVOKEINTERFACE:
+			i+=4;
+			continue;
+
 		case OPC_GOTO:
 		case OPC_IFNULL:
 		case OPC_IFNONNULL:
@@ -1068,6 +1118,9 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ARETURN:
 		case OPC_RETURN:
 		case OPC_ARRAYLENGTH:
+		case OPC_ATHROW:
+		case OPC_MONITORENTER:
+		case OPC_MONITOREXIT:
 			continue;
 		}
 		panic("unknown/unimplemented opcode 0x%X", opcode);
@@ -1374,7 +1427,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node *val1 = symbolic_pop(mode_reference);
 			ir_node *val2;
 			if (opcode == OPC_IFNULL || opcode == OPC_IFNONNULL) {
-				val2 = new_Const_long(mode_int, 0);
+				val2 = new_Const_long(mode_reference, 0);
 			} else {
 				val2 = symbolic_pop(mode_reference);
 			}
@@ -1554,6 +1607,44 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 
+		case OPC_INVOKEINTERFACE: {
+			uint16_t   index   = get_16bit_arg(&i);
+			uint8_t    count   = code->code[i++];
+			assert (code->code[i++] == 0);
+			ir_entity *entity = get_interface_entity(index);
+
+			ir_type   *type   = get_entity_type(entity);
+			unsigned   n_args = get_method_n_params(type);
+			assert (n_args == count);
+			ir_node   *args[n_args];
+
+			for (int i = n_args-1; i >= 0; --i) {
+				ir_type *arg_type = get_method_param_type(type, i);
+				ir_mode *mode     = get_type_mode(arg_type);
+				ir_node *val      = symbolic_pop(mode);
+				if (get_irn_mode(val) != mode)
+					val = new_Conv(val, mode);
+				args[i]           = val;
+			}
+			ir_node *mem     = get_store();
+			ir_node *callee  = new_Sel(new_NoMem(), args[0], 0, NULL, entity);
+			ir_node *call    = new_Call(mem, callee, n_args, args, type);
+			ir_node *new_mem = new_Proj(call, mode_M, pn_Call_M);
+			set_store(new_mem);
+
+			int n_res = get_method_n_ress(type);
+			if (n_res > 0) {
+				assert(n_res == 1);
+				ir_type *res_type = get_method_res_type(type, 0);
+				ir_mode *mode     = get_type_mode(res_type);
+				ir_node *resproj  = new_Proj(call, mode_T, pn_Call_T_result);
+				ir_node *res      = new_Proj(resproj, mode, 0);
+				res = get_arith_value(res);
+				symbolic_push(res);
+			}
+			continue;
+		}
+
 		case OPC_NEW: {
 			uint16_t  index     = get_16bit_arg(&i);
 			ir_type  *classtype = get_classref_type(index);
@@ -1592,9 +1683,16 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			construct_new_array(type, count);
 			continue;
 		}
-		case OPC_ARRAYLENGTH:
+		case OPC_ARRAYLENGTH: {
 			construct_arraylength();
 			continue;
+		}
+		case OPC_ATHROW: case OPC_MONITORENTER: case OPC_MONITOREXIT: {
+			// FIXME: need real implementation.
+			ir_node *addr         = symbolic_pop(mode_reference);
+			(void) addr;
+			continue;
+		}
 		}
 
 		panic("unknown/unimplemented opcode 0x%X found\n", opcode);

@@ -273,6 +273,19 @@ static void lower_Call(ir_node* call)
 	if (! is_Class_type(classtype))
 		return;
 
+	if ((((class_t*)get_type_link(classtype))->access_flags & ACCESS_FLAG_INTERFACE) != 0) {
+
+		// FIXME: need real implementation for INVOKEINTERFACE.
+
+		ir_type *method_type = get_entity_type(method_entity);
+		ir_entity *nyi    = new_entity(get_glob_type(), new_id_from_str("__nyi"), method_type);
+		union symconst_symbol sym;
+		sym.entity_p = nyi;
+		ir_node *nyi_symc = new_SymConst(mode_reference, sym, symconst_addr_ent);
+		set_Call_ptr(call, nyi_symc);
+		return;
+	}
+
 	ir_graph *irg         = get_irn_irg(call);
 	ir_node  *block       = get_nodes_block(call);
 
@@ -342,6 +355,6 @@ void lower_oo(void)
 
 	type_walk_prog(lower_type, NULL, NULL);
 
-	dump_all_ir_graphs("before_highlevel");
+	//dump_all_ir_graphs("before_highlevel");
 	lower_highlevel(0);
 }

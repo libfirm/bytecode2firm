@@ -169,21 +169,21 @@ typedef enum opcode_kind_t {
 	OPC_INVOKEVIRTUAL   = 0xB6,
 	OPC_INVOKESPECIAL   = 0xB7,
 	OPC_INVOKESTATIC    = 0xB8,
-#if 0
 	OPC_INVOKEINTERFACE = 0xB9,
+#if 0
 	OPC_XXXUNUSEDXXX    = 0xBA,
 #endif
 	OPC_NEW             = 0xBB,
 	OPC_NEWARRAY        = 0xBC,
 	OPC_ANEWARRAY       = 0xBD,
 	OPC_ARRAYLENGTH     = 0xBE,
-#if 0
 	OPC_ATHROW          = 0xBF,
+#if 0
 	OPC_CHECKCAST       = 0xC0,
 	OPC_INSTANCEOF      = 0xC1,
+#endif
 	OPC_MONITORENTER    = 0xC2,
 	OPC_MONITOREXIT     = 0xC3,
-#endif
 	OPC_WIDE            = 0xC4,
 #if 0
 	OPC_MULTIANEWARRAY  = 0xC5,
