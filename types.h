@@ -22,6 +22,8 @@ extern ir_type *type_array_double;
 extern ir_type *type_array_reference;
 
 extern ir_mode *mode_byte;
+extern ir_mode *mode_char;
+extern ir_mode *mode_short;
 extern ir_mode *mode_int;
 extern ir_mode *mode_long;
 extern ir_mode *mode_float;

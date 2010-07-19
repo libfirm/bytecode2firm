@@ -46,6 +46,8 @@ static ir_type *get_class_type(const char *name);
 static ir_type *get_classref_type(uint16_t index);
 
 ir_mode *mode_byte;
+ir_mode *mode_char;
+ir_mode *mode_short;
 ir_mode *mode_int;
 ir_mode *mode_long;
 ir_mode *mode_float;
@@ -80,11 +82,11 @@ static void init_types(void)
 		= new_ir_mode("B", irms_int_number, 8, 1, irma_twos_complement, 32);
 	type_byte = new_type_primitive(mode_byte);
 
-	ir_mode *mode_char
+	mode_char
 		= new_ir_mode("C", irms_int_number, 16, 0, irma_twos_complement, 0);
 	type_char = new_type_primitive(mode_char);
 
-	ir_mode *mode_short
+	mode_short
 		= new_ir_mode("S", irms_int_number, 16, 1, irma_twos_complement, 32);
 	type_short = new_type_primitive(mode_short);
 
@@ -298,6 +300,31 @@ static const attribute_code_t *code;
 static uint16_t                stack_pointer;
 static uint16_t                max_locals;
 
+static ir_mode *get_arith_mode(ir_mode *mode)
+{
+	if (mode_is_int(mode)
+	 && mode != mode_int
+	 && mode != mode_long
+    ) {
+		return mode_int;
+	}
+	return mode;
+}
+
+/**
+ * transform value into value with arithmetic mode
+ * (= all integer calulations are done in mode_int so we transform integer
+ *  value not in mode_int to it)
+ */
+static ir_node *get_arith_value(ir_node *node)
+{
+	ir_mode *irn_mode   = get_irn_mode(node);
+	ir_mode *arith_mode = get_arith_mode(irn_mode);
+	if (irn_mode != arith_mode)
+		node = new_Conv(node, arith_mode);
+	return node;
+}
+
 static bool needs_two_slots(ir_mode *mode)
 {
 	return mode == mode_long || mode == mode_double;
@@ -308,6 +335,8 @@ static void symbolic_push(ir_node *node)
 	if (stack_pointer >= code->max_stack)
 		panic("code exceeds stack limit");
 	ir_mode *mode = get_irn_mode(node);
+	assert (mode == NULL || (mode == get_arith_mode(mode)));
+
 	/* double and long need 2 stackslots */
 	if (needs_two_slots(mode))
 		set_value(stack_pointer++, new_Bad());
@@ -317,6 +346,8 @@ static void symbolic_push(ir_node *node)
 
 static ir_node *symbolic_pop(ir_mode *mode)
 {
+	assert (mode == NULL || (mode == get_arith_mode(mode)));
+
 	if (stack_pointer == 0)
 		panic("code produces stack underflow");
 
@@ -325,7 +356,7 @@ static ir_node *symbolic_pop(ir_mode *mode)
 	if (needs_two_slots(mode)) {
 		ir_node *dummy = get_value(--stack_pointer, mode);
 		(void) dummy;
-		assert(is_Bad(dummy));
+		//assert(is_Bad(dummy));
 	}
 
 	return result;
@@ -333,11 +364,13 @@ static ir_node *symbolic_pop(ir_mode *mode)
 
 static void set_local(uint16_t n, ir_node *node)
 {
-	assert(n < max_locals);
+	assert (n < max_locals);
 	set_value(code->max_stack + n, node);
 	ir_mode *mode = get_irn_mode(node);
+	assert (mode == NULL || mode == get_arith_mode(mode));
+
 	if (needs_two_slots(mode)) {
-		assert(n+1 < max_locals);
+		assert (n+1 < max_locals);
 		set_value(code->max_stack + n+1, new_Bad());
 	}
 }
@@ -351,7 +384,8 @@ static ir_node *get_local(uint16_t n, ir_mode *mode)
 //		(void) dummy;
 //		assert(is_Bad(dummy));
 //	}
-	assert(n < max_locals);
+	assert (n < max_locals);
+	assert (mode == NULL || mode == get_arith_mode(mode));
 	return get_value(code->max_stack + n, mode);
 }
 
@@ -403,6 +437,10 @@ static ir_entity *get_method_entity(uint16_t index)
 		}
 		ir_type *classtype 
 			= get_classref_type(methodref->methodref.class_index);
+
+		if (! is_Class_type(classtype)) {
+			classtype = get_class_type("java/lang/Object"); // FIXME: need real arraytypes
+		}
 
 		const char *methodname
 			= get_constant_string(name_and_type->name_and_type.name_index);
@@ -560,6 +598,15 @@ static ir_node *simple_new_Div(ir_node *left, ir_node *right, ir_mode *mode)
 	return new_Proj(div, mode, pn_Div_res);
 }
 
+static ir_node *simple_new_Quot(ir_node *left, ir_node *right, ir_mode *mode)
+{
+	ir_node *mem     = get_store();
+	ir_node *div     = new_Quot(mem, left, right, mode, op_pin_state_pinned);
+	ir_node *new_mem = new_Proj(div, mode_M, pn_Div_M);
+	set_store(new_mem);
+	return new_Proj(div, mode, pn_Div_res);
+}
+
 static ir_node *simple_new_Mod(ir_node *left, ir_node *right, ir_mode *mode)
 {
 	ir_node *mem     = get_store();
@@ -575,6 +622,16 @@ static void construct_arith(ir_mode *mode,
 	ir_node *right  = symbolic_pop(mode);
 	ir_node *left   = symbolic_pop(mode);
 	ir_node *result = construct_func(left, right, mode);
+	symbolic_push(result);
+}
+
+static void construct_shift_arith(ir_mode *mode,
+		ir_node *(*construct_func)(ir_node *, ir_node *, ir_mode *))
+{
+	ir_node *right  = symbolic_pop(mode_int);
+	ir_node *left   = symbolic_pop(mode);
+	ir_node *right_u = new_Conv(right, mode_Iu);
+	ir_node *result = construct_func(left, right_u, mode);
 	symbolic_push(result);
 }
 
@@ -700,10 +757,21 @@ static void push_load_const(uint16_t index)
 		push_const_tarval(tv);
 		break;
 	}
+	case CONSTANT_DOUBLE: {
+		// FIXME: need real implementation
+		tarval *tv = new_tarval_from_double(1.0, mode_double);
+		push_const_tarval(tv);
+		break;
+	}
 	case CONSTANT_STRING: {
 		constant_t *utf8_const = get_constant(constant->string.string_index);
 		ir_node *string_literal = new_string_literal(utf8_const->utf8_string.bytes, utf8_const->utf8_string.length);
 		symbolic_push(string_literal);
+		break;
+	}
+	case CONSTANT_CLASSREF: {
+		// FIXME: need real implementation
+		push_const(mode_reference, 0);
 		break;
 	}
 	default:
@@ -751,19 +819,6 @@ static void construct_dup(int n_vals, bool transfer_2_slots)
 	}
 }
 
-/**
- * transform value into value with arithmetic mode
- * (= all integer calulations are done in mode_int so we transform integer
- *  value not in mode_int to it)
- */
-static ir_node *get_arith_value(ir_node *node)
-{
-	ir_mode *mode = get_irn_mode(node);
-	if (mode != mode_int && mode != mode_long && mode_is_int(mode))
-		node = new_Conv(node, mode_int);
-	return node;
-}
-
 static void construct_array_load(ir_type *array_type)
 {
 	ir_node   *index     = symbolic_pop(mode_int);
@@ -778,8 +833,9 @@ static void construct_array_load(ir_type *array_type)
 	ir_node   *load      = new_Load(mem, addr, mode, cons_none);
 	ir_node   *new_mem   = new_Proj(load, mode_M, pn_Load_M);
 	ir_node   *value     = new_Proj(load, mode, pn_Load_res);
-	value = get_arith_value(value);
 	set_store(new_mem);
+
+	value = get_arith_value(value);
 	symbolic_push(value);
 }
 
@@ -788,6 +844,7 @@ static void construct_array_store(ir_type *array_type)
 	ir_entity *entity    = get_array_element_entity(array_type);
 	ir_type   *type      = get_entity_type(entity);
 	ir_mode   *mode      = get_type_mode(type);
+	           mode      = get_arith_mode(mode);
 
 	ir_node   *value     = symbolic_pop(mode);
 	ir_node   *index     = symbolic_pop(mode_int);
@@ -826,6 +883,26 @@ static void construct_arraylength(void)
 	ir_node *ress = new_Proj(call, mode_T, pn_Call_T_result);
 	ir_node *res  = new_Proj(ress, mode_int, 0);
 	symbolic_push(res);
+}
+
+static void construct_conv(ir_mode *src, ir_mode *target)
+{
+	// FIXME: not sure if the Firm conv works according to the VM spec.
+	ir_mode *arith_src = get_arith_mode(src);
+	ir_mode *arith_target = get_arith_mode(target);
+
+
+	ir_node *op = symbolic_pop(arith_src);
+
+	unsigned src_bits = get_mode_size_bits(src);
+	unsigned target_bits = get_mode_size_bits(target);
+
+	if (target_bits < src_bits) {
+		// FIXME: need to truncate!
+	}
+
+	ir_node *conv = new_Conv(op, arith_target);
+	symbolic_push(conv);
 }
 
 static uint16_t get_16bit_arg(uint32_t *pos)
@@ -932,7 +1009,13 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_INVOKESPECIAL:
 		case OPC_NEW:
 		case OPC_ANEWARRAY:
+		case OPC_CHECKCAST:
+		case OPC_INSTANCEOF:
 			i+=2;
+			continue;
+
+		case OPC_MULTIANEWARRAY:
+			i+=3;
 			continue;
 
 		case OPC_INVOKEINTERFACE:
@@ -1111,6 +1194,26 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_LOR:
 		case OPC_IXOR:
 		case OPC_LXOR:
+		case OPC_I2L:
+		case OPC_I2F:
+		case OPC_I2D:
+		case OPC_L2I:
+		case OPC_L2F:
+		case OPC_L2D:
+		case OPC_F2I:
+		case OPC_F2L:
+		case OPC_F2D:
+		case OPC_D2I:
+		case OPC_D2L:
+		case OPC_D2F:
+		case OPC_I2B:
+		case OPC_I2C:
+		case OPC_I2S:
+		case OPC_LCMP:
+		case OPC_FCMPL:
+		case OPC_FCMPG:
+		case OPC_DCMPL:
+		case OPC_DCMPG:
 		case OPC_IRETURN:
 		case OPC_LRETURN:
 		case OPC_FRETURN:
@@ -1125,6 +1228,28 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		}
 		panic("unknown/unimplemented opcode 0x%X", opcode);
 	}
+
+	unsigned *ehs = rbitset_malloc(code->code_length);
+
+	for (int i = 0; i < new_code->n_exceptions; i++) {
+		exception_t e = new_code->exceptions[i];
+
+		if (! rbitset_is_set(targets, e.handler_pc)) {
+			rbitset_set(targets, e.handler_pc);
+			basic_block_t exception_handler;
+			exception_handler.pc            = e.handler_pc;
+			exception_handler.block         = new_immBlock();
+			exception_handler.stack_pointer = -1;
+			ARR_APP1(basic_block_t, basic_blocks, exception_handler);
+		}
+
+		uint16_t pc = e.handler_pc;
+		do {
+			rbitset_set(ehs, pc++);
+		}
+		while (! rbitset_is_set(targets, pc));
+	}
+
 	xfree(targets);
 
 	n_basic_blocks = ARR_LEN(basic_blocks);
@@ -1142,6 +1267,12 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	set_cur_block(NULL);
 	basic_block_t *next_target = &basic_blocks[0];
 	for (uint32_t i = 0; i < code->code_length; /* nothing */) {
+		if (rbitset_is_set(ehs, i)) // skip exception handlers
+		{
+			next_target++;
+			i = next_target->pc;
+			continue;
+		}
 		if (i == next_target->pc) {
 			if (next_target->stack_pointer < 0) {
 				next_target->stack_pointer = stack_pointer;
@@ -1294,8 +1425,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_DMUL:  construct_arith(mode_double, new_Mul);        continue;
 		case OPC_IDIV:  construct_arith(mode_int,    simple_new_Div); continue;
 		case OPC_LDIV:  construct_arith(mode_long,   simple_new_Div); continue;
-		case OPC_FDIV:  construct_arith(mode_float,  simple_new_Div); continue;
-		case OPC_DDIV:  construct_arith(mode_double, simple_new_Div); continue;
+		case OPC_FDIV:  construct_arith(mode_float,  simple_new_Quot);continue;
+		case OPC_DDIV:  construct_arith(mode_double, simple_new_Quot);continue;
 		case OPC_IREM:  construct_arith(mode_int,    simple_new_Mod); continue;
 		case OPC_LREM:  construct_arith(mode_long,   simple_new_Mod); continue;
 		case OPC_FREM:  construct_arith(mode_float,  simple_new_Mod); continue;
@@ -1306,18 +1437,67 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_FNEG:  construct_arith_unop(mode_float,  new_Minus); continue;
 		case OPC_DNEG:  construct_arith_unop(mode_double, new_Minus); continue;
 
-		case OPC_ISHL:  construct_arith(mode_int,    new_Shl);        continue;
-		case OPC_LSHL:  construct_arith(mode_long,   new_Shl);        continue;
-		case OPC_ISHR:  construct_arith(mode_int,    new_Shrs);       continue;
-		case OPC_LSHR:  construct_arith(mode_long,   new_Shrs);       continue;
-		case OPC_IUSHR: construct_arith(mode_int,    new_Shr);        continue;
-		case OPC_LUSHR: construct_arith(mode_long,   new_Shr);        continue;
+		case OPC_ISHL:  construct_shift_arith(mode_int,    new_Shl);  continue;
+		case OPC_LSHL:  construct_shift_arith(mode_long,   new_Shl);  continue;
+		case OPC_ISHR:  construct_shift_arith(mode_int,    new_Shrs); continue;
+		case OPC_LSHR:  construct_shift_arith(mode_long,   new_Shrs); continue;
+		case OPC_IUSHR: construct_shift_arith(mode_int,    new_Shr);  continue;
+		case OPC_LUSHR: construct_shift_arith(mode_long,   new_Shr);  continue;
 		case OPC_IAND:  construct_arith(mode_int,    new_And);        continue;
 		case OPC_LAND:  construct_arith(mode_long,   new_And);        continue;
 		case OPC_IOR:   construct_arith(mode_int,    new_Or);         continue;
 		case OPC_LOR:   construct_arith(mode_long,   new_Or);         continue;
 		case OPC_IXOR:  construct_arith(mode_int,    new_Eor);        continue;
 		case OPC_LXOR:  construct_arith(mode_long,   new_Eor);        continue;
+
+		case OPC_I2L:   construct_conv(mode_int, mode_long);          continue;
+		case OPC_I2F:   construct_conv(mode_int, mode_float);         continue;
+		case OPC_I2D:   construct_conv(mode_int, mode_double);        continue;
+		case OPC_L2I:   construct_conv(mode_long, mode_int);          continue;
+		case OPC_L2F:   construct_conv(mode_long, mode_float);        continue;
+		case OPC_L2D:   construct_conv(mode_long, mode_double);       continue;
+		case OPC_F2I:   construct_conv(mode_float, mode_int);         continue;
+		case OPC_F2L:   construct_conv(mode_float, mode_long);        continue;
+		case OPC_F2D:   construct_conv(mode_float, mode_double);      continue;
+		case OPC_D2I:   construct_conv(mode_double, mode_int);        continue;
+		case OPC_D2L:   construct_conv(mode_double, mode_long);       continue;
+		case OPC_D2F:   construct_conv(mode_double, mode_float);      continue;
+		case OPC_I2B:   construct_conv(mode_int, mode_byte);          continue;
+		case OPC_I2C:   construct_conv(mode_int, mode_char);          continue;
+		case OPC_I2S:   construct_conv(mode_int, mode_short);         continue;
+
+		case OPC_LCMP:  {
+			// FIXME: need real implementation
+			ir_node *val2 = symbolic_pop(mode_long);
+			ir_node *val1 = symbolic_pop(mode_long);
+			(void) val1;
+			(void) val2;
+			symbolic_push(new_Const_long(mode_int, 0));
+
+			continue;
+		}
+
+		case OPC_FCMPL:
+		case OPC_FCMPG: {
+			// FIXME: need real implementation
+			ir_node *val2 = symbolic_pop(mode_float);
+			ir_node *val1 = symbolic_pop(mode_float);
+			(void) val1;
+			(void) val2;
+			symbolic_push(new_Const_long(mode_int, 0));
+			continue;
+		}
+
+		case OPC_DCMPL:
+		case OPC_DCMPG: {
+			// FIXME: need real implementation
+			ir_node *val2 = symbolic_pop(mode_double);
+			ir_node *val1 = symbolic_pop(mode_double);
+			(void) val1;
+			(void) val2;
+			symbolic_push(new_Const_long(mode_int, 0));
+			continue;
+		}
 
 		case OPC_IINC: {
 			uint8_t  index = code->code[i++];
@@ -1488,9 +1668,10 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node *mem  = get_store();
 			ir_type *type = get_entity_type(entity);
 			ir_mode *mode = get_type_mode(type);
+			ir_mode *arith_mode = get_arith_mode(mode);
 
 			if (opcode == OPC_PUTSTATIC || opcode == OPC_PUTFIELD) {
-				value = symbolic_pop(mode);
+				value = symbolic_pop(arith_mode);
 			}
 			
 			if (opcode == OPC_GETSTATIC || opcode == OPC_PUTSTATIC) {
@@ -1505,6 +1686,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				ir_node *new_mem = new_Proj(load, mode_M, pn_Load_M);
 				ir_node *result  = new_Proj(load, mode, pn_Load_res);
 				set_store(new_mem);
+				result = get_arith_value(result);
 				symbolic_push(result);
 			} else {
 				assert(opcode == OPC_PUTSTATIC || opcode == OPC_PUTFIELD);
@@ -1525,7 +1707,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			for (int i = n_args-1; i >= 0; --i) {
 				ir_type *arg_type = get_method_param_type(type, i);
 				ir_mode *mode     = get_type_mode(arg_type);
-				ir_node *val      = symbolic_pop(mode);
+				ir_mode *amode    = get_arith_mode(mode);
+				ir_node *val      = symbolic_pop(amode);
 				if (get_irn_mode(val) != mode)
 					val = new_Conv(val, mode);
 				args[i]           = val;
@@ -1561,7 +1744,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			for (int i = n_args-1; i >= 0; --i) {
 				ir_type *arg_type = get_method_param_type(type, i);
 				ir_mode *mode     = get_type_mode(arg_type);
-				ir_node *val      = symbolic_pop(mode);
+				ir_mode *amode    = get_arith_mode(mode);
+				ir_node *val      = symbolic_pop(amode);
 				if (get_irn_mode(val) != mode)
 					val = new_Conv(val, mode);
 				args[i]           = val;
@@ -1595,7 +1779,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			for (int i = n_args-1; i >= 0; --i) {
 				ir_type *arg_type = get_method_param_type(type, i);
 				ir_mode *mode     = get_type_mode(arg_type);
-				ir_node *val      = symbolic_pop(mode);
+				ir_mode *amode    = get_arith_mode(mode);
+				ir_node *val      = symbolic_pop(amode);
 				if (get_irn_mode(val) != mode)
 					val = new_Conv(val, mode);
 				args[i]           = val;
@@ -1604,6 +1789,17 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node   *call    = new_Call(mem, callee, n_args, args, type);
 			ir_node   *new_mem = new_Proj(call, mode_M, pn_Call_M);
 			set_store(new_mem);
+
+			int n_res = get_method_n_ress(type);
+			if (n_res > 0) {
+				assert(n_res == 1);
+				ir_type *res_type = get_method_res_type(type, 0);
+				ir_mode *mode     = get_type_mode(res_type);
+				ir_node *resproj  = new_Proj(call, mode_T, pn_Call_T_result);
+				ir_node *res      = new_Proj(resproj, mode, 0);
+				res = get_arith_value(res);
+				symbolic_push(res);
+			}
 			continue;
 		}
 
@@ -1621,7 +1817,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			for (int i = n_args-1; i >= 0; --i) {
 				ir_type *arg_type = get_method_param_type(type, i);
 				ir_mode *mode     = get_type_mode(arg_type);
-				ir_node *val      = symbolic_pop(mode);
+				ir_mode *amode    = get_arith_mode(mode);
+				ir_node *val      = symbolic_pop(amode);
 				if (get_irn_mode(val) != mode)
 					val = new_Conv(val, mode);
 				args[i]           = val;
@@ -1687,16 +1884,58 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			construct_arraylength();
 			continue;
 		}
-		case OPC_ATHROW: case OPC_MONITORENTER: case OPC_MONITOREXIT: {
+
+		case OPC_CHECKCAST: {
+			// FIXME: need real implementation.
+			uint16_t index        = get_16bit_arg(&i);
+			ir_node *addr         = symbolic_pop(mode_reference);
+			symbolic_push(addr);
+			(void) index;
+			continue;
+		}
+		case OPC_INSTANCEOF: {
+			// FIXME: need real implementation.
+			uint16_t index        = get_16bit_arg(&i);
+			ir_node *addr         = symbolic_pop(mode_reference);
+			push_const(mode_int, 0);
+
+			(void) index;
+			(void) addr;
+			continue;
+		}
+		case OPC_ATHROW: {
+			// FIXME: need real implementation.
+			ir_node *addr         = symbolic_pop(mode_reference);
+			(void) addr; // spec says, object ref stays on stack. However, since we ignore the exception, we pop it.
+			continue;
+		}
+		case OPC_MONITORENTER:
+		case OPC_MONITOREXIT: {
 			// FIXME: need real implementation.
 			ir_node *addr         = symbolic_pop(mode_reference);
 			(void) addr;
+			continue;
+		}
+		case OPC_MULTIANEWARRAY: {
+			// FIXME: need real implementation.
+			uint16_t index        = get_16bit_arg(&i);
+			uint8_t  dims         = code->code[i++];
+			(void) index;
+
+			for (int ci = 0; ci < dims; ci++) {
+				ir_node *unused = symbolic_pop(mode_int);
+				(void) unused;
+			}
+
+			symbolic_push(new_Const_long(mode_reference, 0));
 			continue;
 		}
 		}
 
 		panic("unknown/unimplemented opcode 0x%X found\n", opcode);
 	}
+
+	xfree(ehs);
 
 	for (size_t t = 0; t < n_basic_blocks; ++t) {
 		basic_block_t *basic_block = &basic_blocks[t];
