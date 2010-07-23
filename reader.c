@@ -351,12 +351,16 @@ static ir_node *symbolic_pop(ir_mode *mode)
 	if (stack_pointer == 0)
 		panic("code produces stack underflow");
 
+	if (mode == NULL) {
+		mode = ir_guess_mode(stack_pointer-1);
+		assert (mode != NULL);
+	}
+
 	ir_node *result = get_value(--stack_pointer, mode);
+
 	/* double and long need 2 stackslots */
 	if (needs_two_slots(mode)) {
-		ir_node *dummy = get_value(--stack_pointer, mode);
-		(void) dummy;
-		//assert(is_Bad(dummy));
+		get_value(--stack_pointer, mode);
 	}
 
 	return result;
@@ -396,29 +400,39 @@ static ir_node *create_symconst(ir_entity *entity)
 	return new_SymConst(mode_reference, sym, symconst_addr_ent);
 }
 
-static ir_entity *find_method(ir_type *classtype, ident *id)
+static ir_entity *find_entity(ir_type *classtype, ident *id)
 {
-	ir_entity *entity = get_class_member_by_name(classtype, id);
-	if (entity == NULL && get_class_n_supertypes(classtype) > 0) {
-		classtype = get_class_supertype(classtype, 0);
-		return find_method(classtype, id);
-	}
-	assert(entity != NULL);
-	assert(is_method_entity(entity));
-	return entity;
-}
+	assert (is_Class_type(classtype));
 
-static ir_entity *find_field(ir_type *classtype, ident *id)
-{
+	// 1. is the entity defined in this class?
 	ir_entity *entity = get_class_member_by_name(classtype, id);
+
+	// 2. is the entity defined in the superclass?
 	int n_superclasses = get_class_n_supertypes(classtype);
 	if (entity == NULL && n_superclasses > 0) {
 		assert (n_superclasses == 1);
-		classtype = get_class_supertype(classtype, 0);
-		return find_field(classtype, id);
+		ir_type *supertype = get_class_supertype(classtype, 0);
+		entity = find_entity(supertype, id);
 	}
-	assert(entity != NULL);
-	assert(! is_method_entity(entity));
+
+	// 3. is the entity defined in an interface?
+	class_t *cls = (class_t*) get_type_link(classtype);
+	if (entity == NULL && cls->n_interfaces > 0) {
+		// the current class_file is managed like a stack. See: get_class_type(..)
+		class_t *old = class_file;
+		class_file = cls;
+
+		for (uint16_t i = 0; i < cls->n_interfaces && entity == NULL; i++) {
+			uint16_t interface_ref = cls->interfaces[i];
+			ir_type *interface = get_classref_type(interface_ref);
+			assert (interface != NULL);
+			entity = find_entity(interface, id);
+		}
+
+		assert (class_file == cls);
+		class_file = old;
+	}
+
 	return entity;
 }
 
@@ -450,7 +464,8 @@ static ir_entity *get_method_entity(uint16_t index)
 		ident *descriptorid = new_id_from_str(descriptor);
 		ident *name         = id_mangle_dot(methodid, descriptorid);
 
-		entity = find_method(classtype, name);
+		entity = find_entity(classtype, name);
+		assert (entity && is_method_entity(entity));
 		methodref->base.link = entity;
 	}
 
@@ -484,7 +499,8 @@ static ir_entity *get_interface_entity(uint16_t index)
 		ident *descriptorid = new_id_from_str(descriptor);
 		ident *name         = id_mangle_dot(methodid, descriptorid);
 
-		entity = find_method(classtype, name);
+		entity = find_entity(classtype, name);
+		assert (entity && is_method_entity(entity));
 		interfacemethodref->base.link = entity;
 	}
 
@@ -511,7 +527,8 @@ static ir_entity *get_field_entity(uint16_t index)
 		const char *fieldname
 			= get_constant_string(name_and_type->name_and_type.name_index);
 		ident *fieldid = new_id_from_str(fieldname);
-		entity = find_field(classtype, fieldid);
+		entity = find_entity(classtype, fieldid);
+		assert (entity && !is_method_entity(entity));
 		fieldref->base.link = entity;
 	}
 
@@ -800,23 +817,147 @@ static void construct_vreturn(ir_type *method_type, ir_mode *mode)
 	
 	ir_node *end_block = get_irg_end_block(current_ir_graph);
 	add_immBlock_pred(end_block, ret);
-	set_cur_block(new_Bad());
+	set_cur_block(NULL);
 }
 
-static void construct_dup(int n_vals, bool transfer_2_slots)
+static void construct_dup(void)
 {
-	ir_node *vals[n_vals];
+	uint16_t sp = stack_pointer;
+	ir_node *val1 = symbolic_pop(NULL);
+	assert (! needs_two_slots(get_irn_mode(val1)));
 
-	/* TODO: this only works for values defined in the same block */
-	for (int i = 0; i < n_vals; ++i) {
-		vals[i] = symbolic_pop(NULL);
+	symbolic_push(val1);
+	symbolic_push(val1);
+	assert ((sp+1) == stack_pointer);
+}
+
+static void construct_dup_x1(void)
+{
+	uint16_t sp = stack_pointer;
+	ir_node *val1 = symbolic_pop(NULL);
+	ir_node *val2 = symbolic_pop(NULL);
+	assert (! needs_two_slots(get_irn_mode(val1)));
+	assert (! needs_two_slots(get_irn_mode(val2)));
+
+	symbolic_push(val1);
+	symbolic_push(val2);
+	symbolic_push(val1);
+	assert ((sp+1) == stack_pointer);
+}
+
+static void construct_dup_x2(void)
+{
+	uint16_t sp = stack_pointer;
+	ir_node *val1 = symbolic_pop(NULL);
+	ir_node *val2 = symbolic_pop(NULL);
+	ir_node *val3 = NULL;
+
+	assert (! needs_two_slots(get_irn_mode(val1)));
+	if (! needs_two_slots(get_irn_mode(val2))) {
+		val3 = symbolic_pop(NULL);
+		assert (! needs_two_slots(get_irn_mode(val3)));
 	}
-	if (transfer_2_slots)
-		symbolic_push(vals[1]);
-	symbolic_push(vals[0]);
-	for (int i = n_vals - 1; i >= 0; --i) {
-		symbolic_push(vals[i]);
+	symbolic_push(val1);
+	if (val3 != NULL) symbolic_push(val3);
+	symbolic_push(val2);
+	symbolic_push(val1);
+	assert ((sp+1) == stack_pointer);
+}
+
+static void construct_dup2(void)
+{
+	uint16_t sp = stack_pointer;
+	ir_node *val1 = symbolic_pop(NULL);
+	ir_node *val2 = NULL;
+	if (! needs_two_slots(get_irn_mode(val1))) {
+		val2 = symbolic_pop(NULL);
+		assert (! needs_two_slots(get_irn_mode(val2)));
 	}
+	if (val2 != NULL) symbolic_push(val2);
+	symbolic_push(val1);
+	if (val2 != NULL) symbolic_push(val2);
+	symbolic_push(val1);
+
+	assert ((sp+2) == stack_pointer);
+}
+
+static void construct_dup2_x1(void)
+{
+	uint16_t sp = stack_pointer;
+	ir_node *val1 = symbolic_pop(NULL);
+	ir_node *val2 = symbolic_pop(NULL);
+	ir_node *val3 = NULL;
+
+	assert (! needs_two_slots(get_irn_mode(val2)));
+	if (! needs_two_slots(get_irn_mode(val1))) {
+		val3 = symbolic_pop(NULL);
+		assert (! needs_two_slots(get_irn_mode(val3)));
+	}
+	if (val3 != NULL) symbolic_push(val2);
+	symbolic_push(val1);
+	if (val3 != NULL) symbolic_push(val3);
+	symbolic_push(val2);
+	symbolic_push(val1);
+	assert ((sp+2) == stack_pointer);
+}
+
+static void construct_dup2_x2(void)
+{
+	uint16_t sp = stack_pointer;
+	ir_node *val1 = symbolic_pop(NULL);
+	ir_node *val2 = symbolic_pop(NULL);
+	ir_node *val3 = NULL;
+	ir_node *val4 = NULL;
+
+	ir_mode *m1 = get_irn_mode(val1);
+	ir_mode *m2 = get_irn_mode(val2);
+	ir_mode *m3 = NULL;
+	ir_mode *m4 = NULL;
+
+	if (needs_two_slots(m1) && needs_two_slots(m2)) {
+		// FORM 4
+		symbolic_push(val1);
+		symbolic_push(val2);
+		symbolic_push(val1);
+		return;
+	}
+
+	val3 = symbolic_pop(NULL);
+	m3   = get_irn_mode(val3);
+	if (!needs_two_slots(m1) && !needs_two_slots(m2) && needs_two_slots(m3)) {
+		// FORM 3
+		symbolic_push(val2);
+		symbolic_push(val1);
+		symbolic_push(val3);
+		symbolic_push(val2);
+		symbolic_push(val1);
+		return;
+	}
+
+	if (needs_two_slots(m1) && !needs_two_slots(m2) && !needs_two_slots(m3)) {
+		// FORM 2
+		symbolic_push(val1);
+		symbolic_push(val3);
+		symbolic_push(val2);
+		symbolic_push(val1);
+		return;
+	}
+
+	val4 = symbolic_pop(NULL);
+	m4   = get_irn_mode(val4);
+	assert (!needs_two_slots(m1)
+	     && !needs_two_slots(m2)
+	     && !needs_two_slots(m3)
+	     && !needs_two_slots(m4));
+	// FORM 1
+	symbolic_push(val2);
+	symbolic_push(val1);
+	symbolic_push(val4);
+	symbolic_push(val3);
+	symbolic_push(val2);
+	symbolic_push(val1);
+
+	assert ((sp+2) == stack_pointer);
 }
 
 static void construct_array_load(ir_type *array_type)
@@ -915,6 +1056,18 @@ static uint16_t get_16bit_arg(uint32_t *pos)
 	return value;
 }
 
+static uint32_t get_32bit_arg(uint32_t *pos)
+{
+	uint32_t p     = *pos;
+	uint8_t  b1    = code->code[p++];
+	uint8_t  b2    = code->code[p++];
+	uint8_t  b3    = code->code[p++];
+	uint8_t  b4    = code->code[p++];
+	uint32_t value = (b1 << 24) | (b2 << 16) | (b3 << 8) | b4;
+	*pos = p;
+	return value;
+}
+
 static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 {
 	code = new_code;
@@ -946,6 +1099,24 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	/* pass1: identify jump targets and create blocks for them */
 	unsigned *targets = rbitset_malloc(code->code_length);
 	basic_blocks = NEW_ARR_F(basic_block_t, 0);
+
+	unsigned *ehs = rbitset_malloc(code->code_length);
+	rbitset_clear_all(ehs, code->code_length);
+
+	for (unsigned i = 0; i < new_code->n_exceptions; i++) {
+		exception_t e = new_code->exceptions[i];
+
+		if (! rbitset_is_set(targets, e.handler_pc)) {
+			rbitset_set(targets, e.handler_pc);
+			basic_block_t exception_handler;
+			exception_handler.pc            = e.handler_pc;
+			exception_handler.block         = new_immBlock();
+			exception_handler.stack_pointer = -1;
+			ARR_APP1(basic_block_t, basic_blocks, exception_handler);
+		}
+
+		rbitset_set(ehs, e.handler_pc);
+	}
 
 	basic_block_t start;
 	start.pc            = 0;
@@ -1062,7 +1233,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				ARR_APP1(basic_block_t, basic_blocks, target);
 			}
 
-			if (opcode != OPC_GOTO) {
+			if (opcode != OPC_GOTO && opcode != OPC_GOTO_W) {
 				assert(i < code->code_length);
 				if (!rbitset_is_set(targets, i)) {
 					rbitset_set(targets, i);
@@ -1074,6 +1245,128 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 					ARR_APP1(basic_block_t, basic_blocks, target);
 				}
 			}
+
+			continue;
+		}
+
+		case OPC_TABLESWITCH: {
+			// i points to the instruction after the opcode. That instruction should be on a index that is a multiple of 4.
+			uint32_t tswitch_index = i-1;
+			uint8_t  padding = (4 - (i % 4)) % 4;
+			switch (padding) {
+			case 3: assert (code->code[i++] == 0); // FALL THROUGH
+			case 2: assert (code->code[i++] == 0); // FALL THROUGH
+			case 1: assert (code->code[i++] == 0); break;
+			default: break;
+			}
+
+			int32_t  offset_default = get_32bit_arg(&i);
+			uint32_t index_default  = ((int32_t)tswitch_index) + offset_default;
+
+			assert (index_default < code->code_length);
+
+			if (!rbitset_is_set(targets, index_default)) {
+				rbitset_set(targets, index_default);
+
+				basic_block_t target;
+				target.pc            = index_default;
+				target.block         = new_immBlock();
+				target.stack_pointer = -1;
+				ARR_APP1(basic_block_t, basic_blocks, target);
+			}
+
+			int32_t  low            = get_32bit_arg(&i);
+			int32_t  high           = get_32bit_arg(&i);
+			assert (low <= high);
+			int32_t  n_entries      = high - low + 1;
+
+			for (int32_t entry = 0; entry < n_entries; entry++) {
+				int32_t offset = get_32bit_arg(&i);
+				uint32_t index = ((int32_t)tswitch_index) + offset;
+				assert(index < code->code_length);
+
+				if (!rbitset_is_set(targets, index)) {
+					rbitset_set(targets, index);
+
+					basic_block_t target;
+					target.pc            = index;
+					target.block         = new_immBlock();
+					target.stack_pointer = -1;
+					ARR_APP1(basic_block_t, basic_blocks, target);
+				}
+			}
+
+			continue;
+		}
+
+		case OPC_LOOKUPSWITCH: {
+			// i points to the instruction after the opcode. That instruction should be on a index that is a multiple of 4.
+			uint32_t lswitch_index = i-1;
+			uint8_t  padding = (4 - (i % 4)) % 4;
+			switch (padding) {
+			case 3: assert (code->code[i++] == 0); // FALL THROUGH
+			case 2: assert (code->code[i++] == 0); // FALL THROUGH
+			case 1: assert (code->code[i++] == 0); break;
+			default: break;
+			}
+
+			int32_t  offset_default = get_32bit_arg(&i);
+			uint32_t index_default  = ((int32_t)lswitch_index) + offset_default;
+
+			assert (index_default < code->code_length);
+
+			if (!rbitset_is_set(targets, index_default)) {
+				rbitset_set(targets, index_default);
+
+				basic_block_t target;
+				target.pc            = index_default;
+				target.block         = new_immBlock();
+				target.stack_pointer = -1;
+				ARR_APP1(basic_block_t, basic_blocks, target);
+			}
+
+			int32_t n_pairs          = get_32bit_arg(&i);
+
+			for (int32_t pair = 0; pair < n_pairs; pair++) {
+				int32_t match  = get_32bit_arg(&i);
+				int32_t offset = get_32bit_arg(&i);
+				(void) match;
+
+				uint32_t index = ((int32_t)lswitch_index) + offset;
+				assert (index < code->code_length);
+				if (!rbitset_is_set(targets, index)) {
+					rbitset_set(targets, index);
+
+					basic_block_t target;
+					target.pc            = index;
+					target.block         = new_immBlock();
+					target.stack_pointer = -1;
+					ARR_APP1(basic_block_t, basic_blocks, target);
+				}
+			}
+
+			continue;
+		}
+
+		case OPC_IRETURN:
+		case OPC_LRETURN:
+		case OPC_FRETURN:
+		case OPC_DRETURN:
+		case OPC_ARETURN:
+		case OPC_RETURN:
+		case OPC_ATHROW: {
+			if (i < code->code_length) {
+				if (!rbitset_is_set(targets, i)) {
+					rbitset_set(targets, i);
+
+					basic_block_t target;
+					target.pc            = i;
+					target.block         = new_immBlock();
+					target.stack_pointer = -1;
+					ARR_APP1(basic_block_t, basic_blocks, target);
+				}
+			}
+
 			continue;
 		}
 
@@ -1214,40 +1507,12 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_FCMPG:
 		case OPC_DCMPL:
 		case OPC_DCMPG:
-		case OPC_IRETURN:
-		case OPC_LRETURN:
-		case OPC_FRETURN:
-		case OPC_DRETURN:
-		case OPC_ARETURN:
-		case OPC_RETURN:
 		case OPC_ARRAYLENGTH:
-		case OPC_ATHROW:
 		case OPC_MONITORENTER:
 		case OPC_MONITOREXIT:
 			continue;
 		}
 		panic("unknown/unimplemented opcode 0x%X", opcode);
-	}
-
-	unsigned *ehs = rbitset_malloc(code->code_length);
-
-	for (int i = 0; i < new_code->n_exceptions; i++) {
-		exception_t e = new_code->exceptions[i];
-
-		if (! rbitset_is_set(targets, e.handler_pc)) {
-			rbitset_set(targets, e.handler_pc);
-			basic_block_t exception_handler;
-			exception_handler.pc            = e.handler_pc;
-			exception_handler.block         = new_immBlock();
-			exception_handler.stack_pointer = -1;
-			ARR_APP1(basic_block_t, basic_blocks, exception_handler);
-		}
-
-		uint16_t pc = e.handler_pc;
-		do {
-			rbitset_set(ehs, pc++);
-		}
-		while (! rbitset_is_set(targets, pc));
 	}
 
 	xfree(targets);
@@ -1266,13 +1531,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	   while doing so */
 	set_cur_block(NULL);
 	basic_block_t *next_target = &basic_blocks[0];
+
 	for (uint32_t i = 0; i < code->code_length; /* nothing */) {
-		if (rbitset_is_set(ehs, i)) // skip exception handlers
-		{
-			next_target++;
-			i = next_target->pc;
-			continue;
-		}
 		if (i == next_target->pc) {
 			if (next_target->stack_pointer < 0) {
 				next_target->stack_pointer = stack_pointer;
@@ -1294,6 +1554,11 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		} else {
 			assert(i < next_target->pc);
 		}
+
+		// simulate that an exception object is pushed onto the stack
+		// if we enter an execption handler
+		if (rbitset_is_set(ehs, i))
+			symbolic_push(new_Const_long(mode_reference, 0));
 
 		opcode_kind_t opcode = code->code[i++];
 		switch (opcode) {
@@ -1394,15 +1659,15 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_CASTORE: construct_array_store(type_array_char);      continue;
 		case OPC_SASTORE: construct_array_store(type_array_short);     continue;
 
-		case OPC_POP:  --stack_pointer;    continue;
-		case OPC_POP2: stack_pointer -= 2; continue;
+		case OPC_POP:  --stack_pointer;                      continue;
+		case OPC_POP2: stack_pointer -= 2;                   continue;
 
-		case OPC_DUP:     construct_dup(1, false); continue;
-		case OPC_DUP_X1:  construct_dup(2, false); continue;
-		case OPC_DUP_X2:  construct_dup(3, false); continue;
-		case OPC_DUP2:    construct_dup(2, true);  continue;
-		case OPC_DUP2_X1: construct_dup(3, true);  continue;
-		case OPC_DUP2_X2: construct_dup(4, true);  continue;
+		case OPC_DUP:     construct_dup();                   continue;
+		case OPC_DUP_X1:  construct_dup_x1();                continue;
+		case OPC_DUP_X2:  construct_dup_x2();                continue;
+		case OPC_DUP2:    construct_dup2();                  continue;
+		case OPC_DUP2_X1: construct_dup2_x1();               continue;
+		case OPC_DUP2_X2: construct_dup2_x2();               continue;
 		case OPC_SWAP: {
 			ir_node *top1 = symbolic_pop(NULL);
 			ir_node *top2 = symbolic_pop(NULL);
@@ -1906,7 +2171,15 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ATHROW: {
 			// FIXME: need real implementation.
 			ir_node *addr         = symbolic_pop(mode_reference);
-			(void) addr; // spec says, object ref stays on stack. However, since we ignore the exception, we pop it.
+			// FIXME: The reference popped here must be topstack when entering the exception handler.
+			// Currently a null-reference is pushed onto the stack when entering an exception handler
+
+			ir_node *raise          = new_Raise(get_store(), addr);
+			ir_node *proj_raise     = new_Proj(raise, mode_X, pn_Raise_X);
+
+			ir_node *end_block = get_irg_end_block(current_ir_graph);
+			add_immBlock_pred(end_block, proj_raise);
+			set_cur_block(NULL);
 			continue;
 		}
 		case OPC_MONITORENTER:
@@ -1928,6 +2201,75 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			}
 
 			symbolic_push(new_Const_long(mode_reference, 0));
+			continue;
+		}
+
+		case OPC_TABLESWITCH: {
+			// FIXME: real implementation
+
+			// i points to the instruction after the opcode. That instruction should be on a index that is a multiple of 4.
+			uint32_t tswitch_index = i-1;
+			uint8_t  padding = (4 - (i % 4)) % 4;
+			switch (padding) {
+			case 3: assert (code->code[i++] == 0); // FALL THROUGH
+			case 2: assert (code->code[i++] == 0); // FALL THROUGH
+			case 1: assert (code->code[i++] == 0); break;
+			default: break;
+			}
+
+			int32_t  offset_default = get_32bit_arg(&i);
+			uint32_t index_default  = ((int32_t)tswitch_index) + offset_default;
+			assert (index_default < code->code_length);
+
+			int32_t  low            = get_32bit_arg(&i);
+			int32_t  high           = get_32bit_arg(&i);
+			assert (low <= high);
+			int32_t  n_entries      = high - low + 1;
+
+			for (int32_t entry = 0; entry < n_entries; entry++) {
+				int32_t offset = get_32bit_arg(&i);
+				uint32_t index = ((int32_t)tswitch_index) + offset;
+				assert(index < code->code_length);
+			}
+
+			ir_node *op = symbolic_pop(mode_int);
+			(void) op;
+
+			continue;
+		}
+
+		case OPC_LOOKUPSWITCH: {
+			// FIXME: real implementation
+
+			// i points to the instruction after the opcode. That instruction should be on a index that is a multiple of 4.
+			uint32_t lswitch_index = i-1;
+			uint8_t  padding = (4 - (i % 4)) % 4;
+			switch (padding) {
+			case 3: assert (code->code[i++] == 0); // FALL THROUGH
+			case 2: assert (code->code[i++] == 0); // FALL THROUGH
+			case 1: assert (code->code[i++] == 0); break;
+			default: break;
+			}
+
+			int32_t  offset_default = get_32bit_arg(&i);
+			uint32_t index_default  = ((int32_t)lswitch_index) + offset_default;
+
+			assert (index_default < code->code_length);
+
+			int32_t n_pairs          = get_32bit_arg(&i);
+
+			for (int pair = 0; pair < n_pairs; pair++) {
+				int32_t match  = get_32bit_arg(&i);
+				int32_t offset = get_32bit_arg(&i);
+				(void) match;
+
+				uint32_t index = ((int32_t)lswitch_index) + offset;
+				assert (index < code->code_length);
+			}
+
+			ir_node *op = symbolic_pop(mode_int);
+			(void) op;
+
 			continue;
 		}
 		}
@@ -2142,7 +2484,7 @@ int main(int argc, char **argv)
 	}
 
 	irp_finalize_cons();
-	dump_all_ir_graphs("");
+	//dump_all_ir_graphs("");
 
 	lower_oo();
 
@@ -2184,7 +2526,7 @@ int main(int argc, char **argv)
 		edges_activate(irg);
 	}
 
-	dump_ir_prog_ext(dump_typegraph, "types.vcg");
+	//dump_ir_prog_ext(dump_typegraph, "types.vcg");
 
 	be_parse_arg("omitfp");
 	be_main(stdout, "bytecode");

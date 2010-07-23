@@ -173,9 +173,9 @@ typedef enum opcode_kind_t {
 #if 0
 	OPC_JSR             = 0xA8,
 	OPC_RET             = 0xA9,
+#endif
 	OPC_TABLESWITCH     = 0xAA,
 	OPC_LOOKUPSWITCH    = 0xAB,
-#endif
 	OPC_IRETURN         = 0xAC,
 	OPC_LRETURN         = 0xAD,
 	OPC_FRETURN         = 0xAE,
