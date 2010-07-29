@@ -44,19 +44,23 @@ static void setup_vtable(ir_type *clazz, void *env)
 	// assign vtable ids
 	for (int i = 0; i < get_class_n_members(clazz); i++) {
 		ir_entity *member = get_class_member(clazz, i);
-		if (is_method_entity(member)
-			&& ! (((method_t *)get_entity_link(member))->access_flags & ACCESS_FLAG_STATIC)
-			&& ! (strncmp(get_entity_name(member), "<init>", 6) == 0)) {
-			int n_overwrites = get_entity_n_overwrites(member);
-			if (n_overwrites > 0) { // this method already has a vtable id, copy it from the superclass' implementation
-				assert (n_overwrites == 1);
-				ir_entity *overwritten_entity = get_entity_overwrites(member, 0);
-				unsigned vtable_id = get_entity_vtable_number(overwritten_entity);
-				assert (vtable_id != IR_VTABLE_NUM_NOT_SET);
-				set_entity_vtable_number(member, vtable_id);
-			} else {
-				set_entity_vtable_number(member, vtable_size);
-				set_class_vtable_size(clazz, ++vtable_size);
+		if (is_method_entity(member)) {
+			method_t *linked_method = (method_t *)get_entity_link(member);
+
+			if (! (linked_method->access_flags & ACCESS_FLAG_STATIC)
+			 && ! (linked_method->access_flags & ACCESS_FLAG_PRIAVTE)
+			 && ! (strncmp(get_entity_name(member), "<init>", 6) == 0)) {
+				int n_overwrites = get_entity_n_overwrites(member);
+				if (n_overwrites > 0) { // this method already has a vtable id, copy it from the superclass' implementation
+					assert (n_overwrites == 1);
+					ir_entity *overwritten_entity = get_entity_overwrites(member, 0);
+					unsigned vtable_id = get_entity_vtable_number(overwritten_entity);
+					assert (vtable_id != IR_VTABLE_NUM_NOT_SET);
+					set_entity_vtable_number(member, vtable_id);
+				} else {
+					set_entity_vtable_number(member, vtable_size);
+					set_class_vtable_size(clazz, ++vtable_size);
+				}
 			}
 		}
 	}
