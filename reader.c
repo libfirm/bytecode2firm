@@ -77,15 +77,15 @@ ir_entity *builtin_arraylength;
 static void init_types(void)
 {
 	mode_byte
-		= new_ir_mode("B", irms_int_number, 8, 1, irma_twos_complement, 32);
+		= new_ir_mode("B", irms_int_number, 8, 1, irma_twos_complement, 8);
 	type_byte = new_type_primitive(mode_byte);
 
 	ir_mode *mode_char
-		= new_ir_mode("C", irms_int_number, 16, 0, irma_twos_complement, 0);
+		= new_ir_mode("C", irms_int_number, 16, 0, irma_twos_complement, 16);
 	type_char = new_type_primitive(mode_char);
 
 	ir_mode *mode_short
-		= new_ir_mode("S", irms_int_number, 16, 1, irma_twos_complement, 32);
+		= new_ir_mode("S", irms_int_number, 16, 1, irma_twos_complement, 16);
 	type_short = new_type_primitive(mode_short);
 
 	mode_int
@@ -93,7 +93,7 @@ static void init_types(void)
 	type_int = new_type_primitive(mode_int);
 
 	mode_long
-		= new_ir_mode("J", irms_int_number, 64, 1, irma_twos_complement, 32);
+		= new_ir_mode("J", irms_int_number, 64, 1, irma_twos_complement, 64);
 	type_long = new_type_primitive(mode_long);
 
 	ir_mode *mode_boolean = mode_byte;
