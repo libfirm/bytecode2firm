@@ -1757,12 +1757,8 @@ static ir_type *construct_class_methods(ir_type *type)
 int main(int argc, char **argv)
 {
 	be_opt_register();
-	firm_parameter_t params;
-	memset(&params, 0, sizeof(params));
-	const backend_params *be_params = be_get_backend_param();
-	params.size = sizeof(params);
 
-	ir_init(&params);
+	ir_init(NULL);
 	init_types();
 	class_registry_init();
 	init_mangle();
@@ -1797,7 +1793,7 @@ int main(int argc, char **argv)
 		optimize_graph_df(irg);
 		place_code(irg);
 		optimize_cf(irg);
-		opt_if_conv(irg, be_params->if_conv_info);
+		opt_if_conv(irg);
 		optimize_cf(irg);
 		optimize_reassociation(irg);
 		optimize_graph_df(irg);
@@ -1810,6 +1806,7 @@ int main(int argc, char **argv)
 		edges_deactivate(irg);
 		edges_activate(irg);
 	}
+	be_get_backend_param()->lower_for_target();
 
 	dump_ir_prog_ext(dump_typegraph, "types.vcg");
 
