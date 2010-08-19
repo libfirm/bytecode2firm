@@ -26,6 +26,12 @@ static void setup_vtable(ir_type *clazz, void *env)
 	(void) env;
 	assert(is_Class_type(clazz));
 
+	class_t *linked_class = (class_t*) get_type_link(clazz);
+	assert (linked_class != NULL);
+
+	if ((linked_class->access_flags & ACCESS_FLAG_INTERFACE) != 0)
+		return;
+
 	ident *vtable_name = mangle_vtable_name(clazz);
 
 	ir_type *global_type = get_glob_type();
@@ -96,8 +102,15 @@ static void setup_vtable(ir_type *clazz, void *env)
 		if (is_method_entity(member)) {
 			unsigned member_vtid = get_entity_vtable_number(member);
 			if (member_vtid != IR_VTABLE_NUM_NOT_SET) {
+				method_t *linked_method = (method_t*) get_entity_link(member);
+				assert (linked_method != NULL);
+
 				union symconst_symbol sym;
-				sym.entity_p = member;
+				if ((linked_method->access_flags & ACCESS_FLAG_ABSTRACT) == 0) {
+					sym.entity_p = member;
+				} else {
+					sym.entity_p = new_entity(get_glob_type(), new_id_from_str("__abstract_method"), get_entity_type(member)); //FIXME!
+				}
 				ir_node *symconst_node = new_r_SymConst(const_code, mode_P, sym, symconst_addr_ent);
 				ir_initializer_t *val = create_initializer_const(symconst_node);
 				set_initializer_compound_value (init, member_vtid, val);
@@ -282,7 +295,7 @@ static void lower_Call(ir_node* call)
 		// FIXME: need real implementation for INVOKEINTERFACE.
 
 		ir_type *method_type = get_entity_type(method_entity);
-		ir_entity *nyi    = new_entity(get_glob_type(), new_id_from_str("__nyi"), method_type);
+		ir_entity *nyi    = new_entity(get_glob_type(), new_id_from_str("__invokeinterface_nyi"), method_type);
 		union symconst_symbol sym;
 		sym.entity_p = nyi;
 		ir_node *nyi_symc = new_SymConst(mode_reference, sym, symconst_addr_ent);
