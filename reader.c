@@ -191,7 +191,7 @@ static ir_type *class_ref_to_type(const char **descriptor)
 	*descriptor = end+1;
 
 	ident   *id   = new_id_from_chars(begin, end-begin);
-	ir_type *type = class_registry_get(get_id_str(id));
+	ir_type *type = get_class_type(get_id_str(id));
 
 	return new_type_pointer(type);
 }
@@ -290,6 +290,9 @@ static void create_field_entity(field_t *field, ir_type *owner)
 	if (field->access_flags & ACCESS_FLAG_STATIC) {
 		set_entity_allocation(entity, allocation_static);
 	}
+
+	ident *mangled_id      = mangle_entity_name(entity, id);
+	set_entity_ld_ident(entity, mangled_id);
 
 #ifdef VERBOSE
 	fprintf(stderr, "Field %s\n", name);
@@ -1910,6 +1913,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				= get_target_block_remember_stackpointer(index);
 			add_immBlock_pred(target_block, jmp);
 
+			keep_alive(target_block);
 			set_cur_block(NULL);
 			continue;
 		}
@@ -2174,11 +2178,25 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			// FIXME: The reference popped here must be topstack when entering the exception handler.
 			// Currently a null-reference is pushed onto the stack when entering an exception handler
 
-			ir_node *raise          = new_Raise(get_store(), addr);
-			ir_node *proj_raise     = new_Proj(raise, mode_X, pn_Raise_X);
+			(void) addr;
+
+			ir_node *ret;
+
+			ir_type *type = get_entity_type(entity);
+			int n_ress    = get_method_n_ress(type);
+			if (n_ress > 0) {
+				assert (n_ress == 1);
+				ir_type *res = get_method_res_type(type, 0);
+				ir_mode *res_mode = get_type_mode(res);
+				ir_node *fake_res = new_Const_long(res_mode, 0);
+				ir_node *fake_res_arr[] = {fake_res};
+				ret = new_Return(get_store(), 1, fake_res_arr);
+			} else {
+				ret = new_Return(get_store(), 0, NULL);
+			}
 
 			ir_node *end_block = get_irg_end_block(current_ir_graph);
-			add_immBlock_pred(end_block, proj_raise);
+			add_immBlock_pred(end_block, ret);
 			set_cur_block(NULL);
 			continue;
 		}
@@ -2258,17 +2276,37 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 			int32_t n_pairs          = get_32bit_arg(&i);
 
+			ir_node *op = symbolic_pop(mode_int);
+
 			for (int pair = 0; pair < n_pairs; pair++) {
 				int32_t match  = get_32bit_arg(&i);
 				int32_t offset = get_32bit_arg(&i);
-				(void) match;
 
 				uint32_t index = ((int32_t)lswitch_index) + offset;
 				assert (index < code->code_length);
+
+				ir_node *const_match = new_Const_long(mode_int, match);
+				ir_node *cmp         = new_Cmp(op, const_match);
+				ir_node *proj_eq     = new_Proj(cmp, mode_b, pn_Cmp_Eq);
+
+				ir_node *block_true  = get_target_block_remember_stackpointer(index);
+				ir_node *block_false = new_immBlock();
+
+				ir_node *cond        = new_Cond(proj_eq);
+				ir_node *proj_true   = new_Proj(cond, mode_X, pn_Cond_true);
+				add_immBlock_pred(block_true, proj_true);
+				ir_node *proj_false  = new_Proj(cond, mode_X, pn_Cond_false);
+				add_immBlock_pred(block_false, proj_false);
+				mature_immBlock(block_false);
+
+				set_cur_block(block_false);
 			}
 
-			ir_node *op = symbolic_pop(mode_int);
-			(void) op;
+			ir_node *default_block = get_target_block_remember_stackpointer(index_default);
+			ir_node *jmp           = new_Jmp();
+			add_immBlock_pred(default_block, jmp);
+
+			set_cur_block(NULL);
 
 			continue;
 		}
@@ -2480,7 +2518,10 @@ int main(int argc, char **argv)
 
 	while (!pdeq_empty(worklist)) {
 		ir_type *classtype = pdeq_getl(worklist);
-		construct_class_methods(classtype);
+
+		const char *classname = get_class_name(classtype);
+		if (strncmp("java/", classname, 5) != 0 && strncmp("javax/", classname, 6) != 0 && strncmp("gnu/", classname, 4) != 0)
+			construct_class_methods(classtype);
 	}
 
 	irp_finalize_cons();
@@ -2491,8 +2532,11 @@ int main(int argc, char **argv)
 	int n_irgs = get_irp_n_irgs();
 	for (int p = 0; p < n_irgs; ++p) {
 		ir_graph *irg = get_irp_irg(p);
+
+		fprintf(stderr, "\x0d===> Optimizing irg\t%d/%d                  ", p+1, n_irgs);
+
 		optimize_reassociation(irg);
-		optimize_load_store(irg);
+//		optimize_load_store(irg);
 		optimize_graph_df(irg);
 		place_code(irg);
 		optimize_cf(irg);
@@ -2501,10 +2545,12 @@ int main(int argc, char **argv)
 		optimize_reassociation(irg);
 		optimize_graph_df(irg);
 		//opt_jumpthreading(irg);
-		optimize_load_store(irg);
+//		optimize_load_store(irg);
 		optimize_graph_df(irg);
 		optimize_cf(irg);
 	}
+
+	fprintf(stderr, "\n");
 
 	lwrdw_param_t param = {
 			.enable        = 1,
@@ -2528,11 +2574,19 @@ int main(int argc, char **argv)
 
 	//dump_ir_prog_ext(dump_typegraph, "types.vcg");
 
+	FILE *asm_out = fopen("bc2firm.S", "w");
+
+	fprintf(stderr, "===> Running backend\n");
+
 	be_parse_arg("omitfp");
-	be_main(stdout, "bytecode");
+	be_main(asm_out, "bytecode");
+
+	fclose(asm_out);
 
 	class_file_exit();
 	deinit_mangle();
+
+	fprintf(stderr, "===> Done!\n");
 
 	return 0;
 }
