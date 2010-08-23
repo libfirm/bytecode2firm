@@ -28,5 +28,9 @@ $(BUILDDIR)/%.o: %.c $(BUILDDIR)
 $(BUILDDIR):
 	$(INSTALL) -d $(BUILDDIR) $(BUILDDIR)/adt
 
+librts.o: librts/librts.cc
+	@echo '===> Building $<'
+	$(Q)$(CXX) $(CXXFLAGS) -c -o $@ $<
+
 clean:
 	rm -rf $(OBJECTS) $(GOAL) $(DEPS)

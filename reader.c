@@ -26,6 +26,8 @@
 
 static pdeq    *worklist;
 static class_t *class_file;
+static const char *main_class_name;
+static const char *main_class_name_short;
 
 static constant_t *get_constant(uint16_t index)
 {
@@ -2375,8 +2377,10 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	if (method->access_flags & ACCESS_FLAG_NATIVE) {
 		set_entity_visibility(entity, ir_visibility_external);
 	}
-	if (strcmp(name, "main") == 0 && strcmp(descriptor, "([Ljava/lang/String;)V") == 0) {
-		ld_ident = new_id_from_str("main");
+	if (strcmp(name, "main") == 0
+	 && strcmp(descriptor, "([Ljava/lang/String;)V") == 0
+	 && strcmp(main_class_name, get_class_name(owner)) == 0) {
+		ld_ident = new_id_from_str("__bc2firm_main");
 	} else {
 		ld_ident = mangle_entity_name(entity, id);
 	}
@@ -2513,6 +2517,11 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
+	size_t arg_len        = strlen(argv[1]);
+	main_class_name       = argv[1];
+	main_class_name_short = argv[1] + arg_len - 1;
+	while (main_class_name_short > main_class_name && *(main_class_name_short-1) != '/') main_class_name_short--;
+
 	/* trigger loading of the class specified on commandline */
 	get_class_type(argv[1]);
 
@@ -2586,7 +2595,14 @@ int main(int argc, char **argv)
 	class_file_exit();
 	deinit_mangle();
 
+	char cmd_buffer[1024];
+	sprintf(cmd_buffer, "gcc -g bc2firm.S librts.o -lgcj -lstdc++ -o %s", main_class_name_short);
+
+	fprintf(stderr, "===> Assembling & linking (%s)\n", cmd_buffer);
+
+	int retval = system(cmd_buffer);
+
 	fprintf(stderr, "===> Done!\n");
 
-	return 0;
+	return retval;
 }

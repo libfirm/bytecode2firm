@@ -3,6 +3,5 @@ classes
 config.mak
 reader
 *.vcg
-librts
 *.s
 a.out
