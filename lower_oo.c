@@ -38,7 +38,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 	assert (get_class_member_by_name(global_type, vtable_name) == NULL);
 
 	ir_type *superclass = NULL;
-	unsigned vtable_size = 0;
+	unsigned vtable_size = 2;
 	int n_supertypes = get_class_n_supertypes(clazz);
 	if (n_supertypes > 0) {
 		assert (n_supertypes == 1);
@@ -55,6 +55,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 
 			if (! (linked_method->access_flags & ACCESS_FLAG_STATIC)
 			 && ! (linked_method->access_flags & ACCESS_FLAG_PRIAVTE)
+			 && ! (linked_method->access_flags & ACCESS_FLAG_FINAL)
 			 && ! (strncmp(get_entity_name(member), "<init>", 6) == 0)) {
 				int n_overwrites = get_entity_n_overwrites(member);
 				if (n_overwrites > 0) { // this method already has a vtable id, copy it from the superclass' implementation
@@ -116,6 +117,13 @@ static void setup_vtable(ir_type *clazz, void *env)
 				set_initializer_compound_value (init, member_vtid, val);
 			}
 		}
+	}
+
+	ir_node *const_0 = new_r_Const_long(const_code, mode_reference, 0);
+	for (int i = 0; i < 2; i++) {
+
+		ir_initializer_t *val = create_initializer_const(const_0);
+		set_initializer_compound_value (init, i, val);
 	}
 
 	set_entity_initializer(vtable, init);
