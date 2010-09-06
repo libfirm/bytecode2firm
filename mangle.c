@@ -279,25 +279,21 @@ ident *mangle_entity_name(ir_entity *entity, ident *id)
 	if (!is_Method_type(type))
 		goto name_finished;
 
-	int n_ress   = get_method_n_ress(type);
-	int n_params = get_method_n_params(type);
+	if (! is_ctor) {
+		obstack_1grow(&obst, 'J');
 
-	if (is_ctor && n_ress == 0 && n_params == 1) {
-		obstack_1grow(&obst, 'v');
-		goto name_finished;
-	}
-
-	obstack_1grow(&obst, 'J');
-
-	/* mangle return type */
-	if (n_ress == 0) {
-		obstack_1grow(&obst, 'v');
-	} else {
-		assert(n_ress == 1);
-		mangle_type(get_method_res_type(type, 0), &obst);
+		/* mangle return type */
+		int n_ress = get_method_n_ress(type);
+		if (n_ress == 0) {
+			obstack_1grow(&obst, 'v');
+		} else {
+			assert(n_ress == 1);
+			mangle_type(get_method_res_type(type, 0), &obst);
+		}
 	}
 
 	/* mangle parameter types */
+	int n_params = get_method_n_params(type);
 	int start    = get_entity_allocation(entity) == allocation_static ? 0 : 1;
 	if (n_params-start == 0) {
 		obstack_1grow(&obst, 'v');
