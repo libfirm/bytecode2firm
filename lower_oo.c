@@ -325,10 +325,10 @@ static void lower_Call(ir_node* call)
 	ir_entity *vptr_entity= get_class_member_by_name(classtype, vptr_ident);
 	ir_node *vptr         = new_r_Sel(block, new_NoMem(), objptr, 0, NULL, vptr_entity);
 
-	ir_node *mem          = get_Call_mem(call);
-	ir_node *vtable_load  = new_r_Load(block, mem, vptr, mode_P, cons_none);
+	ir_node *cur_mem      = get_Call_mem(call);
+	ir_node *vtable_load  = new_r_Load(block, cur_mem, vptr, mode_P, cons_none);
 	ir_node *vtable_addr  = new_r_Proj(vtable_load, mode_P, pn_Load_res);
-	ir_node *new_mem      = new_r_Proj(vtable_load, mode_M, pn_Load_M);
+	         cur_mem      = new_r_Proj(vtable_load, mode_M, pn_Load_M);
 
 	unsigned vtable_id    = get_entity_vtable_number(method_entity);
 	assert(vtable_id != IR_VTABLE_NUM_NOT_SET);
@@ -336,12 +336,12 @@ static void lower_Call(ir_node* call)
 	unsigned type_reference_size = get_type_size_bytes(type_reference);
 	ir_node *vtable_offset= new_r_Const_long(irg, mode_P, vtable_id * type_reference_size);
 	ir_node *funcptr_addr = new_r_Add(block, vtable_addr, vtable_offset, mode_P);
-	ir_node *callee_load  = new_r_Load(block, new_mem, funcptr_addr, mode_P, cons_none);
+	ir_node *callee_load  = new_r_Load(block, cur_mem, funcptr_addr, mode_P, cons_none);
 	ir_node *real_callee  = new_r_Proj(callee_load, mode_P, pn_Load_res);
-	         new_mem      = new_r_Proj(callee_load, mode_M, pn_Load_M);
+	         cur_mem      = new_r_Proj(callee_load, mode_M, pn_Load_M);
 
 	set_Call_ptr(call, real_callee);
-	set_Call_mem(call, new_mem);
+	set_Call_mem(call, cur_mem);
 }
 
 static void lower_node(ir_node *node, void *env)
@@ -379,8 +379,6 @@ void lower_oo(void)
 	calloc_entity = new_entity(glob, id, method_type);
 	set_entity_visibility(calloc_entity, ir_visibility_external);
 	set_method_additional_property(method_type, mtp_property_malloc);
-
-	gcji_init();
 
 	int n_irgs = get_irp_n_irgs();
 	for (int i = 0; i < n_irgs; ++i) {
