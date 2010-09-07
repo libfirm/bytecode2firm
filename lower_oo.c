@@ -9,6 +9,7 @@
 
 #include "class_file.h"
 #include "mangle.h"
+#include "gcj_interface.h"
 
 static ir_entity *calloc_entity;
 
@@ -171,6 +172,9 @@ static void lower_Alloc(ir_node *node)
 	ir_type  *type  = get_Alloc_type(node);
 	ir_node  *count = get_Alloc_count(node);
 	ir_node  *size;
+
+	ir_node  *res   = NULL;
+
 	if (is_Array_type(type)) {
 		ir_type *element_type = get_array_element_type(type);
 		ir_node *block = get_nodes_block(node);
@@ -193,34 +197,38 @@ static void lower_Alloc(ir_node *node)
 		size = new_r_SymConst(irg, mode_Iu, value, symconst_type_size);
 	}
 
-	/* create call to "calloc" */
-	dbg_info *dbgi   = get_irn_dbg_info(node);
-	ir_node  *mem    = get_Alloc_mem(node);
-	ir_node  *block  = get_nodes_block(node);
-	symconst_symbol value;
-	value.entity_p   = calloc_entity;
-	ir_node  *callee = new_r_SymConst(irg, mode_reference, value,
-	                                  symconst_addr_ent);
-	ir_node  *one    = new_r_Const_long(irg, mode_Iu, 1);
-	ir_node  *in[2]  = { one, size };
-	ir_type  *call_type = get_entity_type(calloc_entity);
-	ir_node  *call   = new_rd_Call(dbgi, block, mem, callee, 2, in, call_type);
+	dbg_info *dbgi    = get_irn_dbg_info(node);
+	ir_node  *cur_mem = get_Alloc_mem(node);
+	ir_node  *block   = get_nodes_block(node);
 
-	ir_node  *new_mem = new_r_Proj(call, mode_M, pn_Call_M);
-	ir_node  *ress    = new_r_Proj(call, mode_T, pn_Call_T_result);
-	ir_node  *res     = new_r_Proj(ress, mode_reference, 0);
+	if (is_Class_type(type) && gcji_is_api_class(type)) {
+		res = gcji_allocate_object(type, irg, block, &cur_mem);
+	} else {
+		/* Fallback: create call to "calloc" */
+		symconst_symbol value;
+		value.entity_p   = calloc_entity;
+		ir_node  *callee = new_r_SymConst(irg, mode_reference, value,
+		                                  symconst_addr_ent);
+		ir_node  *one    = new_r_Const_long(irg, mode_Iu, 1);
+		ir_node  *in[2]  = { one, size };
+		ir_type  *call_type = get_entity_type(calloc_entity);
+		ir_node  *call   = new_rd_Call(dbgi, block, cur_mem, callee, 2, in, call_type);
+
+		          cur_mem = new_r_Proj(call, mode_M, pn_Call_M);
+		ir_node  *ress    = new_r_Proj(call, mode_T, pn_Call_T_result);
+		          res     = new_r_Proj(ress, mode_reference, 0);
+	}
 
 	if (is_Array_type(type)) {
 		/* write length of array */
-		mem = new_mem;
 		ir_node *len_value = count;
 		assert(get_irn_mode(len_value) == mode_Iu);
 		ir_node *len_delta = new_r_Const_long(irg, mode_reference,
 		                                      (int)addr_delta-4);
 		ir_node *len_addr  = new_r_Add(block, res, len_delta, mode_reference);
-		ir_node *store     = new_rd_Store(dbgi, block, mem, len_addr,
+		ir_node *store     = new_rd_Store(dbgi, block, cur_mem, len_addr,
 		                                  len_value, cons_none);
-		new_mem            = new_r_Proj(store, mode_M, pn_Store_M);
+		cur_mem            = new_r_Proj(store, mode_M, pn_Store_M);
 
 		if (addr_delta > 0) {
 			ir_node *delta = new_r_Const_long(irg, mode_reference,
@@ -239,12 +247,12 @@ static void lower_Alloc(ir_node *node)
 		union symconst_symbol sym;
 		sym.entity_p = vtable_entity;
 		ir_node   *vtable_symconst = new_r_SymConst(irg, mode_reference, sym, symconst_addr_ent);
-		ir_node   *vptr_store      = new_r_Store(block, new_mem, vptr, vtable_symconst, cons_none);
-		           new_mem         = new_r_Proj(vptr_store, mode_M, pn_Store_M);
+		ir_node   *vptr_store      = new_r_Store(block, cur_mem, vptr, vtable_symconst, cons_none);
+		           cur_mem         = new_r_Proj(vptr_store, mode_M, pn_Store_M);
 	}
 
 	turn_into_tuple(node, pn_Alloc_max);
-	set_irn_n(node, pn_Alloc_M, new_mem);
+	set_irn_n(node, pn_Alloc_M, cur_mem);
 	set_irn_n(node, pn_Alloc_res, res);
 }
 
@@ -371,6 +379,8 @@ void lower_oo(void)
 	calloc_entity = new_entity(glob, id, method_type);
 	set_entity_visibility(calloc_entity, ir_visibility_external);
 	set_method_additional_property(method_type, mtp_property_malloc);
+
+	gcji_init();
 
 	int n_irgs = get_irp_n_irgs();
 	for (int i = 0; i < n_irgs; ++i) {

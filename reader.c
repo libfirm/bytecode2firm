@@ -19,6 +19,7 @@
 #include "adt/xmalloc.h"
 
 #include "mangle.h"
+#include "gcj_interface.h"
 
 #include <libfirm/firm.h>
 
@@ -726,35 +727,13 @@ static ir_entity *string_to_firm(const char *bytes, size_t length)
 
 static ir_node *new_string_literal(const char* bytes, size_t length)
 {
-	ir_type *java_lang_String = get_class_type("java/lang/String");
-	assert (java_lang_String != NULL);
-
-	// allocate String instance
-	ir_node   *mem       = get_store();
-	ir_node   *alloc     = new_Alloc(mem, new_Const_long(mode_Iu, 1), java_lang_String, heap_alloc);
-	ir_node   *res       = new_Proj(alloc, mode_reference, pn_Alloc_res);
-	ir_node   *new_mem   = new_Proj(alloc, mode_M, pn_Alloc_M);
-	set_store(new_mem);
-
 	// create string const
-	ir_entity *string_constant = string_to_firm(bytes, length);
-	ir_node   *string_symc = create_symconst(string_constant);
-
-	// call constructor
-	ir_node *args[2];
-	args[0] = res;
-	args[1] = string_symc;
-
-	ir_entity *ctor      = get_class_member_by_name(java_lang_String, new_id_from_str("<init>.([C)V"));
-	ir_node   *ctor_symc = create_symconst(ctor);
-	ir_type   *ctor_type = get_entity_type(ctor);
-	assert (ctor != NULL);
-
-	           mem       = get_store();
-	ir_node   *call      = new_Call(mem, ctor_symc, 2, args, ctor_type);
-	           new_mem   = new_Proj(call, mode_M, pn_Call_M);
-	set_store(new_mem);
-
+	ir_entity *string_const = string_to_firm(bytes, length);
+	ir_graph  *irg          = get_current_ir_graph();
+	ir_node   *block        = get_irg_current_block(irg);
+	ir_node   *mem          = get_store();
+	ir_node   *res          = gcji_new_string(string_const, irg, block, &mem);
+	set_store(mem);
 	return res;
 }
 
@@ -787,7 +766,7 @@ static void push_load_const(uint16_t index)
 	}
 	case CONSTANT_STRING: {
 		constant_t *utf8_const = get_constant(constant->string.string_index);
-		ir_node *string_literal = new_string_literal(utf8_const->utf8_string.bytes, utf8_const->utf8_string.length);
+		ir_node *string_literal = new_string_literal(utf8_const->utf8_string.bytes, utf8_const->utf8_string.length+1);
 		symbolic_push(string_literal);
 		break;
 	}
@@ -2507,6 +2486,7 @@ int main(int argc, char **argv)
 	init_types();
 	class_registry_init();
 	init_mangle();
+	gcji_init();
 
 	const char *classpath = "classes/";
 	class_file_init(classpath);
@@ -2528,8 +2508,7 @@ int main(int argc, char **argv)
 	while (!pdeq_empty(worklist)) {
 		ir_type *classtype = pdeq_getl(worklist);
 
-		const char *classname = get_class_name(classtype);
-		if (strncmp("java/", classname, 5) != 0 && strncmp("javax/", classname, 6) != 0 && strncmp("gnu/", classname, 4) != 0)
+		if (! gcji_is_api_class(classtype))
 			construct_class_methods(classtype);
 	}
 

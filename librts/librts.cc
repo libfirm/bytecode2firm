@@ -40,6 +40,9 @@ namespace java {
 		namespace System {
 			extern void* class$;
 		}
+		namespace String {
+			extern void* class$;
+		}
 		class Class;
 	}
 }
@@ -85,6 +88,7 @@ void __gcj_init(void) {
   _Jv_InitPrimClass (&_Jv_doubleClass,  "double",  'D', 8);
   _Jv_InitPrimClass (&_Jv_voidClass,    "void",    'V', 0);
   
+  _Jv_InitClass(&java::lang::String::class$);
   _Jv_InitClass(&java::lang::System::class$);
 }
 
