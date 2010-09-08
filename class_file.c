@@ -276,7 +276,10 @@ class_t *read_class_file(void)
 	}
 	uint16_t minor_version = read_u16();
 	uint16_t major_version = read_u16();
-	assert(major_version == 50 && minor_version == 0);
+	if (major_version != 49 && major_version != 50) {
+		fprintf(stderr, "WARNING: class-file version %u.%u is not tested\n",
+		        major_version, minor_version);
+	}
 
 	class_file = allocate_zero(sizeof(*class_file));
 	class_file->n_constants = read_u16();
