@@ -336,6 +336,7 @@ class_t *read_class(const char *classname)
 {
 	assert(obstack_object_size(&obst) == 0);
 	obstack_printf(&obst, "%s%s.class", classpath, classname);
+	obstack_1grow(&obst, '\0');
 	char *classfilename = obstack_finish(&obst);
 
 	in = fopen(classfilename, "r");
