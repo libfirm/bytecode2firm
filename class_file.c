@@ -45,7 +45,7 @@ static constant_utf8_string_t *read_constant_utf8_string(void)
 	memset(&head, 0, sizeof(head));
 	head.base.kind = CONSTANT_UTF8_STRING;
 	head.length    = read_u16();
-	
+
 	assert(obstack_object_size(&obst) == 0);
 	size_t size = (char*) &head.bytes - (char*) &head;
 	obstack_grow(&obst, &head, size);

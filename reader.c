@@ -381,12 +381,12 @@ static ir_entity *get_method_entity(uint16_t index)
 	}
 	ir_entity *entity = methodref->base.link;
 	if (entity == NULL) {
-		const constant_t *name_and_type 
+		const constant_t *name_and_type
 			= get_constant(methodref->methodref.name_and_type_index);
 		if (name_and_type->kind != CONSTANT_NAMEANDTYPE) {
 			panic("invalid name_and_type in method %u", index);
 		}
-		ir_type *classtype 
+		ir_type *classtype
 			= get_classref_type(methodref->methodref.class_index);
 
 		const char *methodname
@@ -412,12 +412,12 @@ static ir_entity *get_field_entity(uint16_t index)
 	}
 	ir_entity *entity = fieldref->base.link;
 	if (entity == NULL) {
-		const constant_t *name_and_type 
+		const constant_t *name_and_type
 			= get_constant(fieldref->fieldref.name_and_type_index);
 		if (name_and_type->kind != CONSTANT_NAMEANDTYPE) {
 			panic("invalid name_and_type in field %u", index);
 		}
-		ir_type *classtype 
+		ir_type *classtype
 			= get_classref_type(fieldref->fieldref.class_index);
 
 		/* TODO: walk class hierarchy */
@@ -459,7 +459,7 @@ static basic_block_t *find_basic_block(uint16_t pc, size_t left, size_t right)
 
 	size_t         middle      = left + (right - left) / 2;
 	basic_block_t *basic_block = &basic_blocks[middle];
-	
+
 	if (pc < basic_block->pc)
 		return find_basic_block(pc, left, middle);
 	if (pc > basic_block->pc)
@@ -674,7 +674,7 @@ static void construct_vreturn(ir_type *method_type, ir_mode *mode)
 	if (stack_pointer != 0) {
 		fprintf(stderr, "Warning: stackpointer >0 after return at\n");
 	}
-	
+
 	ir_node *end_block = get_irg_end_block(current_ir_graph);
 	add_immBlock_pred(end_block, ret);
 	set_cur_block(new_Bad());
@@ -1119,7 +1119,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_DCONST_0:    push_const(mode_double,    0); continue;
 		case OPC_DCONST_1:    push_const(mode_double,    1); continue;
 		case OPC_BIPUSH:      push_const(mode_int, (int8_t) code->code[i++]); continue;
-		case OPC_SIPUSH:      
+		case OPC_SIPUSH:
 			push_const(mode_int, (int16_t) get_16bit_arg(&i));
 			continue;
 
@@ -1396,7 +1396,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			}
 
 			ir_node *jmp = new_Jmp();
-			ir_node *target_block 
+			ir_node *target_block
 				= get_target_block_remember_stackpointer(index);
 			add_immBlock_pred(target_block, jmp);
 
@@ -1427,7 +1427,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			if (opcode == OPC_PUTSTATIC || opcode == OPC_PUTFIELD) {
 				value = symbolic_pop(mode);
 			}
-			
+
 			if (opcode == OPC_GETSTATIC || opcode == OPC_PUTSTATIC) {
 				addr = create_symconst(entity);
 			} else {
@@ -1586,7 +1586,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		basic_block_t *basic_block = &basic_blocks[t];
 		mature_immBlock(basic_block->block);
 	}
- 	ir_node *end_block = get_irg_end_block(irg);
+	ir_node *end_block = get_irg_end_block(irg);
 	mature_immBlock(end_block);
 
 	DEL_ARR_F(basic_blocks);
