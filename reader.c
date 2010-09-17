@@ -948,6 +948,8 @@ static void construct_array_load(ir_type *array_type)
 {
 	ir_node   *index     = symbolic_pop(mode_int);
 	ir_node   *base_addr = symbolic_pop(mode_reference);
+	           base_addr = new_Add(base_addr, new_Const_long(mode_reference, GCJI_DATA_OFFSET), mode_reference); // skip the j.l.Object subobject and the length field.
+
 	ir_node   *in[1]     = { index };
 	ir_entity *entity    = get_array_element_entity(array_type);
 	ir_node   *addr      = new_Sel(new_NoMem(), base_addr, 1, in, entity);
@@ -974,6 +976,8 @@ static void construct_array_store(ir_type *array_type)
 	ir_node   *value     = symbolic_pop(mode);
 	ir_node   *index     = symbolic_pop(mode_int);
 	ir_node   *base_addr = symbolic_pop(mode_reference);
+	           base_addr = new_Add(base_addr, new_Const_long(mode_reference, GCJI_DATA_OFFSET), mode_reference); // skip the j.l.Object subobject and the length field.
+
 	ir_node   *in[1]     = { index };
 	ir_node   *addr      = new_Sel(new_NoMem(), base_addr, 1, in, entity);
 
@@ -1988,6 +1992,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_entity *entity = get_method_entity(index);
 			ir_node   *callee = create_symconst(entity);
 			ir_type   *type   = get_entity_type(entity);
+			ir_type   *owner  = get_entity_owner(entity);
 			unsigned   n_args = get_method_n_params(type);
 			ir_node   *args[n_args];
 
@@ -2000,10 +2005,15 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 					val = new_Conv(val, mode);
 				args[i]           = val;
 			}
-			ir_node *mem     = get_store();
-			ir_node *call    = new_Call(mem, callee, n_args, args, type);
-			ir_node *new_mem = new_Proj(call, mode_M, pn_Call_M);
-			set_store(new_mem);
+			ir_node *cur_mem = get_store();
+			if (gcji_is_api_class(owner)) {
+				ir_node *block = get_irg_current_block(irg);
+				gcji_class_init(owner, irg, block, &cur_mem);
+			}
+
+			ir_node *call    = new_Call(cur_mem, callee, n_args, args, type);
+			         cur_mem = new_Proj(call, mode_M, pn_Call_M);
+			set_store(cur_mem);
 
 			int n_res = get_method_n_ress(type);
 			if (n_res > 0) {

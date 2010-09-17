@@ -166,75 +166,40 @@ static void lower_Alloc(ir_node *node)
 	if (get_Alloc_where(node) != heap_alloc)
 		return;
 
-	unsigned addr_delta = 0;
-
 	ir_graph *irg   = get_irn_irg(node);
 	ir_type  *type  = get_Alloc_type(node);
 	ir_node  *count = get_Alloc_count(node);
-	ir_node  *size;
 
 	ir_node  *res   = NULL;
 
-	if (is_Array_type(type)) {
-		ir_type *element_type = get_array_element_type(type);
-		ir_node *block = get_nodes_block(node);
-		count          = new_r_Conv(block, count, mode_Iu);
-		unsigned count_size   = get_mode_size_bytes(mode_int);
-		unsigned element_size = get_type_size_bytes(element_type);
-		/* increase element count so we have enough space for a counter
-		   at the front */
-		unsigned add_size = (element_size + (count_size-1)) / count_size;
-		ir_node *addv     = new_r_Const_long(irg, mode_Iu, add_size);
-		ir_node *add1     = new_r_Add(block, count, addv, mode_Iu);
-		ir_node *elsizev  = new_r_Const_long(irg, mode_Iu, element_size);
-
-		size = new_r_Mul(block, add1, elsizev, mode_Iu);
-		addr_delta = add_size * element_size;
-	} else {
-		assert(is_Const(count) && is_Const_one(count));
-		symconst_symbol value;
-		value.type_p = type;
-		size = new_r_SymConst(irg, mode_Iu, value, symconst_type_size);
-	}
-
-	dbg_info *dbgi    = get_irn_dbg_info(node);
 	ir_node  *cur_mem = get_Alloc_mem(node);
 	ir_node  *block   = get_nodes_block(node);
 
+	ir_type  *eltype   = is_Array_type(type) ? get_array_element_type(type) : NULL;
+
 	if (is_Class_type(type) && gcji_is_api_class(type)) {
 		res = gcji_allocate_object(type, irg, block, &cur_mem);
+	} else if (is_Array_type(type)) {
+		res = gcji_allocate_array(eltype, count, irg, block, &cur_mem);
 	} else {
 		/* Fallback: create call to "calloc" */
+
+		assert(is_Const(count) && is_Const_one(count));
 		symconst_symbol value;
+		value.type_p = type;
+		ir_node *size = new_r_SymConst(irg, mode_Iu, value, symconst_type_size);
+
 		value.entity_p   = calloc_entity;
 		ir_node  *callee = new_r_SymConst(irg, mode_reference, value,
 		                                  symconst_addr_ent);
 		ir_node  *one    = new_r_Const_long(irg, mode_Iu, 1);
 		ir_node  *in[2]  = { one, size };
 		ir_type  *call_type = get_entity_type(calloc_entity);
-		ir_node  *call   = new_rd_Call(dbgi, block, cur_mem, callee, 2, in, call_type);
+		ir_node  *call   = new_r_Call(block, cur_mem, callee, 2, in, call_type);
 
 		          cur_mem = new_r_Proj(call, mode_M, pn_Call_M);
 		ir_node  *ress    = new_r_Proj(call, mode_T, pn_Call_T_result);
 		          res     = new_r_Proj(ress, mode_reference, 0);
-	}
-
-	if (is_Array_type(type)) {
-		/* write length of array */
-		ir_node *len_value = count;
-		assert(get_irn_mode(len_value) == mode_Iu);
-		ir_node *len_delta = new_r_Const_long(irg, mode_reference,
-		                                      (int)addr_delta-4);
-		ir_node *len_addr  = new_r_Add(block, res, len_delta, mode_reference);
-		ir_node *store     = new_rd_Store(dbgi, block, cur_mem, len_addr,
-		                                  len_value, cons_none);
-		cur_mem            = new_r_Proj(store, mode_M, pn_Store_M);
-
-		if (addr_delta > 0) {
-			ir_node *delta = new_r_Const_long(irg, mode_reference,
-			                                  (int)addr_delta);
-			res = new_r_Add(block, res, delta, mode_reference);
-		}
 	}
 
 	if (is_Class_type(type)) {
@@ -258,28 +223,20 @@ static void lower_Alloc(ir_node *node)
 
 static void lower_arraylength(ir_node *call)
 {
-	dbg_info *dbgi      = get_irn_dbg_info(call);
-	ir_node  *array_ref = get_Call_param(call, 0);
+	ir_node  *array_ref   = get_Call_param(call, 0);
 
-	/* calculate address of arraylength field */
 	ir_node  *block       = get_nodes_block(call);
 	ir_graph *irg         = get_irn_irg(block);
-	int       length_len  = get_type_size_bytes(type_int);
-	ir_node  *cnst        = new_rd_Const_long(dbgi, irg, mode_reference,
-	                                          -length_len);
-	ir_node  *length_addr = new_rd_Add(dbgi, block, array_ref, cnst,
-	                                   mode_reference);
 
-	ir_node  *mem         = get_Call_mem(call);
-	ir_node  *load        = new_rd_Load(dbgi, block, mem, length_addr,
-	                                    mode_int, cons_none);
-	ir_node  *new_mem     = new_r_Proj(load, mode_M, pn_Load_M);
-	ir_node  *len         = new_r_Proj(load, mode_int, pn_Load_res);
+	ir_node  *cur_mem     = get_Call_mem(call);
+
+	ir_node  *len         = gcji_get_arraylength(array_ref, irg, block, &cur_mem);
+
 	ir_node  *in[]        = { len };
 	ir_node  *lent        = new_r_Tuple(block, sizeof(in)/sizeof(*in), in);
 
 	turn_into_tuple(call, pn_Call_max);
-	set_irn_n(call, pn_Call_M, new_mem);
+	set_irn_n(call, pn_Call_M, cur_mem);
 	set_irn_n(call, pn_Call_T_result, lent);
 }
 
