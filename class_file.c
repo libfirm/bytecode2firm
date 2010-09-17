@@ -45,7 +45,7 @@ static constant_utf8_string_t *read_constant_utf8_string(void)
 	memset(&head, 0, sizeof(head));
 	head.base.kind = CONSTANT_UTF8_STRING;
 	head.length    = read_u16();
-	
+
 	assert(obstack_object_size(&obst) == 0);
 	size_t size = (char*) &head.bytes - (char*) &head;
 	obstack_grow(&obst, &head, size);
@@ -276,7 +276,10 @@ class_t *read_class_file(void)
 	}
 	uint16_t minor_version = read_u16();
 	uint16_t major_version = read_u16();
-	assert(major_version == 50 && minor_version == 0);
+	if (major_version != 49 && major_version != 50) {
+		fprintf(stderr, "WARNING: class-file version %u.%u is not tested\n",
+		        major_version, minor_version);
+	}
 
 	class_file = allocate_zero(sizeof(*class_file));
 	class_file->n_constants = read_u16();
@@ -333,6 +336,7 @@ class_t *read_class(const char *classname)
 {
 	assert(obstack_object_size(&obst) == 0);
 	obstack_printf(&obst, "%s%s.class", classpath, classname);
+	obstack_1grow(&obst, '\0');
 	char *classfilename = obstack_finish(&obst);
 
 	in = fopen(classfilename, "r");

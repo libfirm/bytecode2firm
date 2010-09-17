@@ -77,15 +77,15 @@ ir_entity *builtin_arraylength;
 static void init_types(void)
 {
 	mode_byte
-		= new_ir_mode("B", irms_int_number, 8, 1, irma_twos_complement, 32);
+		= new_ir_mode("B", irms_int_number, 8, 1, irma_twos_complement, 8);
 	type_byte = new_type_primitive(mode_byte);
 
 	ir_mode *mode_char
-		= new_ir_mode("C", irms_int_number, 16, 0, irma_twos_complement, 0);
+		= new_ir_mode("C", irms_int_number, 16, 0, irma_twos_complement, 16);
 	type_char = new_type_primitive(mode_char);
 
 	ir_mode *mode_short
-		= new_ir_mode("S", irms_int_number, 16, 1, irma_twos_complement, 32);
+		= new_ir_mode("S", irms_int_number, 16, 1, irma_twos_complement, 16);
 	type_short = new_type_primitive(mode_short);
 
 	mode_int
@@ -382,12 +382,12 @@ static ir_entity *get_method_entity(uint16_t index)
 	}
 	ir_entity *entity = methodref->base.link;
 	if (entity == NULL) {
-		const constant_t *name_and_type 
+		const constant_t *name_and_type
 			= get_constant(methodref->methodref.name_and_type_index);
 		if (name_and_type->kind != CONSTANT_NAMEANDTYPE) {
 			panic("invalid name_and_type in method %u", index);
 		}
-		ir_type *classtype 
+		ir_type *classtype
 			= get_classref_type(methodref->methodref.class_index);
 
 		const char *methodname
@@ -413,12 +413,12 @@ static ir_entity *get_field_entity(uint16_t index)
 	}
 	ir_entity *entity = fieldref->base.link;
 	if (entity == NULL) {
-		const constant_t *name_and_type 
+		const constant_t *name_and_type
 			= get_constant(fieldref->fieldref.name_and_type_index);
 		if (name_and_type->kind != CONSTANT_NAMEANDTYPE) {
 			panic("invalid name_and_type in field %u", index);
 		}
-		ir_type *classtype 
+		ir_type *classtype
 			= get_classref_type(fieldref->fieldref.class_index);
 
 		/* TODO: walk class hierarchy */
@@ -460,7 +460,7 @@ static basic_block_t *find_basic_block(uint16_t pc, size_t left, size_t right)
 
 	size_t         middle      = left + (right - left) / 2;
 	basic_block_t *basic_block = &basic_blocks[middle];
-	
+
 	if (pc < basic_block->pc)
 		return find_basic_block(pc, left, middle);
 	if (pc > basic_block->pc)
@@ -683,7 +683,7 @@ static void construct_vreturn(ir_type *method_type, ir_mode *mode)
 	if (stack_pointer != 0) {
 		fprintf(stderr, "Warning: stackpointer >0 after return at\n");
 	}
-	
+
 	ir_node *end_block = get_irg_end_block(current_ir_graph);
 	add_immBlock_pred(end_block, ret);
 	set_cur_block(new_Bad());
@@ -1131,7 +1131,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_DCONST_0:    push_const(mode_double,    0); continue;
 		case OPC_DCONST_1:    push_const(mode_double,    1); continue;
 		case OPC_BIPUSH:      push_const(mode_int, (int8_t) code->code[i++]); continue;
-		case OPC_SIPUSH:      
+		case OPC_SIPUSH:
 			push_const(mode_int, (int16_t) get_16bit_arg(&i));
 			continue;
 
@@ -1408,7 +1408,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			}
 
 			ir_node *jmp = new_Jmp();
-			ir_node *target_block 
+			ir_node *target_block
 				= get_target_block_remember_stackpointer(index);
 			add_immBlock_pred(target_block, jmp);
 
@@ -1439,7 +1439,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			if (opcode == OPC_PUTSTATIC || opcode == OPC_PUTFIELD) {
 				value = symbolic_pop(mode);
 			}
-			
+
 			if (opcode == OPC_GETSTATIC || opcode == OPC_PUTSTATIC) {
 				addr = create_symconst(entity);
 			} else {
@@ -1604,7 +1604,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		basic_block_t *basic_block = &basic_blocks[t];
 		mature_immBlock(basic_block->block);
 	}
- 	ir_node *end_block = get_irg_end_block(irg);
+	ir_node *end_block = get_irg_end_block(irg);
 	mature_immBlock(end_block);
 
 	DEL_ARR_F(basic_blocks);
@@ -1777,12 +1777,8 @@ static ir_type *construct_class_methods(ir_type *type)
 int main(int argc, char **argv)
 {
 	be_opt_register();
-	firm_parameter_t params;
-	memset(&params, 0, sizeof(params));
-	const backend_params *be_params = be_get_backend_param();
-	params.size = sizeof(params);
 
-	ir_init(&params);
+	ir_init(NULL);
 	init_types();
 	class_registry_init();
 	init_mangle();
@@ -1817,7 +1813,7 @@ int main(int argc, char **argv)
 		optimize_graph_df(irg);
 		place_code(irg);
 		optimize_cf(irg);
-		opt_if_conv(irg, be_params->if_conv_info);
+		opt_if_conv(irg);
 		optimize_cf(irg);
 		optimize_reassociation(irg);
 		optimize_graph_df(irg);
@@ -1827,18 +1823,6 @@ int main(int argc, char **argv)
 		optimize_cf(irg);
 	}
 
-	lwrdw_param_t param = {
-			.enable        = 1,
-			.little_endian = 1,
-			.high_signed   = mode_long,
-			.high_unsigned = mode_Lu, // Java does not have unsigned long
-			.low_signed    = mode_Is,
-			.low_unsigned  = mode_Iu,
-			.create_intrinsic = be_params->arch_create_intrinsic_fkt,
-			.ctx           = be_params->create_intrinsic_ctx
-	};
-
-	lower_dw_ops(&param);
 	for (int p = 0; p < n_irgs; ++p) {
 		ir_graph *irg = get_irp_irg(p);
 		/* TODO: This shouldn't be needed but the backend sometimes finds
@@ -1846,6 +1830,7 @@ int main(int argc, char **argv)
 		edges_deactivate(irg);
 		edges_activate(irg);
 	}
+	be_get_backend_param()->lower_for_target();
 
 	dump_ir_prog_ext(dump_typegraph, "types.vcg");
 
