@@ -4,4 +4,7 @@ config.mak
 reader
 *.vcg
 *.s
+*.S
 a.out
+librts.o
+
