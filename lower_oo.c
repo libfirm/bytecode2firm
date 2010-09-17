@@ -56,7 +56,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 
 			if (! (linked_method->access_flags & ACCESS_FLAG_STATIC)
 			 && ! (linked_method->access_flags & ACCESS_FLAG_PRIAVTE)
-			 && ! (linked_method->access_flags & ACCESS_FLAG_FINAL)
+			 && ! (linked_method->access_flags & ACCESS_FLAG_FINAL) // calls to final methods are "devirtualized" when lowering the call.
 			 && ! (strncmp(get_entity_name(member), "<init>", 6) == 0)) {
 				int n_overwrites = get_entity_n_overwrites(member);
 				if (n_overwrites > 0) { // this method already has a vtable id, copy it from the superclass' implementation
@@ -263,7 +263,10 @@ static void lower_Call(ir_node* call)
 	if (! is_Class_type(classtype))
 		return;
 
-	if ((((class_t*)get_type_link(classtype))->access_flags & ACCESS_FLAG_INTERFACE) != 0) {
+	uint16_t cl_access_flags = ((class_t*)get_type_link(classtype))->access_flags;
+	uint16_t mt_access_flags = ((method_t*)get_entity_link(method_entity))->access_flags;
+
+	if ((cl_access_flags & ACCESS_FLAG_INTERFACE) != 0) {
 
 		// FIXME: need real implementation for INVOKEINTERFACE.
 
@@ -278,24 +281,34 @@ static void lower_Call(ir_node* call)
 
 	ir_graph *irg         = get_irn_irg(call);
 	ir_node  *block       = get_nodes_block(call);
+	ir_node  *cur_mem     = get_Call_mem(call);
+	ir_node  *real_callee = NULL;
 
-	ir_entity *vptr_entity= get_class_member_by_name(classtype, vptr_ident);
-	ir_node *vptr         = new_r_Sel(block, new_NoMem(), objptr, 0, NULL, vptr_entity);
+	int link_static       = (cl_access_flags & ACCESS_FLAG_FINAL) + (mt_access_flags & ACCESS_FLAG_FINAL) != 0;
 
-	ir_node *cur_mem      = get_Call_mem(call);
-	ir_node *vtable_load  = new_r_Load(block, cur_mem, vptr, mode_P, cons_none);
-	ir_node *vtable_addr  = new_r_Proj(vtable_load, mode_P, pn_Load_res);
-	         cur_mem      = new_r_Proj(vtable_load, mode_M, pn_Load_M);
+	if (! link_static) {
+		ir_entity *vptr_entity= get_class_member_by_name(classtype, vptr_ident);
+		ir_node *vptr         = new_r_Sel(block, new_NoMem(), objptr, 0, NULL, vptr_entity);
 
-	unsigned vtable_id    = get_entity_vtable_number(method_entity);
-	assert(vtable_id != IR_VTABLE_NUM_NOT_SET);
 
-	unsigned type_reference_size = get_type_size_bytes(type_reference);
-	ir_node *vtable_offset= new_r_Const_long(irg, mode_P, vtable_id * type_reference_size);
-	ir_node *funcptr_addr = new_r_Add(block, vtable_addr, vtable_offset, mode_P);
-	ir_node *callee_load  = new_r_Load(block, cur_mem, funcptr_addr, mode_P, cons_none);
-	ir_node *real_callee  = new_r_Proj(callee_load, mode_P, pn_Load_res);
-	         cur_mem      = new_r_Proj(callee_load, mode_M, pn_Load_M);
+		ir_node *vtable_load  = new_r_Load(block, cur_mem, vptr, mode_P, cons_none);
+		ir_node *vtable_addr  = new_r_Proj(vtable_load, mode_P, pn_Load_res);
+				 cur_mem      = new_r_Proj(vtable_load, mode_M, pn_Load_M);
+
+		unsigned vtable_id    = get_entity_vtable_number(method_entity);
+		assert(vtable_id != IR_VTABLE_NUM_NOT_SET);
+
+		unsigned type_reference_size = get_type_size_bytes(type_reference);
+		ir_node *vtable_offset= new_r_Const_long(irg, mode_P, vtable_id * type_reference_size);
+		ir_node *funcptr_addr = new_r_Add(block, vtable_addr, vtable_offset, mode_P);
+		ir_node *callee_load  = new_r_Load(block, cur_mem, funcptr_addr, mode_P, cons_none);
+				 real_callee  = new_r_Proj(callee_load, mode_P, pn_Load_res);
+				 cur_mem      = new_r_Proj(callee_load, mode_M, pn_Load_M);
+	} else {
+		symconst_symbol callee;
+		callee.entity_p = method_entity;
+		real_callee = new_r_SymConst(irg, mode_reference, callee, symconst_addr_ent);
+	}
 
 	set_Call_ptr(call, real_callee);
 	set_Call_mem(call, cur_mem);
