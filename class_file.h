@@ -198,7 +198,7 @@ typedef struct {
 	attribute_t **attributes;
 } class_t;
 
-void class_file_init(const char *classpath);
+void class_file_init(const char *classpath, const char *bootclasspath);
 void class_file_exit(void);
 class_t *read_class_file(void);
 class_t *read_class(const char *classname);

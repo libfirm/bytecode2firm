@@ -10,6 +10,7 @@ static FILE           *in;
 static struct obstack  obst;
 static class_t        *class_file;
 static const char     *classpath;
+static const char     *bootclasspath;
 
 static uint8_t read_u8(void)
 {
@@ -335,13 +336,19 @@ class_t *read_class_file(void)
 class_t *read_class(const char *classname)
 {
 	assert(obstack_object_size(&obst) == 0);
-	obstack_printf(&obst, "%s%s.class", classpath, classname);
+	obstack_printf(&obst, "%s%s.class", bootclasspath, classname);
 	obstack_1grow(&obst, '\0');
 	char *classfilename = obstack_finish(&obst);
 
 	in = fopen(classfilename, "r");
 	if (in == NULL) {
-		panic("Couldn't find class '%s' (%s)\n", classname, classfilename);
+		obstack_printf(&obst, "%s%s.class", classpath, classname);
+		obstack_1grow(&obst, '\0');
+		classfilename = obstack_finish(&obst);
+		in = fopen(classfilename, "r");
+
+		if (in == NULL)
+		  panic("Couldn't find class '%s' (%s)\n", classname, classfilename);
 	}
 
 	class_file = read_class_file();
@@ -350,13 +357,17 @@ class_t *read_class(const char *classname)
 	return class_file;
 }
 
-void class_file_init(const char *new_classpath)
+void class_file_init(const char *new_classpath, const char *new_bootclasspath)
 {
 	obstack_init(&obst);
 
 	size_t  len = strlen(new_classpath) + 1;
 	obstack_grow(&obst, new_classpath, len);
 	classpath   = obstack_finish(&obst);
+
+	len = strlen(new_bootclasspath) + 1;
+	obstack_grow(&obst, new_bootclasspath, len);
+	bootclasspath = obstack_finish(&obst);
 }
 
 void class_file_exit(void)

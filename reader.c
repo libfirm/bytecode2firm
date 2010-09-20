@@ -2494,22 +2494,45 @@ int main(int argc, char **argv)
 	init_mangle();
 	gcji_init();
 
-	const char *classpath = "classes/";
-	class_file_init(classpath);
-	worklist = new_pdeq();
-
-	if (argc < 2) {
-		fprintf(stderr, "Syntax: %s class_file\n", argv[0]);
+	if (argc < 2 || argc > 8) {
+		fprintf(stderr, "Syntax: %s [-cp <classpath>] [-bootclasspath <bootclasspath>] [-o <output file name>] class_file\n", argv[0]);
 		return 0;
 	}
 
-	size_t arg_len        = strlen(argv[1]);
-	main_class_name       = argv[1];
-	main_class_name_short = argv[1] + arg_len - 1;
+	const char *classpath     = "./classes";
+	const char *bootclasspath = NULL;
+	const char *output_name   = NULL;
+
+	int curarg = 1;
+	while (curarg < argc) {
+		if (strcmp("-cp", argv[curarg]) == 0 && (curarg+1) < argc) {
+			classpath = argv[++curarg];
+		} else if (strcmp("-bootclasspath", argv[curarg]) == 0 && (curarg+1) < argc) {
+			bootclasspath = argv[++curarg];
+		} else if (strcmp("-o", argv[curarg]) == 0 && (curarg+1) < argc) {
+					output_name = argv[++curarg];
+		} else {
+			main_class_name = argv[curarg];
+		}
+		curarg++;
+	}
+
+	assert (main_class_name);
+	size_t arg_len        = strlen(main_class_name);
+	main_class_name_short = main_class_name + arg_len - 1;
 	while (main_class_name_short > main_class_name && *(main_class_name_short-1) != '/') main_class_name_short--;
 
+	if (! bootclasspath)
+		bootclasspath = classpath;
+	class_file_init(classpath, bootclasspath);
+
+	if (! output_name)
+		output_name = main_class_name_short;
+
+	worklist = new_pdeq();
+
 	/* trigger loading of the class specified on commandline */
-	get_class_type(argv[1]);
+	get_class_type(main_class_name);
 
 	while (!pdeq_empty(worklist)) {
 		ir_type *classtype = pdeq_getl(worklist);
@@ -2570,7 +2593,7 @@ int main(int argc, char **argv)
 	deinit_mangle();
 
 	char cmd_buffer[1024];
-	sprintf(cmd_buffer, "gcc -g bc2firm.S librts.o -lgcj -lstdc++ -o %s", main_class_name_short);
+	sprintf(cmd_buffer, "gcc -g bc2firm.S \"%s/librts.o\" -lgcj -lstdc++ -o %s", bootclasspath, output_name);
 
 	fprintf(stderr, "===> Assembling & linking (%s)\n", cmd_buffer);
 
