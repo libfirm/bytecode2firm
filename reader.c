@@ -2483,6 +2483,8 @@ static ir_type *construct_class_methods(ir_type *type)
 
 	return type;
 }
+extern FILE *fdopen (int __fd, __const char *__modes);
+extern int mkstemp (char *__template);
 
 int main(int argc, char **argv)
 {
@@ -2580,7 +2582,9 @@ int main(int argc, char **argv)
 
 	//dump_ir_prog_ext(dump_typegraph, "types.vcg");
 
-	FILE *asm_out = fopen("bc2firm.S", "w");
+	char asm_file[] = "bc2firmXXXXXX";
+	int asm_fd = mkstemp(asm_file);
+	FILE *asm_out = fdopen(asm_fd, "w");
 
 	fprintf(stderr, "===> Running backend\n");
 
@@ -2593,7 +2597,7 @@ int main(int argc, char **argv)
 	deinit_mangle();
 
 	char cmd_buffer[1024];
-	sprintf(cmd_buffer, "gcc -g bc2firm.S \"%s/librts.o\" -lgcj -lstdc++ -o %s", bootclasspath, output_name);
+	sprintf(cmd_buffer, "gcc -g -x assembler %s -x none \"%s/librts.o\" -lgcj -lstdc++ -o %s", asm_file, bootclasspath, output_name);
 
 	fprintf(stderr, "===> Assembling & linking (%s)\n", cmd_buffer);
 
