@@ -2279,7 +2279,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			int32_t n_pairs         = get_32bit_arg(&i);
 
 			ir_node *op             = symbolic_pop(mode_int);
-			ir_node *switch_con     = new_Cond(op);
+			ir_node *switch_cond    = new_Cond(op);
 
 			int32_t  max_match      = 0;
 			for (int pair = 0; pair < n_pairs; pair++) {
