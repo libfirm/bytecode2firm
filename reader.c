@@ -25,6 +25,9 @@
 
 #define VERBOSE
 
+extern FILE *fdopen (int __fd, __const char *__modes);
+extern int mkstemp (char *__template);
+
 static pdeq    *worklist;
 static class_t *class_file;
 static const char *main_class_name;
@@ -1919,6 +1922,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node   *value   = NULL;
 			ir_node   *addr;
 
+			//FIXME: static field access: is_gcj_class => Init class!
+
 			ir_node *mem  = get_store();
 			ir_type *type = get_entity_type(entity);
 			ir_mode *mode = get_type_mode(type);
@@ -2214,8 +2219,6 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		}
 
 		case OPC_TABLESWITCH: {
-			// FIXME: real implementation
-
 			// i points to the instruction after the opcode. That instruction should be on a index that is a multiple of 4.
 			uint32_t tswitch_index = i-1;
 			uint8_t  padding = (4 - (i % 4)) % 4;
@@ -2233,23 +2236,31 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			int32_t  low            = get_32bit_arg(&i);
 			int32_t  high           = get_32bit_arg(&i);
 			assert (low <= high);
-			int32_t  n_entries      = high - low + 1;
 
-			for (int32_t entry = 0; entry < n_entries; entry++) {
+			ir_node *op             = symbolic_pop(mode_int);
+			ir_node *switch_cond    = new_Cond(op);
+
+			for (int32_t entry = low; entry <= high; entry++) {
 				int32_t offset = get_32bit_arg(&i);
 				uint32_t index = ((int32_t)tswitch_index) + offset;
 				assert(index < code->code_length);
+
+				ir_node *block = get_target_block_remember_stackpointer(index);
+				ir_node *proj  = new_Proj(switch_cond, mode_X, entry);
+
+				add_immBlock_pred(block, proj);
 			}
 
-			ir_node *op = symbolic_pop(mode_int);
-			(void) op;
+			ir_node *def_proj       = new_Proj(switch_cond, mode_X, high+1); //FIXME: breaks when lo = Integer.MIN_VALUE && high = Integer.MAX_VALUE.
+			ir_node *def_block      = get_target_block_remember_stackpointer(index_default);
+			add_immBlock_pred(def_block, def_proj);
+			set_Cond_default_proj(switch_cond, high+1);
 
+			set_cur_block(NULL);
 			continue;
 		}
 
 		case OPC_LOOKUPSWITCH: {
-			// FIXME: real implementation
-
 			// i points to the instruction after the opcode. That instruction should be on a index that is a multiple of 4.
 			uint32_t lswitch_index = i-1;
 			uint8_t  padding = (4 - (i % 4)) % 4;
@@ -2265,37 +2276,32 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 			assert (index_default < code->code_length);
 
-			int32_t n_pairs          = get_32bit_arg(&i);
+			int32_t n_pairs         = get_32bit_arg(&i);
 
-			ir_node *op = symbolic_pop(mode_int);
+			ir_node *op             = symbolic_pop(mode_int);
+			ir_node *switch_con     = new_Cond(op);
 
+			int32_t  max_match      = 0;
 			for (int pair = 0; pair < n_pairs; pair++) {
 				int32_t match  = get_32bit_arg(&i);
 				int32_t offset = get_32bit_arg(&i);
 
+				max_match      = match; // pairs are in ascending order.
+
 				uint32_t index = ((int32_t)lswitch_index) + offset;
 				assert (index < code->code_length);
 
-				ir_node *const_match = new_Const_long(mode_int, match);
-				ir_node *cmp         = new_Cmp(op, const_match);
-				ir_node *proj_eq     = new_Proj(cmp, mode_b, pn_Cmp_Eq);
+				ir_node *block = get_target_block_remember_stackpointer(index);
+				ir_node *proj  = new_Proj(switch_cond, mode_X, match);
 
-				ir_node *block_true  = get_target_block_remember_stackpointer(index);
-				ir_node *block_false = new_immBlock();
+				add_immBlock_pred(block, proj);
 
-				ir_node *cond        = new_Cond(proj_eq);
-				ir_node *proj_true   = new_Proj(cond, mode_X, pn_Cond_true);
-				add_immBlock_pred(block_true, proj_true);
-				ir_node *proj_false  = new_Proj(cond, mode_X, pn_Cond_false);
-				add_immBlock_pred(block_false, proj_false);
-				mature_immBlock(block_false);
-
-				set_cur_block(block_false);
 			}
 
-			ir_node *default_block = get_target_block_remember_stackpointer(index_default);
-			ir_node *jmp           = new_Jmp();
-			add_immBlock_pred(default_block, jmp);
+			ir_node *def_proj        = new_Proj(switch_cond, mode_X, max_match+1); //FIXME: breaks when match = Integer.MAX_VALUE and Integer.MIN_VALUE is used.
+			ir_node *def_block       = get_target_block_remember_stackpointer(index_default);
+			add_immBlock_pred(def_block, def_proj);
+			set_Cond_default_proj(switch_cond, max_match+1);
 
 			set_cur_block(NULL);
 
@@ -2483,8 +2489,6 @@ static ir_type *construct_class_methods(ir_type *type)
 
 	return type;
 }
-extern FILE *fdopen (int __fd, __const char *__modes);
-extern int mkstemp (char *__template);
 
 int main(int argc, char **argv)
 {
