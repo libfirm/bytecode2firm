@@ -1036,7 +1036,6 @@ static void construct_arraylength(void)
 
 static void construct_conv(ir_mode *src, ir_mode *target)
 {
-	// FIXME: not sure if the Firm conv works according to the VM spec.
 	ir_mode *arith_src    = get_arith_mode(src);
 	ir_mode *arith_target = get_arith_mode(target);
 
@@ -1904,11 +1903,9 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node   *value   = NULL;
 			ir_node   *addr;
 
-			//FIXME: static field access: is_gcj_class => Init class!
-
-			ir_node *mem  = get_store();
-			ir_type *type = get_entity_type(entity);
-			ir_mode *mode = get_type_mode(type);
+			ir_node *cur_mem = get_store();
+			ir_type *type    = get_entity_type(entity);
+			ir_mode *mode    = get_type_mode(type);
 			ir_mode *arith_mode = get_arith_mode(mode);
 
 			if (opcode == OPC_PUTSTATIC || opcode == OPC_PUTFIELD) {
@@ -1916,6 +1913,12 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			}
 
 			if (opcode == OPC_GETSTATIC || opcode == OPC_PUTSTATIC) {
+				ir_type *owner = get_entity_owner(entity);
+				if (gcji_is_api_class(owner)) {
+					ir_graph *irg = get_current_ir_graph();
+					ir_node  *block = get_cur_block();
+					gcji_class_init(owner, irg, block, &cur_mem);
+				}
 				addr = create_symconst(entity);
 			} else {
 				ir_node *object = symbolic_pop(mode_reference);
@@ -1923,17 +1926,17 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			}
 
 			if (opcode == OPC_GETSTATIC || opcode == OPC_GETFIELD) {
-				ir_node *load    = new_Load(mem, addr, mode, cons_none);
-				ir_node *new_mem = new_Proj(load, mode_M, pn_Load_M);
+				ir_node *load    = new_Load(cur_mem, addr, mode, cons_none);
+				         cur_mem = new_Proj(load, mode_M, pn_Load_M);
 				ir_node *result  = new_Proj(load, mode, pn_Load_res);
-				set_store(new_mem);
+				set_store(cur_mem);
 				result = get_arith_value(result);
 				symbolic_push(result);
 			} else {
 				assert(opcode == OPC_PUTSTATIC || opcode == OPC_PUTFIELD);
-				ir_node *store   = new_Store(mem, addr, value, cons_none);
-				ir_node *new_mem = new_Proj(store, mode_M, pn_Store_M);
-				set_store(new_mem);
+				ir_node *store   = new_Store(cur_mem, addr, value, cons_none);
+				         cur_mem = new_Proj(store, mode_M, pn_Store_M);
+				set_store(cur_mem);
 			}
 			continue;
 		}
