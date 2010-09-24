@@ -762,8 +762,10 @@ static void push_load_const(uint16_t index)
 		break;
 	}
 	case CONSTANT_DOUBLE: {
-		// FIXME: need real implementation
-		tarval *tv = new_tarval_from_double(1.0, mode_double);
+		uint64_t val = ((uint64_t)constant->doublec.high_bytes << 32) | constant->doublec.low_bytes;
+		assert(sizeof(uint64_t) == sizeof(double));
+		double dval = *((double*)&val);
+		tarval *tv = new_tarval_from_double(dval, mode_double);
 		push_const_tarval(tv);
 		break;
 	}
@@ -947,6 +949,21 @@ static void construct_dup2_x2(void)
 	assert ((sp+2) == stack_pointer);
 }
 
+static void construct_xcmp(ir_mode *mode, int pn_Cmp_1, int pn_Cmp_2)
+{
+	ir_node *val2 = symbolic_pop(mode);
+	ir_node *val1 = symbolic_pop(mode);
+
+	ir_node *cmp     = new_Cmp(val1, val2);
+	ir_node *proj_lt = new_Proj(cmp, mode_b, pn_Cmp_1);
+	ir_node *proj_gt = new_Proj(cmp, mode_b, pn_Cmp_2);
+	ir_node *conv_lt = new_Conv(proj_lt, mode_int);
+	ir_node *conv_gt = new_Conv(proj_gt, mode_int);
+	ir_node *res     = new_Sub(conv_gt, conv_lt, mode_int);
+
+	symbolic_push(res);
+}
+
 static void construct_array_load(ir_type *array_type)
 {
 	ir_node   *index     = symbolic_pop(mode_int);
@@ -1020,18 +1037,10 @@ static void construct_arraylength(void)
 static void construct_conv(ir_mode *src, ir_mode *target)
 {
 	// FIXME: not sure if the Firm conv works according to the VM spec.
-	ir_mode *arith_src = get_arith_mode(src);
+	ir_mode *arith_src    = get_arith_mode(src);
 	ir_mode *arith_target = get_arith_mode(target);
 
-
 	ir_node *op = symbolic_pop(arith_src);
-
-	unsigned src_bits = get_mode_size_bits(src);
-	unsigned target_bits = get_mode_size_bits(target);
-
-	if (target_bits < src_bits) {
-		// FIXME: need to truncate!
-	}
 
 	ir_node *conv = new_Conv(op, arith_target);
 	symbolic_push(conv);
@@ -1722,38 +1731,11 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_I2C:   construct_conv(mode_int, mode_char);          continue;
 		case OPC_I2S:   construct_conv(mode_int, mode_short);         continue;
 
-		case OPC_LCMP:  {
-			// FIXME: need real implementation
-			ir_node *val2 = symbolic_pop(mode_long);
-			ir_node *val1 = symbolic_pop(mode_long);
-			(void) val1;
-			(void) val2;
-			symbolic_push(new_Const_long(mode_int, 0));
-
-			continue;
-		}
-
-		case OPC_FCMPL:
-		case OPC_FCMPG: {
-			// FIXME: need real implementation
-			ir_node *val2 = symbolic_pop(mode_float);
-			ir_node *val1 = symbolic_pop(mode_float);
-			(void) val1;
-			(void) val2;
-			symbolic_push(new_Const_long(mode_int, 0));
-			continue;
-		}
-
-		case OPC_DCMPL:
-		case OPC_DCMPG: {
-			// FIXME: need real implementation
-			ir_node *val2 = symbolic_pop(mode_double);
-			ir_node *val1 = symbolic_pop(mode_double);
-			(void) val1;
-			(void) val2;
-			symbolic_push(new_Const_long(mode_int, 0));
-			continue;
-		}
+		case OPC_LCMP:  construct_xcmp(mode_long, pn_Cmp_Lt, pn_Cmp_Gt);   continue;
+		case OPC_FCMPL: construct_xcmp(mode_float, pn_Cmp_Ul, pn_Cmp_Gt);  continue;
+		case OPC_FCMPG: construct_xcmp(mode_float, pn_Cmp_Lt, pn_Cmp_Ug);  continue;
+		case OPC_DCMPL: construct_xcmp(mode_double, pn_Cmp_Ul, pn_Cmp_Gt); continue;
+		case OPC_DCMPG: construct_xcmp(mode_double, pn_Cmp_Lt, pn_Cmp_Ug); continue;
 
 		case OPC_IINC: {
 			uint8_t  index = code->code[i++];
