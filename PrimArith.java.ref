@@ -1,0 +1,14 @@
+int arith: 9223372034707324798
+float arith: 1.1754943508222875E-38
+int/float comb.: 9.223372034707325E18
+int eq: true
+int neq: false
+long eq: true
+long neq: false
+long evil eq: false
+float eq: true
+float neq: false
+double eq: true
+double neq: false
+double < NaN: false
+double > NaN: false
