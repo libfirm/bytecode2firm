@@ -79,7 +79,10 @@ ir_type *type_array_float;
 ir_type *type_array_double;
 ir_type *type_array_reference;
 
-ident     *vptr_ident;
+static ident *vptr_ident;
+static ident *subobject_ident;
+
+ir_entity *vptr_entity; // there's exactly one vptr entity, member of java.lang.Object.
 ir_entity *builtin_arraylength;
 
 static void init_types(void)
@@ -128,7 +131,8 @@ static void init_types(void)
 	type_reference          = new_type_primitive(mode_reference);
 	type_array_reference    = new_type_array(1, type_reference);
 
-	vptr_ident              = new_id_from_str("vptr");
+	vptr_ident              = new_id_from_str("@vptr");
+	subobject_ident         = new_id_from_str("@base");
 
 	ir_type *arraylength_type = new_type_method(1, 1);
 	set_method_param_type(arraylength_type, 0, type_array_reference);
@@ -2404,13 +2408,12 @@ static ir_type *get_class_type(const char *name)
 		ir_type *supertype = get_classref_type(class_file->super_class);
 		assert (supertype != type);
 		add_class_supertype(type, supertype);
-		ir_entity *superclass_vptr = get_class_member_by_name(supertype, vptr_ident);
-		ir_entity *vptr = new_entity(type, vptr_ident, type_reference);
-		add_entity_overwrites(vptr, superclass_vptr);
+		new_entity(type, subobject_ident, supertype);
+
 	} else {
 		/* this should only happen for java.lang.Object */
 		assert(strcmp(name, "java/lang/Object") == 0);
-		new_entity(type, vptr_ident, type_reference);
+		vptr_entity = new_entity(type, vptr_ident, type_reference);
 	}
 
 	for (size_t f = 0; f < (size_t) class_file->n_fields; ++f) {
@@ -2560,14 +2563,14 @@ int main(int argc, char **argv)
 
 	fprintf(stderr, "\n");
 
+	be_get_backend_param()->lower_for_target();
+
 	for (int p = 0; p < n_irgs; ++p) {
 		ir_graph *irg = get_irp_irg(p);
 		/* TODO: This shouldn't be needed but the backend sometimes finds
 			     dead Phi nodes if we don't do this */
 		edges_deactivate(irg);
-		edges_activate(irg);
 	}
-	be_get_backend_param()->lower_for_target();
 
 	//dump_ir_prog_ext(dump_typegraph, "types.vcg");
 

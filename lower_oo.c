@@ -12,6 +12,7 @@
 #include "gcj_interface.h"
 
 static ir_entity *calloc_entity;
+extern ir_entity *vptr_entity; // there's exactly one vptr entity, member of java.lang.Object.
 
 static void move_to_global(ir_entity *entity)
 {
@@ -203,7 +204,6 @@ static void lower_Alloc(ir_node *node)
 	}
 
 	if (is_Class_type(type)) {
-		ir_entity *vptr_entity   = get_class_member_by_name(type, vptr_ident);
 		ir_node   *vptr          = new_r_Sel(block, new_NoMem(), res, 0, NULL, vptr_entity);
 
 		ir_type   *global_type   = get_glob_type();
@@ -287,7 +287,6 @@ static void lower_Call(ir_node* call)
 	int link_static       = (cl_access_flags & ACCESS_FLAG_FINAL) + (mt_access_flags & ACCESS_FLAG_FINAL) != 0;
 
 	if (! link_static) {
-		ir_entity *vptr_entity= get_class_member_by_name(classtype, vptr_ident);
 		ir_node *vptr         = new_r_Sel(block, new_NoMem(), objptr, 0, NULL, vptr_entity);
 
 
@@ -356,7 +355,7 @@ void lower_oo(void)
 		lower_graph(irg);
 	}
 
-	type_walk_prog(lower_type, NULL, NULL);
+	type_walk_super2sub(lower_type, NULL, NULL);
 
 	//dump_all_ir_graphs("before_highlevel");
 	lower_highlevel(0);
