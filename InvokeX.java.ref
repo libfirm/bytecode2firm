@@ -1,0 +1,24 @@
+Base::foo()
+Sub::foo()
+Base::ffoo()
+Base::sfoo()
+Sub::sfoo()
+ASub::afoo()
+CBase::<init>(-1)
+CBase::pfoo()
+CBase::foo()
+CBase::<init>(42)
+CBase::pfoo()
+CSub::foo()
+CSub::<init>(42)
+CSub::pfoo()
+CSub::foo()
+boolean: false
+byte: -81
+short: 1023
+char: m
+int: -42
+long: -2199023255552
+float: 3.14
+double: 0.5805649647699622
+Object: Hello World

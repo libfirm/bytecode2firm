@@ -1,0 +1,6 @@
+*
+!.gitignore
+!README
+!*.java
+!*.ref
+!test.sh
