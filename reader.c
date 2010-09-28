@@ -466,7 +466,9 @@ static ir_entity *get_method_entity(uint16_t index)
 			= get_classref_type(methodref->methodref.class_index);
 
 		if (! is_Class_type(classtype)) {
-			classtype = get_class_type("java/lang/Object"); // FIXME: need real arraytypes
+			// semantically, this is correct (array types support the methods of j.l.Object.
+			// We might need real array types for type info stuff later.
+			classtype = get_class_type("java/lang/Object");
 		}
 
 		const char *methodname

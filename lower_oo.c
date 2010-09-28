@@ -14,6 +14,8 @@
 static ir_entity *calloc_entity;
 extern ir_entity *vptr_entity; // there's exactly one vptr entity, member of java.lang.Object.
 
+static ident *abstract_method_ident;
+
 static void move_to_global(ir_entity *entity)
 {
 	/* move to global type */
@@ -112,7 +114,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 				if ((linked_method->access_flags & ACCESS_FLAG_ABSTRACT) == 0) {
 					sym.entity_p = member;
 				} else {
-					sym.entity_p = new_entity(get_glob_type(), new_id_from_str("__abstract_method"), get_entity_type(member)); //FIXME!
+					sym.entity_p = new_entity(get_glob_type(), abstract_method_ident, get_entity_type(member));
 				}
 				ir_node *symconst_node = new_r_SymConst(const_code, mode_P, sym, symconst_addr_ent);
 				ir_initializer_t *val = create_initializer_const(symconst_node);
@@ -333,6 +335,8 @@ static void lower_graph(ir_graph *irg)
  */
 void lower_oo(void)
 {
+	abstract_method_ident = new_id_from_str("__abstract_method");
+
 	class_walk_super2sub(setup_vtable, NULL, NULL);
 
 	ir_type *method_type = new_type_method(2, 1);
