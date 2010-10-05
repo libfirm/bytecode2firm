@@ -16,6 +16,20 @@ extern ir_entity *vptr_entity; // there's exactly one vptr entity, member of jav
 
 static ident *abstract_method_ident;
 
+/*
+ * vtable layout (a la gcj / c++)
+ *
+ * _ZTVNxyzE:
+ *   0                                  \  GCJI_VTABLE_OFFSET
+ *   0                                  /
+ *   <vtable slot 0> _ZNxyz6class$E     <-- vptrs point here
+ *   <vtable slot 1> const 4 (?)
+ *   <vtable slot 2> addr(first method)
+ *   ...
+ *   <vtable slot n> addr(last method)
+ */
+
+
 static void move_to_global(ir_entity *entity)
 {
 	/* move to global type */
@@ -31,7 +45,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 	assert(is_Class_type(clazz));
 
 	class_t *linked_class = (class_t*) get_type_link(clazz);
-	assert (linked_class != NULL);
+	if (linked_class == NULL) return;
 
 	if ((linked_class->access_flags & ACCESS_FLAG_INTERFACE) != 0)
 		return;
@@ -42,7 +56,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 	assert (get_class_member_by_name(global_type, vtable_name) == NULL);
 
 	ir_type *superclass = NULL;
-	unsigned vtable_size = 2;
+	unsigned vtable_size = 2; // see above, (class$, some_num)
 	int n_supertypes = get_class_n_supertypes(clazz);
 	if (n_supertypes > 0) {
 		assert (n_supertypes == 1);
@@ -79,14 +93,15 @@ static void setup_vtable(ir_type *clazz, void *env)
 	// the vtable currently is an array of pointers
 	unsigned type_reference_size = get_type_size_bytes(type_reference);
 	ir_type *vtable_type = new_type_array(1, type_reference);
-	set_array_bounds_int(vtable_type, 0, 0, vtable_size);
-	set_type_size_bytes(vtable_type, type_reference_size * vtable_size);
+	size_t vtable_ent_size = vtable_size + GCJI_VTABLE_OFFSET;
+	set_array_bounds_int(vtable_type, 0, 0, vtable_ent_size);
+	set_type_size_bytes(vtable_type, type_reference_size * vtable_ent_size);
 	set_type_state(vtable_type, layout_fixed);
 
 	ir_entity *vtable = new_entity(global_type, vtable_name, vtable_type);
 
 	ir_graph *const_code = get_const_code_irg();
-	ir_initializer_t * init = create_initializer_compound(vtable_size);
+	ir_initializer_t * init = create_initializer_compound(vtable_ent_size);
 
 	if (superclass != NULL) {
 		unsigned superclass_vtable_size = get_class_vtable_size(superclass);
@@ -95,7 +110,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 		ir_initializer_t *superclass_vtable_init = get_entity_initializer(superclass_vtable_entity);
 
 		// copy vtable initialization from superclass
-		for (unsigned i = 0; i < superclass_vtable_size; i++) {
+		for (unsigned i = GCJI_VTABLE_OFFSET; i < superclass_vtable_size+GCJI_VTABLE_OFFSET; i++) {
 				ir_initializer_t *superclass_vtable_init_value = get_initializer_compound_value(superclass_vtable_init, i);
 				set_initializer_compound_value (init, i, superclass_vtable_init_value);
 		}
@@ -118,7 +133,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 				}
 				ir_node *symconst_node = new_r_SymConst(const_code, mode_P, sym, symconst_addr_ent);
 				ir_initializer_t *val = create_initializer_const(symconst_node);
-				set_initializer_compound_value (init, member_vtid, val);
+				set_initializer_compound_value (init, member_vtid+GCJI_VTABLE_OFFSET, val);
 			}
 		}
 	}
@@ -129,6 +144,20 @@ static void setup_vtable(ir_type *clazz, void *env)
 		ir_initializer_t *val = create_initializer_const(const_0);
 		set_initializer_compound_value (init, i, val);
 	}
+
+	ir_entity *class_dollar_field = gcji_get_class_dollar_field(clazz);
+	assert (class_dollar_field);
+//	symconst_symbol cdf_sym;
+//	cdf_sym.entity_p = class_dollar_field;
+//	ir_node *cdf_symc = new_r_SymConst(const_code, mode_reference, cdf_sym, symconst_addr_ent);
+
+	// FIXME: ^^ triggers a bug in the name mangling
+
+	ir_initializer_t *cdf_init = create_initializer_const(const_0);
+	set_initializer_compound_value(init, 2, cdf_init);
+
+	ir_initializer_t *const_4 = create_initializer_const(new_r_Const_long(const_code, mode_reference, 4)); //FIXME: understand
+	set_initializer_compound_value(init, 3, const_4);
 
 	set_entity_initializer(vtable, init);
 }
@@ -214,7 +243,9 @@ static void lower_Alloc(ir_node *node)
 		union symconst_symbol sym;
 		sym.entity_p = vtable_entity;
 		ir_node   *vtable_symconst = new_r_SymConst(irg, mode_reference, sym, symconst_addr_ent);
-		ir_node   *vptr_store      = new_r_Store(block, cur_mem, vptr, vtable_symconst, cons_none);
+		ir_node   *const_offset    = new_r_Const_long(irg, mode_reference, GCJI_VTABLE_OFFSET * get_type_size_bytes(type_reference));
+		ir_node   *vptr_target     = new_r_Add(block, vtable_symconst, const_offset, mode_reference);
+		ir_node   *vptr_store      = new_r_Store(block, cur_mem, vptr, vptr_target, cons_none);
 		           cur_mem         = new_r_Proj(vptr_store, mode_M, pn_Store_M);
 	}
 
