@@ -147,13 +147,18 @@ static void setup_vtable(ir_type *clazz, void *env)
 
 	ir_entity *class_dollar_field = gcji_get_class_dollar_field(clazz);
 	assert (class_dollar_field);
-//	symconst_symbol cdf_sym;
-//	cdf_sym.entity_p = class_dollar_field;
-//	ir_node *cdf_symc = new_r_SymConst(const_code, mode_reference, cdf_sym, symconst_addr_ent);
+	symconst_symbol cdf_sym;
+	cdf_sym.entity_p = class_dollar_field;
+	ir_node *cdf_symc = new_r_SymConst(const_code, mode_reference, cdf_sym, symconst_addr_ent);
 
 	// FIXME: ^^ triggers a bug in the name mangling
 
-	ir_initializer_t *cdf_init = create_initializer_const(const_0);
+	const char *cname = get_class_name(clazz);
+	int workaround = 0;
+	for (; *cname != '\0' && !workaround; cname++)
+		if (*cname == '$') workaround = 1;
+
+	ir_initializer_t *cdf_init = create_initializer_const(workaround ? const_0 : cdf_symc);
 	set_initializer_compound_value(init, 2, cdf_init);
 
 	ir_initializer_t *const_4 = create_initializer_const(new_r_Const_long(const_code, mode_reference, 4)); //FIXME: understand
@@ -299,47 +304,38 @@ static void lower_Call(ir_node* call)
 	uint16_t cl_access_flags = ((class_t*)get_type_link(classtype))->access_flags;
 	uint16_t mt_access_flags = ((method_t*)get_entity_link(method_entity))->access_flags;
 
-	if ((cl_access_flags & ACCESS_FLAG_INTERFACE) != 0) {
-
-		// FIXME: need real implementation for INVOKEINTERFACE.
-
-		ir_type *method_type = get_entity_type(method_entity);
-		ir_entity *nyi    = new_entity(get_glob_type(), new_id_from_str("__invokeinterface_nyi"), method_type);
-		union symconst_symbol sym;
-		sym.entity_p = nyi;
-		ir_node *nyi_symc = new_SymConst(mode_reference, sym, symconst_addr_ent);
-		set_Call_ptr(call, nyi_symc);
-		return;
-	}
-
 	ir_graph *irg         = get_irn_irg(call);
 	ir_node  *block       = get_nodes_block(call);
 	ir_node  *cur_mem     = get_Call_mem(call);
 	ir_node  *real_callee = NULL;
 
-	int link_static       = (cl_access_flags & ACCESS_FLAG_FINAL) + (mt_access_flags & ACCESS_FLAG_FINAL) != 0;
-
-	if (! link_static) {
-		ir_node *vptr         = new_r_Sel(block, new_NoMem(), objptr, 0, NULL, vptr_entity);
-
-
-		ir_node *vtable_load  = new_r_Load(block, cur_mem, vptr, mode_P, cons_none);
-		ir_node *vtable_addr  = new_r_Proj(vtable_load, mode_P, pn_Load_res);
-				 cur_mem      = new_r_Proj(vtable_load, mode_M, pn_Load_M);
-
-		unsigned vtable_id    = get_entity_vtable_number(method_entity);
-		assert(vtable_id != IR_VTABLE_NUM_NOT_SET);
-
-		unsigned type_reference_size = get_type_size_bytes(type_reference);
-		ir_node *vtable_offset= new_r_Const_long(irg, mode_P, vtable_id * type_reference_size);
-		ir_node *funcptr_addr = new_r_Add(block, vtable_addr, vtable_offset, mode_P);
-		ir_node *callee_load  = new_r_Load(block, cur_mem, funcptr_addr, mode_P, cons_none);
-				 real_callee  = new_r_Proj(callee_load, mode_P, pn_Load_res);
-				 cur_mem      = new_r_Proj(callee_load, mode_M, pn_Load_M);
+	if ((cl_access_flags & ACCESS_FLAG_INTERFACE) != 0) {
+		real_callee           = gcji_lookup_interface(objptr, classtype, method_entity, irg, block, &cur_mem);
 	} else {
-		symconst_symbol callee;
-		callee.entity_p = method_entity;
-		real_callee = new_r_SymConst(irg, mode_reference, callee, symconst_addr_ent);
+		int link_static       = (cl_access_flags & ACCESS_FLAG_FINAL) + (mt_access_flags & ACCESS_FLAG_FINAL) != 0;
+
+		if (! link_static) {
+			ir_node *vptr         = new_r_Sel(block, new_NoMem(), objptr, 0, NULL, vptr_entity);
+
+
+			ir_node *vtable_load  = new_r_Load(block, cur_mem, vptr, mode_P, cons_none);
+			ir_node *vtable_addr  = new_r_Proj(vtable_load, mode_P, pn_Load_res);
+					 cur_mem      = new_r_Proj(vtable_load, mode_M, pn_Load_M);
+
+			unsigned vtable_id    = get_entity_vtable_number(method_entity);
+			assert(vtable_id != IR_VTABLE_NUM_NOT_SET);
+
+			unsigned type_reference_size = get_type_size_bytes(type_reference);
+			ir_node *vtable_offset= new_r_Const_long(irg, mode_P, vtable_id * type_reference_size);
+			ir_node *funcptr_addr = new_r_Add(block, vtable_addr, vtable_offset, mode_P);
+			ir_node *callee_load  = new_r_Load(block, cur_mem, funcptr_addr, mode_P, cons_none);
+					 real_callee  = new_r_Proj(callee_load, mode_P, pn_Load_res);
+					 cur_mem      = new_r_Proj(callee_load, mode_M, pn_Load_M);
+		} else {
+			symconst_symbol callee;
+			callee.entity_p = method_entity;
+			real_callee = new_r_SymConst(irg, mode_reference, callee, symconst_addr_ent);
+		}
 	}
 
 	set_Call_ptr(call, real_callee);

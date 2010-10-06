@@ -15,7 +15,8 @@ static ir_entity *gcj_init_entity;
 static ir_entity *gcj_new_string_entity;
 static ir_entity *gcj_new_prim_array_entity;
 static ir_entity *gcj_new_object_array_entity;
-static ir_entity *gcji_abstract_method_entity;
+static ir_entity *gcj_abstract_method_entity;
+static ir_entity *gcj_lookup_interface_entity;
 
 static ir_entity *gcj_byteClass_entity;
 static ir_entity *gcj_charClass_entity;
@@ -28,6 +29,8 @@ static ir_entity *gcj_compiled_execution_engine_entity;
 
 static ir_mode   *mode_ushort;
 static ir_type   *type_ushort;
+
+extern ir_entity *vptr_entity;
 
 static ir_entity *add_class_dollar_field_recursive(ir_type *type)
 {
@@ -123,9 +126,18 @@ void gcji_init()
 	set_entity_visibility(gcj_new_object_array_entity, ir_visibility_external);
 
 	// gcji_abstract_method
-	ir_type *gcji_abstract_method_type = new_type_method(0, 0);
-	gcji_abstract_method_entity = new_entity(glob, new_id_from_str("_Jv_ThrowAbstractMethodError"), gcji_abstract_method_type);
-	set_entity_visibility(gcji_abstract_method_entity, ir_visibility_external);
+	ir_type *gcj_abstract_method_type = new_type_method(0, 0);
+	gcj_abstract_method_entity = new_entity(glob, new_id_from_str("_Jv_ThrowAbstractMethodError"), gcj_abstract_method_type);
+	set_entity_visibility(gcj_abstract_method_entity, ir_visibility_external);
+
+	// gcji_lookup_interface
+	ir_type *gcj_lookup_interface_type = new_type_method(3,1);
+	set_method_param_type(gcj_lookup_interface_type, 0, t_ptr);
+	set_method_param_type(gcj_lookup_interface_type, 1, t_ptr);
+	set_method_param_type(gcj_lookup_interface_type, 2, t_ptr);
+	set_method_res_type(gcj_lookup_interface_type, 0, t_ptr);
+	gcj_lookup_interface_entity = new_entity(glob, new_id_from_str("_Jv_LookupInterfaceMethod"), gcj_lookup_interface_type);
+	set_entity_visibility(gcj_lookup_interface_entity, ir_visibility_external);
 
 	// primitive classes
 	gcj_byteClass_entity   = new_entity(glob, new_id_from_str("_Jv_byteClass"), type_reference);
@@ -309,13 +321,18 @@ ir_node *gcji_get_arraylength(ir_node *arrayref, ir_graph *irg, ir_node *block, 
 	return res;
 }
 
+static ir_node *create_symconst(ir_graph *irg, ir_entity *ent)
+{
+	symconst_symbol sym;
+	sym.entity_p = ent;
+	ir_node *symc = new_r_SymConst(irg, mode_reference, sym, symconst_addr_ent);
+	return symc;
+}
+
 static ir_node *create_ccode_symconst(ir_entity *ent)
 {
 	ir_graph *ccode = get_const_code_irg();
-	symconst_symbol sym;
-	sym.entity_p = ent;
-	ir_node *symc = new_r_SymConst(ccode, mode_reference, sym, symconst_addr_ent);
-	return symc;
+	return create_symconst(ccode, ent);
 }
 
 static ir_entity *emit_primitive_member(ir_type *owner, const char *name, ir_type *type, ir_node *value)
@@ -328,14 +345,20 @@ static ir_entity *emit_primitive_member(ir_type *owner, const char *name, ir_typ
 	return ent;
 }
 
-static ir_entity *emit_utf8_const(constant_t *constant)
+extern char* strdup(const char* s);
+
+static ir_entity *emit_utf8_const(constant_t *constant, int mangle_slash)
 {
 	assert (constant->base.kind == CONSTANT_UTF8_STRING);
 	constant_utf8_string_t *string = (constant_utf8_string_t*) constant;
 
-	char    *bytes = string->bytes;
+	char    *bytes = mangle_slash ? strdup(string->bytes) : string->bytes;
 	uint16_t len   = string->length;
 	uint16_t len0  = string->length + 1; // include the '\0' byte
+
+	if (mangle_slash)
+	  for (char *p = bytes; *p != '\0'; p++)
+		if (*p == '/') *p = '.';
 
 	int hash = 0;
 	for (uint16_t i = 0; i < len; i++) {
@@ -409,12 +432,12 @@ static ir_entity *emit_method_desc(ir_type *owner, ir_type *classtype, ir_entity
 	assert (linked_class && linked_method);
 
 	constant_t       *name_const    = linked_class->constants[linked_method->name_index];
-	ir_entity        *name_const_ent= emit_utf8_const(name_const);
+	ir_entity        *name_const_ent= emit_utf8_const(name_const, 1);
 	ir_entity        *name_ent      = emit_primitive_member(md_type, "name", type_reference, create_ccode_symconst(name_const_ent));
 	set_initializer_compound_value(cinit, 0, get_entity_initializer(name_ent));
 
 	constant_t       *desc_const    = linked_class->constants[linked_method->descriptor_index];
-	ir_entity        *desc_const_ent= emit_utf8_const(desc_const);
+	ir_entity        *desc_const_ent= emit_utf8_const(desc_const, 1);
 	ir_entity        *desc_ent      = emit_primitive_member(md_type, "sig", type_reference, create_ccode_symconst(desc_const_ent));
 	set_initializer_compound_value(cinit, 1, get_entity_initializer(desc_ent));
 
@@ -429,7 +452,7 @@ static ir_entity *emit_method_desc(ir_type *owner, ir_type *classtype, ir_entity
 
 	ir_node          *funcptr       = NULL;
 	if ((linked_method->access_flags & ACCESS_FLAG_ABSTRACT) != 0)
-		funcptr = create_ccode_symconst(gcji_abstract_method_entity);
+		funcptr = create_ccode_symconst(gcj_abstract_method_entity);
 	else
 		funcptr = create_ccode_symconst(ent);
 
@@ -510,7 +533,7 @@ static ir_entity *construct_class_dollar_field(ir_type *classtype)
 	EMIT_PRIM("unknown", type_int, new_r_Const_long(ccode, mode_int, 404000));
 
 	ir_entity *name_ent = emit_utf8_const(
-			linked_class->constants[linked_class->constants[linked_class->this_class]->classref.name_index]);
+			linked_class->constants[linked_class->constants[linked_class->this_class]->classref.name_index], 1);
 	EMIT_PRIM("name", type_reference, create_ccode_symconst(name_ent));
 
 	EMIT_PRIM("acc_flags", type_ushort, new_r_Const_long(ccode, mode_ushort, linked_class->access_flags));
@@ -527,11 +550,11 @@ static ir_entity *construct_class_dollar_field(ir_type *classtype)
 	EMIT_PRIM("constants.data", type_reference, deadref);
 
 	ir_entity *mt_ent = emit_method_table(classtype);
-	EMIT_PRIM("methods", type_reference, create_ccode_symconst(mt_ent));
+	EMIT_PRIM("methods", type_reference, create_ccode_symconst(mt_ent)); // FIXME: union, alternative would be the element type in case classtype is an array.
 	EMIT_PRIM("method_count", type_short, new_r_Const_long(ccode, mode_short, linked_class->n_methods));
 	EMIT_PRIM("vtable_method_count", type_short, new_r_Const_long(ccode, mode_short, get_class_vtable_size(classtype)-2)); // w/o slots 0=class$ and 1=some_num. see lower_oo.c
 
-	EMIT_PRIM("fields", type_reference, deadref);
+	EMIT_PRIM("fields", type_reference, nullref);
 
 	symconst_symbol size_sym;
 	size_sym.type_p = classtype;
@@ -543,8 +566,18 @@ static ir_entity *construct_class_dollar_field(ir_type *classtype)
 	}
 	EMIT_PRIM("static_field_count", type_short, new_r_Const_long(ccode, mode_short, n_static_fields));
 
-	// FIXME: refs below
-	EMIT_PRIM("vtable", type_reference, deadref);
+	ir_node *vtable_ref = NULL;
+	if ((linked_class->access_flags & ACCESS_FLAG_INTERFACE) == 0) {
+		ir_entity *vtable = get_class_member_by_name(glob, mangle_vtable_name(classtype));
+		assert (vtable);
+		vtable_ref = create_ccode_symconst(vtable);
+		ir_node *block = get_irg_current_block(ccode);
+		ir_node *vtable_offset = new_r_Const_long(ccode, mode_reference, get_type_size_bytes(type_reference)*GCJI_VTABLE_OFFSET);
+		vtable_ref = new_r_Add(block, vtable_ref, vtable_offset, mode_reference);
+	} else {
+		vtable_ref = nullref;
+	}
+	EMIT_PRIM("vtable", type_reference, vtable_ref);
 	EMIT_PRIM("otable", type_reference, nullref);
 	EMIT_PRIM("otable_syms", type_reference, nullref);
 	EMIT_PRIM("atable", type_reference, nullref);
@@ -553,7 +586,7 @@ static ir_entity *construct_class_dollar_field(ir_type *classtype)
 	EMIT_PRIM("itable_syms", type_reference, nullref);
 	EMIT_PRIM("catch_classes", type_reference, nullref);
 
-	EMIT_PRIM("interfaces", type_reference, deadref);
+	EMIT_PRIM("interfaces", type_reference, nullref); //TODO: this will be needed to use _Jv_IsAssignable...
 	EMIT_PRIM("loader", type_reference, nullref);
 
 	EMIT_PRIM("interface_count", type_short, new_r_Const_long(ccode, mode_short, linked_class->n_interfaces));
@@ -561,11 +594,11 @@ static ir_entity *construct_class_dollar_field(ir_type *classtype)
 
 	EMIT_PRIM("thread", type_reference, nullref);
 
-	int16_t depth = 0; // FIXME!
+	int16_t depth = 0; //TODO: this will be needed to use _Jv_IsAssignable...
 	EMIT_PRIM("depth", type_short, new_r_Const_long(ccode, mode_short, depth));
 	EMIT_PRIM("ancestors", type_reference, nullref);
 
-	EMIT_PRIM("idt", type_reference, deadref); // FIXME: distingiush class / iface
+	EMIT_PRIM("idt", type_reference, nullref); // FIXME: distingiush class / iface
 
 	EMIT_PRIM("arrayclass", type_reference, nullref);
 	EMIT_PRIM("protectionDomain", type_reference, nullref);
@@ -604,4 +637,48 @@ ir_entity *gcji_get_class_dollar_field(ir_type *classtype)
 		}
 	}
 	return cdf;
+}
+
+ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface, ir_entity *method, ir_graph *irg, ir_node *block, ir_node **mem)
+{
+	ir_node   *cur_mem       = *mem;
+
+	// we need the reference to the object's class$ field
+	// first, dereference the vptr in order to get the vtable address.
+	ir_node   *vptr_addr     = new_r_Sel(block, new_NoMem(), objptr, 0, NULL, vptr_entity);
+	ir_node   *vptr_load     = new_r_Load(block, cur_mem, vptr_addr, mode_reference, cons_none);
+	ir_node   *vtable_addr   = new_r_Proj(vptr_load, mode_reference, pn_Load_res);
+	           cur_mem       = new_r_Proj(vptr_load, mode_M, pn_Load_M);
+
+	// second, dereference vtable_addr (it points to the slot where the address of the class$ field is stored).
+	ir_node   *cd_load       = new_r_Load(block, cur_mem, vtable_addr, mode_reference, cons_none);
+	ir_node   *cd_ref        = new_r_Proj(cd_load, mode_reference, pn_Load_res);
+	           cur_mem       = new_r_Proj(cd_load, mode_M, pn_Load_M);
+
+	class_t   *linked_class  = (class_t*) get_type_link(iface);
+	method_t  *linked_method = (method_t *) get_entity_link(method);
+	assert (linked_class && linked_method);
+
+	constant_t *name_const   = linked_class->constants[linked_method->name_index];
+	ir_entity *name_const_ent= emit_utf8_const(name_const, 1);
+	ir_node   *name_ref      = create_symconst(irg, name_const_ent);
+
+	constant_t *desc_const   = linked_class->constants[linked_method->descriptor_index];
+	ir_entity *desc_const_ent= emit_utf8_const(desc_const, 1);
+	ir_node   *desc_ref      = create_symconst(irg, desc_const_ent);
+
+	symconst_symbol callee_sym;
+	callee_sym.entity_p      = gcj_lookup_interface_entity;
+	ir_node   *callee        = new_r_SymConst(irg, mode_reference, callee_sym, symconst_addr_ent);
+
+	ir_node   *args[3]       = { cd_ref, name_ref, desc_ref };
+	ir_type   *call_type     = get_entity_type(gcj_lookup_interface_entity);
+	ir_node   *call          = new_r_Call(block, cur_mem, callee, 3, args, call_type);
+	           cur_mem       = new_r_Proj(call, mode_M, pn_Call_M);
+	ir_node   *ress          = new_r_Proj(call, mode_T, pn_Call_T_result);
+	ir_node   *res           = new_r_Proj(ress, mode_reference, 0);
+
+	*mem = cur_mem;
+
+	return res;
 }
