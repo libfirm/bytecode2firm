@@ -529,7 +529,7 @@ static ir_entity *construct_class_dollar_field(ir_type *classtype)
 	ir_entity *mt_ent = emit_method_table(classtype);
 	EMIT_PRIM("methods", type_reference, create_ccode_symconst(mt_ent));
 	EMIT_PRIM("method_count", type_short, new_r_Const_long(ccode, mode_short, linked_class->n_methods));
-	EMIT_PRIM("vtable_method_count", type_short, new_r_Const_long(ccode, mode_short, get_class_vtable_size(classtype)));
+	EMIT_PRIM("vtable_method_count", type_short, new_r_Const_long(ccode, mode_short, get_class_vtable_size(classtype)-2)); // w/o slots 0=class$ and 1=some_num. see lower_oo.c
 
 	EMIT_PRIM("fields", type_reference, deadref);
 
