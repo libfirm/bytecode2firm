@@ -681,7 +681,7 @@ static void push_const(ir_mode *mode, long val)
 	symbolic_push(cnst);
 }
 
-static void push_const_tarval(tarval *tv)
+static void push_const_tarval(ir_tarval *tv)
 {
 	ir_node *cnst = new_Const(tv);
 	symbolic_push(cnst);
@@ -724,7 +724,7 @@ static ir_entity *string_to_firm(const char *bytes, size_t length)
     // initialize each array element to an input byte
     ir_initializer_t *initializer = create_initializer_compound(length);
     for (size_t i = 0; i < length; ++i) {
-        tarval           *tv  = new_tarval_from_long(bytes[i], element_mode);
+        ir_tarval        *tv  = new_tarval_from_long(bytes[i], element_mode);
         ir_initializer_t *val = create_initializer_tarval(tv);
         set_initializer_compound_value(initializer, i, val);
     }
@@ -739,7 +739,7 @@ static ir_node *new_string_literal(const char* bytes, size_t length)
 	// create string const
 	ir_entity *string_const = string_to_firm(bytes, length);
 	ir_graph  *irg          = get_current_ir_graph();
-	ir_node   *block        = get_irg_current_block(irg);
+	ir_node   *block        = get_r_cur_block(irg);
 	ir_node   *mem          = get_store();
 	ir_node   *res          = gcji_new_string(string_const, irg, block, &mem);
 	set_store(mem);
@@ -754,8 +754,8 @@ static void push_load_const(uint16_t index)
 		push_const(mode_int, (int32_t) constant->integer.value);
 		break;
 	case CONSTANT_FLOAT: {
-		float    val   = *((float*) &constant->floatc.value);
-		tarval  *tv    = new_tarval_from_double(val, mode_float);
+		float      val = *((float*) &constant->floatc.value);
+		ir_tarval *tv  = new_tarval_from_double(val, mode_float);
 		push_const_tarval(tv);
 		break;
 	}
@@ -763,15 +763,15 @@ static void push_load_const(uint16_t index)
 		char buf[128];
 		uint64_t val = ((uint64_t)constant->longc.high_bytes << 32) | constant->longc.low_bytes;
 		snprintf(buf, sizeof(buf), "%lld", (int64_t) val);
-		tarval *tv = new_tarval_from_str(buf, strlen(buf), mode_long);
+		ir_tarval *tv = new_tarval_from_str(buf, strlen(buf), mode_long);
 		push_const_tarval(tv);
 		break;
 	}
 	case CONSTANT_DOUBLE: {
 		uint64_t val = ((uint64_t)constant->doublec.high_bytes << 32) | constant->doublec.low_bytes;
 		assert(sizeof(uint64_t) == sizeof(double));
-		double dval = *((double*)&val);
-		tarval *tv = new_tarval_from_double(dval, mode_double);
+		double     dval = *((double*)&val);
+		ir_tarval *tv   = new_tarval_from_double(dval, mode_double);
 		push_const_tarval(tv);
 		break;
 	}
@@ -2003,7 +2003,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			}
 			ir_node *cur_mem = get_store();
 			if (gcji_is_api_class(owner)) {
-				ir_node *block = get_irg_current_block(irg);
+				ir_node *block = get_r_cur_block(irg);
 				gcji_class_init(owner, irg, block, &cur_mem);
 			}
 

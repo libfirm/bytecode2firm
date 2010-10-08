@@ -256,17 +256,17 @@ static void lower_Alloc(ir_node *node)
 
 static void lower_arraylength(ir_node *call)
 {
-	ir_node  *array_ref   = get_Call_param(call, 0);
+	ir_node  *array_ref = get_Call_param(call, 0);
 
-	ir_node  *block       = get_nodes_block(call);
-	ir_graph *irg         = get_irn_irg(block);
+	ir_node  *block     = get_nodes_block(call);
+	ir_graph *irg       = get_irn_irg(block);
 
-	ir_node  *cur_mem     = get_Call_mem(call);
+	ir_node  *cur_mem   = get_Call_mem(call);
 
-	ir_node  *len         = gcji_get_arraylength(array_ref, irg, block, &cur_mem);
+	ir_node  *len       = gcji_get_arraylength(array_ref, irg, block, &cur_mem);
 
-	ir_node  *in[]        = { len };
-	ir_node  *lent        = new_r_Tuple(block, sizeof(in)/sizeof(*in), in);
+	ir_node  *in[]      = { len };
+	ir_node  *lent      = new_r_Tuple(block, sizeof(in)/sizeof(*in), in);
 
 	turn_into_tuple(call, pn_Call_max);
 	set_irn_n(call, pn_Call_M, cur_mem);
