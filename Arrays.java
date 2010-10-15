@@ -1,4 +1,13 @@
 
+class Element {
+	byte unused;
+	long l;
+	
+	public String toString() {
+		return "I'm an Element, l=" + l;
+	}
+}
+
 public class Arrays
 {
 	
@@ -13,8 +22,9 @@ public class Arrays
 		float[]		fs = new float[size++];
 		double[]	ds = new double[size++];
 		Object[]	os = new Object[size++];
+		Element[]	es = new Element[size];
 		
-		int size_check = zs.length + bs.length + ss.length + is.length + ls.length + fs.length + ds.length + os.length;
+		int size_check = zs.length + bs.length + ss.length + is.length + ls.length + fs.length + ds.length + os.length + es.length;
 		System.out.println("array_sizes = " + size_check);
 		
 		testBooleanArray(zs);
@@ -24,6 +34,7 @@ public class Arrays
 		testFloatArray(fs);
 		testDoubleArray(ds);
 		testObjectArray(os);
+		testElementArray(es);
 	}
 	
 	static void testBooleanArray(boolean[] a)
@@ -95,6 +106,17 @@ public class Arrays
 		a[0] = "Hallo Welt!";
 		a[m] = 42;
 		a[a.length-1] = new Arrays();
+		System.out.println(java.util.Arrays.toString(a));
+	}
+	
+	static void testElementArray(Element[] a)
+	{
+		int m = a.length / 2;
+		a[0] = new Element();
+		a[0].l = -1;
+		a[m] = new Element();
+		a[m].l = a[0].l + 3;
+		a[a.length-1] = new Element();
 		System.out.println(java.util.Arrays.toString(a));
 	}
 	
