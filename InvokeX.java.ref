@@ -22,3 +22,5 @@ long: -2199023255552
 float: 3.14
 double: 0.5805649647699622
 Object: Hello World
+IFaceImp1::ifoo1(-559038737)
+IFaceImp1::ifoo2()

@@ -57,16 +57,22 @@ class Params
 }
 
 
-//interface IFace
-//{
-//	int i = 0xdeadbeef;
-//	void ifoo();
-//}
-//
-//class IFaceImpl1 implements IFace
-//{
-//	public void ifoo() { System.out.println("IFaceImp1::ifoo(" + IFace.i + ")"); }
-//}
+interface IFace
+{
+	int i = 0xdeadbeef;
+	void ifoo();
+}
+
+interface IFace2
+{
+	void ifoo2();
+}
+
+class IFaceImpl1 implements IFace, IFace2
+{
+	public void ifoo2() { System.out.println("IFaceImp1::ifoo2(" + ")"); }
+	public void ifoo()  { System.out.println("IFaceImp1::ifoo1(" + IFace.i + ")"); }
+}
 
 public class InvokeX
 {
@@ -101,11 +107,14 @@ public class InvokeX
 		Params.sfoo(-42, ((long)Integer.MIN_VALUE) << 10, 3.14f, (byte)0xaf, 'm', false, Math.PI * Math.PI / 17, "Hello World", (short)1023);
 	}
 	
-//	static void testIFace()
-//	{
-//		IFace iface = new IFaceImpl1();
-//		iface.ifoo();
-//	}
+	static void testIFace()
+	{
+		IFaceImpl1 impl = new IFaceImpl1();
+		IFace iface = impl;
+		iface.ifoo();
+		IFace2 iface2 = impl;
+		iface2.ifoo2();
+	}
 	
 	public static void main(String[] args)
 	{
@@ -113,6 +122,6 @@ public class InvokeX
 		testAbstractClasses();
 		testConstr();
 		testParams();
-		//testIFace(); //TODO: Testcases for INVOKEINTERFACE.
+		testIFace(); 
 	}
 }

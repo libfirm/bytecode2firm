@@ -1,0 +1,8 @@
+array_sizes = 68
+[true, false, true, false, true]
+[-13, 0, 0, 117, 0, 23]
+[-1013, 0, 0, 10107, 0, 0, 230]
+[-130001, 0, 0, 0, 2147483647, 0, 0, 420000]
+[-Infinity, 0.0, 0.0, 0.0, 0.0, 37.2, 0.0, 0.0, 0.0, 2.3114E18]
+[2.718281828459045, 0.0, 0.0, 0.0, 0.0, 0.5805649647699622, 0.0, 0.0, 0.0, 0.0, NaN]
+[Hallo Welt!, null, null, null, null, null, 42, null, null, null, null, I'm the Arrays testcase]
