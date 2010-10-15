@@ -35,7 +35,6 @@ extern ir_entity *vptr_entity;
 static ir_entity *add_class_dollar_field_recursive(ir_type *type)
 {
 	assert (is_Class_type(type));
-	assert (gcji_is_api_class(type));
 
 	ir_entity *superclass_class_dollar_field = NULL;
 
@@ -172,10 +171,8 @@ void gcji_class_init(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem
 	init_sym.entity_p = gcj_init_entity;
 	ir_node *init_callee = new_r_SymConst(irg, mode_reference, init_sym, symconst_addr_ent);
 
-	ir_entity *class_dollar_field = get_class_member_by_name(type, class_dollar_ident);
-	if (class_dollar_field == NULL) {
-		class_dollar_field = add_class_dollar_field_recursive(type);
-	}
+	ir_entity *class_dollar_field = gcji_get_class_dollar_field(type);
+	assert (class_dollar_field);
 
 	symconst_symbol class_dollar_sym;
 	class_dollar_sym.entity_p   = class_dollar_field;
@@ -190,17 +187,17 @@ void gcji_class_init(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem
 ir_node *gcji_allocate_object(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem)
 {
 	assert (is_Class_type(type));
-	assert (gcji_is_api_class(type));
 
 	ir_node *cur_mem = *mem;
-	gcji_class_init(type, irg, block, &cur_mem);
+	if (gcji_is_api_class(type))
+	  gcji_class_init(type, irg, block, &cur_mem);
 
 	symconst_symbol alloc_sym;
 	alloc_sym.entity_p = gcj_alloc_entity;
 	ir_node *alloc_callee = new_r_SymConst(irg, mode_reference, alloc_sym, symconst_addr_ent);
 
-	ir_entity *class_dollar_field = get_class_member_by_name(type, class_dollar_ident);
-	assert (class_dollar_field); // this is availabe after the call to construct_class_init
+	ir_entity *class_dollar_field = gcji_get_class_dollar_field(type);
+	assert (class_dollar_field);
 
 	symconst_symbol class_dollar_sym;
 	class_dollar_sym.entity_p   = class_dollar_field;
@@ -252,12 +249,9 @@ ir_node *gcji_allocate_array(ir_type *eltype, ir_node *count, ir_graph *irg, ir_
 		         res         = new_r_Proj(ress, mode_reference, 0);
 	} else {
 		assert (is_Class_type(eltype));
-		assert (gcji_is_api_class(eltype)); // FIXME: instances of my classes would require a correct class$ field
 
-		ir_entity *class_dollar_field = get_class_member_by_name(eltype, class_dollar_ident);
-		if (class_dollar_field == NULL) {
-			class_dollar_field = add_class_dollar_field_recursive(eltype);
-		}
+		ir_entity *class_dollar_field = gcji_get_class_dollar_field(eltype);
+		assert (class_dollar_field);
 
 		symconst_symbol callee_sym;
 		callee_sym.entity_p = gcj_new_object_array_entity;
@@ -515,7 +509,7 @@ static ir_entity *emit_method_table(ir_type *classtype)
 	  ir_type *tp = get_entity_type(ent); cur_type_size += get_type_size_bytes(tp); \
 	} while(0);
 
-static ir_entity *construct_class_dollar_field(ir_type *classtype)
+ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 {
 	ir_graph *ccode = get_const_code_irg();
 	ir_node *nullref = new_r_Const_long(ccode, mode_reference, 0);
@@ -615,6 +609,7 @@ static ir_entity *construct_class_dollar_field(ir_type *classtype)
 	assert (cur_init_slot == NUM_FIELDS);
 
 	set_type_size_bytes(cur_cdtype, cur_type_size);
+	default_layout_compound_type(cur_cdtype);
 
 	ir_entity *class_dollar_field = new_entity(classtype, class_dollar_ident, cur_cdtype);
 	set_entity_initializer(class_dollar_field, cur_init);
@@ -629,13 +624,8 @@ ir_entity *gcji_get_class_dollar_field(ir_type *classtype)
 {
 	assert (is_Class_type(classtype));
 	ir_entity *cdf = get_class_member_by_name(classtype, class_dollar_ident);
-	if (!cdf) {
-		if (gcji_is_api_class(classtype)) {
-			cdf = add_class_dollar_field_recursive(classtype);
-		} else {
-			cdf = construct_class_dollar_field(classtype);
-		}
-	}
+	if (!cdf)
+	  cdf = add_class_dollar_field_recursive(classtype);
 	return cdf;
 }
 

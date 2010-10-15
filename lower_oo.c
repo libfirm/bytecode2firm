@@ -147,6 +147,14 @@ static void setup_vtable(ir_type *clazz, void *env)
 
 	ir_entity *class_dollar_field = gcji_get_class_dollar_field(clazz);
 	assert (class_dollar_field);
+
+	if (! gcji_is_api_class(clazz)) {
+		ir_entity *real_cdf = gcji_construct_class_dollar_field(clazz);
+		int pos = get_class_member_index(clazz, class_dollar_field);
+		set_class_member(clazz, real_cdf, pos);
+		class_dollar_field = real_cdf;
+	}
+
 	symconst_symbol cdf_sym;
 	cdf_sym.entity_p = class_dollar_field;
 	ir_node *cdf_symc = new_r_SymConst(const_code, mode_reference, cdf_sym, symconst_addr_ent);
@@ -214,29 +222,12 @@ static void lower_Alloc(ir_node *node)
 
 	ir_type  *eltype   = is_Array_type(type) ? get_array_element_type(type) : NULL;
 
-	if (is_Class_type(type) && gcji_is_api_class(type)) {
+	if (is_Class_type(type)) {
 		res = gcji_allocate_object(type, irg, block, &cur_mem);
 	} else if (is_Array_type(type)) {
 		res = gcji_allocate_array(eltype, count, irg, block, &cur_mem);
 	} else {
-		/* Fallback: create call to "calloc" */
-
-		assert(is_Const(count) && is_Const_one(count));
-		symconst_symbol value;
-		value.type_p = type;
-		ir_node *size = new_r_SymConst(irg, mode_Iu, value, symconst_type_size);
-
-		value.entity_p   = calloc_entity;
-		ir_node  *callee = new_r_SymConst(irg, mode_reference, value,
-		                                  symconst_addr_ent);
-		ir_node  *one    = new_r_Const_long(irg, mode_Iu, 1);
-		ir_node  *in[2]  = { one, size };
-		ir_type  *call_type = get_entity_type(calloc_entity);
-		ir_node  *call   = new_r_Call(block, cur_mem, callee, 2, in, call_type);
-
-		          cur_mem = new_r_Proj(call, mode_M, pn_Call_M);
-		ir_node  *ress    = new_r_Proj(call, mode_T, pn_Call_T_result);
-		          res     = new_r_Proj(ress, mode_reference, 0);
+		assert (0);
 	}
 
 	if (is_Class_type(type)) {

@@ -121,15 +121,23 @@ static void init_types(void)
 	mode_reference = mode_P;
 
 	type_array_byte_boolean = new_type_array(1, type_byte);
+	set_type_state(type_array_byte_boolean, layout_fixed);
 	type_array_short        = new_type_array(1, type_short);
+	set_type_state(type_array_short, layout_fixed);
 	type_array_char         = new_type_array(1, type_char);
+	set_type_state(type_array_char, layout_fixed);
 	type_array_int          = new_type_array(1, type_int);
+	set_type_state(type_array_int, layout_fixed);
 	type_array_long         = new_type_array(1, type_long);
+	set_type_state(type_array_long, layout_fixed);
 	type_array_float        = new_type_array(1, type_float);
+	set_type_state(type_array_float, layout_fixed);
 	type_array_double       = new_type_array(1, type_double);
+	set_type_state(type_array_double, layout_fixed);
 
 	type_reference          = new_type_primitive(mode_reference);
 	type_array_reference    = new_type_array(1, type_reference);
+	set_type_state(type_array_reference, layout_fixed);
 
 	vptr_ident              = new_id_from_str("@vptr");
 	subobject_ident         = new_id_from_str("@base");

@@ -17,6 +17,7 @@ ir_node   *gcji_allocate_array(ir_type *eltype, ir_node *count, ir_graph *irg, i
 ir_node   *gcji_new_string(ir_entity *bytes, ir_graph *irg, ir_node *block, ir_node **mem);
 ir_node   *gcji_get_arraylength(ir_node *arrayref, ir_graph *irg, ir_node *block, ir_node **mem);
 ir_entity *gcji_get_class_dollar_field(ir_type *classtype);
+ir_entity *gcji_construct_class_dollar_field(ir_type* classtype);
 ir_node   *gcji_lookup_interface(ir_node *obptr, ir_type *iface, ir_entity *method, ir_graph *irg, ir_node *block, ir_node **mem);
 
 #endif
