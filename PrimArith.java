@@ -107,10 +107,63 @@ public class PrimArith {
 		System.err.println("d2f: " + f);
 	}
 	
+	static boolean zs, zsd = true;
+	static byte    bs, bsd = 1;
+	static short   ss, ssd = 2;
+	static int     is, isd = 3;
+	static long    ls, lsd = 4;
+	static float   fs, fsd = 5;
+	static double  ds, dsd = 6;
+	
+	boolean zi, zid = true;
+	byte    bi, bid = 8;
+	short   si, sid = 9;
+	int     ii, iid = 10;
+	long    li, lid = 11;
+	float   fi, fid = 12;
+	double  di, did = 13;
+	
+	static void testDefault()
+	{
+		System.out.println("Default values:");
+		
+		PrimArith p = new PrimArith();
+		System.out.println(p.zi);
+		System.out.println(p.bi);
+		System.out.println(p.si);
+		System.out.println(p.ii);
+		System.out.println(p.li);
+		System.out.println(p.fi);
+		System.out.println(p.di);
+		System.out.println(p.zid);
+		System.out.println(p.bid);
+		System.out.println(p.sid);
+		System.out.println(p.iid);
+		System.out.println(p.lid);
+		System.out.println(p.fid);
+		System.out.println(p.did);
+		
+		System.out.println(zs);
+		System.out.println(bs);
+		System.out.println(ss);
+		System.out.println(is);
+		System.out.println(ls);
+		System.out.println(fs);
+		System.out.println(ds);
+		System.out.println(zsd);
+		System.out.println(bsd);
+		System.out.println(ssd);
+		System.out.println(isd);
+		System.out.println(lsd);
+		System.out.println(fsd);
+		System.out.println(dsd);
+	}
+	
 	public static void main(String args[])
 	{
 		testSimple();
 		testCompare();
 		testConversion();
+		testDefault();
 	}
 }
