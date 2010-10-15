@@ -1005,9 +1005,10 @@ static void construct_array_store(ir_type *array_type)
 	ir_entity *entity    = get_array_element_entity(array_type);
 	ir_type   *type      = get_entity_type(entity);
 	ir_mode   *mode      = get_type_mode(type);
-	           mode      = get_arith_mode(mode);
+	ir_mode   *arith_mode= get_arith_mode(mode);
 
-	ir_node   *value     = symbolic_pop(mode);
+	ir_node   *op        = symbolic_pop(arith_mode); // need to pop the operand as 32 bit value, but...
+	ir_node   *value     = new_Conv(op, mode);       // ... obey the real type when writing to memory.
 	ir_node   *index     = symbolic_pop(mode_int);
 	ir_node   *base_addr = symbolic_pop(mode_reference);
 	           base_addr = new_Add(base_addr, new_Const_long(mode_reference, GCJI_DATA_OFFSET), mode_reference); // skip the j.l.Object subobject and the length field.
