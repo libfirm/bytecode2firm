@@ -707,53 +707,6 @@ static void pop_set_local(int idx, ir_mode *mode)
 	set_local(idx, value);
 }
 
-/*
- * Creates an entity initialized to the given string.
- * The string is written bytewise.
- */
-static ir_entity *string_to_firm(const char *bytes, size_t length)
-{
-	ir_mode   *element_mode = mode_Bu;
-	ir_type   *element_type = new_type_primitive(element_mode);
-	ir_type   *array_type   = new_type_array(1, element_type);
-
-    ident     *id           = id_unique("str_%u");
-    ir_type   *global_type  = get_glob_type();
-    ir_entity *entity       = new_entity(global_type, id, array_type);
-    set_entity_ld_ident(entity, id);
-    set_entity_visibility(entity, ir_visibility_private);
-    add_entity_linkage(entity, IR_LINKAGE_CONSTANT);
-
-    set_array_lower_bound_int(array_type, 0, 0);
-    set_array_upper_bound_int(array_type, 0, length);
-    set_type_size_bytes(array_type, length);
-    set_type_state(array_type, layout_fixed);
-
-    // initialize each array element to an input byte
-    ir_initializer_t *initializer = create_initializer_compound(length);
-    for (size_t i = 0; i < length; ++i) {
-        tarval           *tv  = new_tarval_from_long(bytes[i], element_mode);
-        ir_initializer_t *val = create_initializer_tarval(tv);
-        set_initializer_compound_value(initializer, i, val);
-    }
-
-    set_entity_initializer(entity, initializer);
-
-    return entity;
-}
-
-static ir_node *new_string_literal(const char* bytes, size_t length)
-{
-	// create string const
-	ir_entity *string_const = string_to_firm(bytes, length);
-	ir_graph  *irg          = get_current_ir_graph();
-	ir_node   *block        = get_irg_current_block(irg);
-	ir_node   *mem          = get_store();
-	ir_node   *res          = gcji_new_string(string_const, irg, block, &mem);
-	set_store(mem);
-	return res;
-}
-
 static void push_load_const(uint16_t index)
 {
 	const constant_t *constant = get_constant(index);
@@ -785,8 +738,15 @@ static void push_load_const(uint16_t index)
 	}
 	case CONSTANT_STRING: {
 		constant_t *utf8_const = get_constant(constant->string.string_index);
-		ir_node *string_literal = new_string_literal(utf8_const->utf8_string.bytes, utf8_const->utf8_string.length+1);
-		symbolic_push(string_literal);
+
+		ir_entity *string_const = gcji_emit_utf8_const(utf8_const, 0);
+		ir_graph  *irg          = get_current_ir_graph();
+		ir_node   *block        = get_irg_current_block(irg);
+		ir_node   *mem          = get_store();
+		ir_node   *res          = gcji_new_string(string_const, irg, block, &mem);
+		set_store(mem);
+
+		symbolic_push(res);
 		break;
 	}
 	case CONSTANT_CLASSREF: {
@@ -2598,6 +2558,7 @@ int main(int argc, char **argv)
 
 	class_file_exit();
 	deinit_mangle();
+	gcji_deinit();
 
 	char cmd_buffer[1024];
 	sprintf(cmd_buffer, "gcc -g -x assembler %s -x none \"%s/librts.o\" -lgcj -lstdc++ -o %s", asm_file, bootclasspath, output_name);

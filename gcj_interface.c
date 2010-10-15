@@ -4,6 +4,7 @@
 #include "class_file.h"
 
 #include <libfirm/firm.h>
+#include <libfirm/adt/set.h>
 
 #include <assert.h>
 #include <string.h>
@@ -31,6 +32,20 @@ static ir_mode   *mode_ushort;
 static ir_type   *type_ushort;
 
 extern ir_entity *vptr_entity;
+
+static set* scp;
+typedef struct {
+	const char* s;
+	ir_entity* utf8c;
+} scp_entry;
+static int set_cmp(const void *elt, const void *key, size_t size)
+{
+	(void)size;
+	const scp_entry *a = (const scp_entry*) elt;
+	const scp_entry *b = (const scp_entry*) key;
+
+	return strcmp(a->s, b->s);
+}
 
 static ir_entity *add_class_dollar_field_recursive(ir_type *type)
 {
@@ -99,7 +114,7 @@ void gcji_init()
 	set_method_param_type(gcj_new_string_method_type, 0, t_ptr);
 	set_method_res_type(gcj_new_string_method_type, 0, t_ptr);
 
-	ident   *gcj_new_string_id = new_id_from_str("_Jv_NewStringUTF");
+	ident   *gcj_new_string_id = new_id_from_str("_Z22_Jv_NewStringUtf8ConstP13_Jv_Utf8Const");
 	gcj_new_string_entity = new_entity(glob, gcj_new_string_id, gcj_new_string_method_type);
 	set_entity_visibility(gcj_new_string_entity, ir_visibility_external);
 
@@ -160,6 +175,13 @@ void gcji_init()
 
 	mode_ushort = new_ir_mode("US", irms_int_number, 16, 0, irma_twos_complement, 16);
 	type_ushort = new_type_primitive(mode_ushort);
+
+	scp = new_set(set_cmp, 16);
+}
+
+void gcji_deinit()
+{
+	del_set(scp);
 }
 
 void gcji_class_init(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem)
@@ -341,7 +363,7 @@ static ir_entity *emit_primitive_member(ir_type *owner, const char *name, ir_typ
 
 extern char* strdup(const char* s);
 
-static ir_entity *emit_utf8_const(constant_t *constant, int mangle_slash)
+ir_entity *gcji_emit_utf8_const(constant_t *constant, int mangle_slash)
 {
 	assert (constant->base.kind == CONSTANT_UTF8_STRING);
 	constant_utf8_string_t *string = (constant_utf8_string_t*) constant;
@@ -359,6 +381,16 @@ static ir_entity *emit_utf8_const(constant_t *constant, int mangle_slash)
 		hash = (31 * hash) + bytes[i]; // FIXME: this doesn't work for codepoints that are not ASCII.
 	}
 	hash &= 0xFFFF;
+
+	scp_entry scp_ent;
+	scp_ent.s = bytes;
+
+	void *scp_find_res = set_find(scp, &scp_ent, sizeof(scp_entry), hash);
+	if (scp_find_res != NULL) {
+		ir_entity *utf8const = ((scp_entry*) scp_find_res)->utf8c;
+		assert (is_entity(utf8const));
+		return utf8const;
+	}
 
 	ir_graph         *ccode      = get_const_code_irg();
 
@@ -409,6 +441,9 @@ static ir_entity *emit_utf8_const(constant_t *constant, int mangle_slash)
 	set_entity_allocation(utf8c, allocation_static);
 	set_entity_ld_ident(utf8c, id);
 
+	scp_ent.utf8c = utf8c;
+	set_insert(scp, &scp_ent, sizeof(scp_entry), hash);
+
 	return utf8c;
 }
 #define MD_SIZE_BYTES (get_type_size_bytes(type_reference)*4 + get_type_size_bytes(type_ushort)*2)
@@ -426,12 +461,12 @@ static ir_entity *emit_method_desc(ir_type *owner, ir_type *classtype, ir_entity
 	assert (linked_class && linked_method);
 
 	constant_t       *name_const    = linked_class->constants[linked_method->name_index];
-	ir_entity        *name_const_ent= emit_utf8_const(name_const, 1);
+	ir_entity        *name_const_ent= gcji_emit_utf8_const(name_const, 1);
 	ir_entity        *name_ent      = emit_primitive_member(md_type, "name", type_reference, create_ccode_symconst(name_const_ent));
 	set_initializer_compound_value(cinit, 0, get_entity_initializer(name_ent));
 
 	constant_t       *desc_const    = linked_class->constants[linked_method->descriptor_index];
-	ir_entity        *desc_const_ent= emit_utf8_const(desc_const, 1);
+	ir_entity        *desc_const_ent= gcji_emit_utf8_const(desc_const, 1);
 	ir_entity        *desc_ent      = emit_primitive_member(md_type, "sig", type_reference, create_ccode_symconst(desc_const_ent));
 	set_initializer_compound_value(cinit, 1, get_entity_initializer(desc_ent));
 
@@ -526,7 +561,7 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	EMIT_PRIM("next_or_version", type_reference, nullref);
 	EMIT_PRIM("unknown", type_int, new_r_Const_long(ccode, mode_int, 404000));
 
-	ir_entity *name_ent = emit_utf8_const(
+	ir_entity *name_ent = gcji_emit_utf8_const(
 			linked_class->constants[linked_class->constants[linked_class->this_class]->classref.name_index], 1);
 	EMIT_PRIM("name", type_reference, create_ccode_symconst(name_ent));
 
@@ -584,7 +619,7 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	EMIT_PRIM("loader", type_reference, nullref);
 
 	EMIT_PRIM("interface_count", type_short, new_r_Const_long(ccode, mode_short, linked_class->n_interfaces));
-	EMIT_PRIM("state", type_byte, new_r_Const_long(ccode, mode_byte, 0));
+	EMIT_PRIM("state", type_byte, new_r_Const_long(ccode, mode_byte, 6)); // JV_STATE_COMPILED
 
 	EMIT_PRIM("thread", type_reference, nullref);
 
@@ -650,11 +685,11 @@ ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface, ir_entity *metho
 	assert (linked_class && linked_method);
 
 	constant_t *name_const   = linked_class->constants[linked_method->name_index];
-	ir_entity *name_const_ent= emit_utf8_const(name_const, 1);
+	ir_entity *name_const_ent= gcji_emit_utf8_const(name_const, 1);
 	ir_node   *name_ref      = create_symconst(irg, name_const_ent);
 
 	constant_t *desc_const   = linked_class->constants[linked_method->descriptor_index];
-	ir_entity *desc_const_ent= emit_utf8_const(desc_const, 1);
+	ir_entity *desc_const_ent= gcji_emit_utf8_const(desc_const, 1);
 	ir_node   *desc_ref      = create_symconst(irg, desc_const_ent);
 
 	symconst_symbol callee_sym;
