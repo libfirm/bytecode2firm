@@ -1,7 +1,7 @@
 FIRM_HOME   = $(HOME)/develop/firm
 FIRM_BUILD  = $(FIRM_HOME)/build/i686-pc-linux-gnu/debug/
 FIRM_CFLAGS = -I$(FIRM_HOME)/libfirm/include -I$(FIRM_HOME)/obstack -I$(FIRM_HOME)/libcore -I$(FIRM_HOME)/libcore/libcore -I$(FIRM_HOME)
-FIRM_LIBS   = -L$(FIRM_BUILD) -lfirm -llpp -lcore -lm -lz -ldl
+FIRM_LIBS   = -L$(FIRM_BUILD) -lfirm -lm -lz -ldl
 LIBFIRM_FILE = $(FIRM_BUILD)/libfirm.a
 
 INSTALL = /usr/bin/install
