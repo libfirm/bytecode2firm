@@ -283,7 +283,7 @@ ir_node *gcji_allocate_array(ir_type *eltype, ir_node *count, ir_graph *irg, ir_
 		jclass_sym.entity_p = class_dollar_field;
 		ir_node *jclass = new_r_SymConst(irg, mode_reference, jclass_sym, symconst_addr_ent);
 
-		ir_node *nullptr = new_Const_long(mode_reference, 0);
+		ir_node *nullptr = new_r_Const_long(irg, mode_reference, 0);
 
 		ir_node *args[3] = { count, jclass, nullptr };
 
@@ -327,11 +327,11 @@ ir_node *gcji_get_arraylength(ir_node *arrayref, ir_graph *irg, ir_node *block, 
 	(void) irg;
 	ir_node *cur_mem = *mem;
 
-	ir_node *length_offset = new_Const_long(mode_reference, GCJI_LENGTH_OFFSET); // in gcj, arrays are subclasses of java/lang/Object. "length" is the second field.
-	ir_node *length_addr = new_r_Add(block, arrayref, length_offset, mode_reference);
-	ir_node *length_load = new_r_Load(block, cur_mem, length_addr, mode_int, cons_none);
-	         cur_mem     = new_r_Proj(length_load, mode_M, pn_Load_M);
-	ir_node *res         = new_r_Proj(length_load, mode_int, pn_Load_res);
+	ir_node *length_offset = new_r_Const_long(irg, mode_reference, GCJI_LENGTH_OFFSET); // in gcj, arrays are subclasses of java/lang/Object. "length" is the second field.
+	ir_node *length_addr   = new_r_Add(block, arrayref, length_offset, mode_reference);
+	ir_node *length_load   = new_r_Load(block, cur_mem, length_addr, mode_int, cons_none);
+	         cur_mem       = new_r_Proj(length_load, mode_M, pn_Load_M);
+	ir_node *res           = new_r_Proj(length_load, mode_int, pn_Load_res);
 
 	*mem = cur_mem;
 	return res;
@@ -425,7 +425,7 @@ ir_entity *gcji_emit_utf8_const(constant_t *constant, int mangle_slash)
 	// initialize each array element to an input byte
 	ir_initializer_t *data_init  = create_initializer_compound(len0);
 	for (size_t i = 0; i < len0; ++i) {
-		tarval           *tv  = new_tarval_from_long(bytes[i], el_mode);
+		ir_tarval        *tv  = new_tarval_from_long(bytes[i], el_mode);
 		ir_initializer_t *val = create_initializer_tarval(tv);
 		set_initializer_compound_value(data_init, i, val);
 	}
