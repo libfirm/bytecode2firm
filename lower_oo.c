@@ -231,7 +231,7 @@ static void lower_Alloc(ir_node *node)
 	}
 
 	if (is_Class_type(type)) {
-		ir_node   *vptr          = new_r_Sel(block, new_NoMem(), res, 0, NULL, vptr_entity);
+		ir_node   *vptr          = new_r_Sel(block, new_r_NoMem(irg), res, 0, NULL, vptr_entity);
 
 		ir_type   *global_type   = get_glob_type();
 		ir_entity *vtable_entity = get_class_member_by_name(global_type, mangle_vtable_name(type));
@@ -306,7 +306,7 @@ static void lower_Call(ir_node* call)
 		int link_static       = (cl_access_flags & ACCESS_FLAG_FINAL) + (mt_access_flags & ACCESS_FLAG_FINAL) != 0;
 
 		if (! link_static) {
-			ir_node *vptr         = new_r_Sel(block, new_NoMem(), objptr, 0, NULL, vptr_entity);
+			ir_node *vptr         = new_r_Sel(block, new_r_NoMem(irg), objptr, 0, NULL, vptr_entity);
 
 
 			ir_node *vtable_load  = new_r_Load(block, cur_mem, vptr, mode_P, cons_none);

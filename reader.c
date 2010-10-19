@@ -741,7 +741,7 @@ static void push_load_const(uint16_t index)
 
 		ir_entity *string_const = gcji_emit_utf8_const(utf8_const, 0);
 		ir_graph  *irg          = get_current_ir_graph();
-		ir_node   *block        = get_irg_current_block(irg);
+		ir_node   *block        = get_r_cur_block(irg);
 		ir_node   *mem          = get_store();
 		ir_node   *res          = gcji_new_string(string_const, irg, block, &mem);
 		set_store(mem);

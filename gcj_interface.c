@@ -600,7 +600,7 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 		ir_entity *vtable = get_class_member_by_name(glob, mangle_vtable_name(classtype));
 		assert (vtable);
 		vtable_ref = create_ccode_symconst(vtable);
-		ir_node *block = get_irg_current_block(ccode);
+		ir_node *block = get_r_cur_block(ccode);
 		ir_node *vtable_offset = new_r_Const_long(ccode, mode_reference, get_type_size_bytes(type_reference)*GCJI_VTABLE_OFFSET);
 		vtable_ref = new_r_Add(block, vtable_ref, vtable_offset, mode_reference);
 	} else {
@@ -670,7 +670,7 @@ ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface, ir_entity *metho
 
 	// we need the reference to the object's class$ field
 	// first, dereference the vptr in order to get the vtable address.
-	ir_node   *vptr_addr     = new_r_Sel(block, new_NoMem(), objptr, 0, NULL, vptr_entity);
+	ir_node   *vptr_addr     = new_r_Sel(block, new_r_NoMem(irg), objptr, 0, NULL, vptr_entity);
 	ir_node   *vptr_load     = new_r_Load(block, cur_mem, vptr_addr, mode_reference, cons_none);
 	ir_node   *vtable_addr   = new_r_Proj(vptr_load, mode_reference, pn_Load_res);
 	           cur_mem       = new_r_Proj(vptr_load, mode_M, pn_Load_M);
