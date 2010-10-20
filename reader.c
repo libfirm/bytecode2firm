@@ -19,6 +19,7 @@
 #include "adt/xmalloc.h"
 
 #include "mangle.h"
+#include "class_registry.h"
 #include "gcj_interface.h"
 
 #include <libfirm/firm.h>
@@ -153,40 +154,6 @@ static void init_types(void)
 	                                     arraylength_type);
 	set_entity_additional_property(builtin_arraylength,
 	                               mtp_property_intrinsic|mtp_property_private);
-}
-
-static cpmap_t class_registry;
-
-static int class_registry_keys_equal(const void *p1, const void *p2)
-{
-	const char *s1 = (const char *) p1;
-	const char *s2 = (const char *) p2;
-	return strcmp(s1, s2) == 0;
-}
-
-static unsigned class_registry_key_hash(const void *p)
-{
-	const char *s = (const char *)p;
-	return firm_fnv_hash_str(s);
-}
-
-static void class_registry_init(void)
-{
-	cpmap_init(&class_registry, class_registry_key_hash,
-	           class_registry_keys_equal);
-}
-
-static ir_type *class_registry_get(const char *classname)
-{
-	ir_type *type = cpmap_find(&class_registry, classname);
-	if (type == NULL) {
-		ident *id = new_id_from_str(classname);
-		type      = new_type_class(id);
-
-		cpmap_set(&class_registry, classname, type);
-	}
-
-	return type;
 }
 
 static ir_type *descriptor_to_type(const char **descriptor);
@@ -1889,11 +1856,9 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 			if (opcode == OPC_GETSTATIC || opcode == OPC_PUTSTATIC) {
 				ir_type *owner = get_entity_owner(entity);
-				if (gcji_is_api_class(owner)) {
-					ir_graph *irg = get_current_ir_graph();
-					ir_node  *block = get_cur_block();
-					gcji_class_init(owner, irg, block, &cur_mem);
-				}
+				ir_graph *irg = get_current_ir_graph();
+				ir_node  *block = get_cur_block();
+				gcji_class_init(owner, irg, block, &cur_mem);
 				addr = create_symconst(entity);
 			} else {
 				ir_node *object = symbolic_pop(mode_reference);
@@ -1971,10 +1936,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				args[i]           = val;
 			}
 			ir_node *cur_mem = get_store();
-			if (gcji_is_api_class(owner)) {
-				ir_node *block = get_r_cur_block(irg);
-				gcji_class_init(owner, irg, block, &cur_mem);
-			}
+			ir_node *block = get_r_cur_block(irg);
+			gcji_class_init(owner, irg, block, &cur_mem);
 
 			ir_node *call    = new_Call(cur_mem, callee, n_args, args, type);
 			         cur_mem = new_Proj(call, mode_M, pn_Call_M);

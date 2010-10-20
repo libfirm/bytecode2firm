@@ -64,10 +64,12 @@ extern "C" {
 extern void* _Jv_makeUtf8Const(const char*, int);
 extern void  _Jv_InitGC(void);
 extern void  _Jv_InitPrimClass(java::lang::Class*, const char*, char, int);
+extern void  _Jv_InitThreads(void);
 
 void __gcj_init(void) {
 
   _Jv_InitGC();
+  _Jv_InitThreads();
 
   using namespace gcj;
   void_signature = _Jv_makeUtf8Const ("()V", 3);

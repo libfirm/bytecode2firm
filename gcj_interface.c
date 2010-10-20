@@ -2,9 +2,11 @@
 #include "gcj_interface.h"
 #include "types.h"
 #include "class_file.h"
+#include "class_registry.h"
 
 #include <libfirm/firm.h>
 #include <libfirm/adt/set.h>
+#include "adt/obst.h"
 
 #include <assert.h>
 #include <string.h>
@@ -19,6 +21,7 @@ static ir_entity *gcj_new_object_array_entity;
 static ir_entity *gcj_abstract_method_entity;
 static ir_entity *gcj_lookup_interface_entity;
 
+static ir_entity *gcj_booleanClass_entity;
 static ir_entity *gcj_byteClass_entity;
 static ir_entity *gcj_charClass_entity;
 static ir_entity *gcj_shortClass_entity;
@@ -32,6 +35,10 @@ static ir_mode   *mode_ushort;
 static ir_type   *type_ushort;
 
 extern ir_entity *vptr_entity;
+
+extern char* strdup(const char* s);
+static ir_entity *do_emit_utf8_const(const char *bytes, size_t len);
+static ir_entity *emit_type_signature(ir_type *type);
 
 static set* scp;
 typedef struct {
@@ -154,6 +161,7 @@ void gcji_init()
 	set_entity_visibility(gcj_lookup_interface_entity, ir_visibility_external);
 
 	// primitive classes
+	gcj_booleanClass_entity= new_entity(glob, new_id_from_str("_Jv_booleanClass"), type_reference);
 	gcj_byteClass_entity   = new_entity(glob, new_id_from_str("_Jv_byteClass"), type_reference);
 	gcj_charClass_entity   = new_entity(glob, new_id_from_str("_Jv_charClass"), type_reference);
 	gcj_shortClass_entity  = new_entity(glob, new_id_from_str("_Jv_shortClass"), type_reference);
@@ -161,6 +169,7 @@ void gcji_init()
 	gcj_longClass_entity   = new_entity(glob, new_id_from_str("_Jv_longClass"), type_reference);
 	gcj_floatClass_entity  = new_entity(glob, new_id_from_str("_Jv_floatClass"), type_reference);
 	gcj_doubleClass_entity = new_entity(glob, new_id_from_str("_Jv_doubleClass"), type_reference);
+	set_entity_visibility(gcj_booleanClass_entity, ir_visibility_external);
 	set_entity_visibility(gcj_byteClass_entity, ir_visibility_external);
 	set_entity_visibility(gcj_charClass_entity, ir_visibility_external);
 	set_entity_visibility(gcj_shortClass_entity, ir_visibility_external);
@@ -187,7 +196,6 @@ void gcji_deinit()
 void gcji_class_init(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem)
 {
 	assert (is_Class_type(type));
-	assert (gcji_is_api_class(type));
 
 	symconst_symbol init_sym;
 	init_sym.entity_p = gcj_init_entity;
@@ -211,8 +219,7 @@ ir_node *gcji_allocate_object(ir_type *type, ir_graph *irg, ir_node *block, ir_n
 	assert (is_Class_type(type));
 
 	ir_node *cur_mem = *mem;
-	if (gcji_is_api_class(type))
-	  gcji_class_init(type, irg, block, &cur_mem);
+	gcji_class_init(type, irg, block, &cur_mem);
 
 	symconst_symbol alloc_sym;
 	alloc_sym.entity_p = gcj_alloc_entity;
@@ -242,16 +249,8 @@ ir_node *gcji_allocate_array(ir_type *eltype, ir_node *count, ir_graph *irg, ir_
 	ir_node   *cur_mem    = *mem;
 
 	if (is_Primitive_type(eltype)) {
-		ir_entity *jclass_ref = NULL;
-
-		     if (eltype == type_byte)   jclass_ref = gcj_byteClass_entity;
-		else if (eltype == type_char)   jclass_ref = gcj_charClass_entity;
-		else if (eltype == type_short)  jclass_ref = gcj_shortClass_entity;
-		else if (eltype == type_int)    jclass_ref = gcj_intClass_entity;
-		else if (eltype == type_long)   jclass_ref = gcj_longClass_entity;
-		else if (eltype == type_float)  jclass_ref = gcj_floatClass_entity;
-		else if (eltype == type_double) jclass_ref = gcj_doubleClass_entity;
-		else assert (0);
+		ir_entity *jclass_ref = gcji_get_class_dollar_field(eltype);
+		assert (jclass_ref);
 
 		symconst_symbol callee_sym;
 		callee_sym.entity_p = gcj_new_prim_array_entity;
@@ -361,20 +360,29 @@ static ir_entity *emit_primitive_member(ir_type *owner, const char *name, ir_typ
 	return ent;
 }
 
-extern char* strdup(const char* s);
-
 ir_entity *gcji_emit_utf8_const(constant_t *constant, int mangle_slash)
 {
 	assert (constant->base.kind == CONSTANT_UTF8_STRING);
-	constant_utf8_string_t *string = (constant_utf8_string_t*) constant;
+	constant_utf8_string_t *string_const = (constant_utf8_string_t*) constant;
 
-	char    *bytes = mangle_slash ? strdup(string->bytes) : string->bytes;
-	uint16_t len   = string->length;
-	uint16_t len0  = string->length + 1; // include the '\0' byte
+	char *bytes = mangle_slash ? strdup(string_const->bytes) : string_const->bytes;
 
 	if (mangle_slash)
 	  for (char *p = bytes; *p != '\0'; p++)
 		if (*p == '/') *p = '.';
+
+	ir_entity *res = do_emit_utf8_const(bytes, string_const->length);
+
+	if (mangle_slash)
+		free(bytes);
+
+	return res;
+}
+
+
+static ir_entity *do_emit_utf8_const(const char *bytes, size_t len)
+{
+	size_t len0 = len + 1; // incl. the '\0' byte
 
 	int hash = 0;
 	for (uint16_t i = 0; i < len; i++) {
@@ -446,6 +454,7 @@ ir_entity *gcji_emit_utf8_const(constant_t *constant, int mangle_slash)
 
 	return utf8c;
 }
+
 #define MD_SIZE_BYTES (get_type_size_bytes(type_reference)*4 + get_type_size_bytes(type_ushort)*2)
 static ir_entity *emit_method_desc(ir_type *owner, ir_type *classtype, ir_entity *ent)
 {
@@ -536,6 +545,166 @@ static ir_entity *emit_method_table(ir_type *classtype)
 	return mt_ent;
 }
 
+#define FD_SIZE_BYTES (get_type_size_bytes(type_reference)*2 + get_type_size_bytes(type_ushort)*2 + get_type_size_bytes(type_int))
+static ir_entity *emit_field_desc(ir_type *owner, ir_type *classtype, ir_entity *ent)
+{
+	ir_graph         *ccode         = get_const_code_irg();
+
+	ident            *id            = id_unique("_FD_%u_");
+	ir_type          *fd_type       = new_type_struct(id_mangle(id, new_id_from_str("type")));
+
+	ir_initializer_t *cinit         = create_initializer_compound(5);
+
+	class_t          *linked_class  = (class_t*) get_type_link(classtype);
+	field_t          *linked_field  = (field_t*) get_entity_link(ent);
+	assert (linked_class && linked_field);
+
+	constant_t       *name_const    = linked_class->constants[linked_field->name_index];
+	ir_entity        *name_const_ent= gcji_emit_utf8_const(name_const, 1);
+	ir_entity        *name_ent      = emit_primitive_member(fd_type, "name", type_reference, create_ccode_symconst(name_const_ent));
+	set_initializer_compound_value(cinit, 0, get_entity_initializer(name_ent));
+
+	ir_type          *field_type    = get_entity_type(ent);
+	ir_entity        *cdf           = gcji_get_class_dollar_field(field_type);
+	if (!cdf) {
+		cdf = emit_type_signature(field_type);
+	}
+	ir_node          *cdf_symc      = create_ccode_symconst(cdf);
+	ir_entity        *cdf_ent       = emit_primitive_member(fd_type, "type", type_reference, cdf_symc);
+	set_initializer_compound_value(cinit, 1, get_entity_initializer(cdf_ent));
+
+	ir_node          *accflags      = new_r_Const_long(ccode, mode_ushort, linked_field->access_flags);
+	ir_entity        *accflags_ent  = emit_primitive_member(fd_type, "accflags", type_ushort, accflags);
+	set_initializer_compound_value(cinit, 2, get_entity_initializer(accflags_ent));
+
+	symconst_symbol field_type_symc;
+	field_type_symc.type_p = field_type;
+	ir_node          *bsize         = new_r_SymConst(ccode, mode_ushort, field_type_symc, symconst_type_size);
+	ir_entity        *bsize_ent     = emit_primitive_member(fd_type, "bsize", type_ushort, bsize);
+	set_initializer_compound_value(cinit, 3, get_entity_initializer(bsize_ent));
+
+	symconst_symbol field_symc;
+	field_symc.entity_p = ent;
+
+	ir_node          *boff_addr     = NULL;
+	if ((linked_field->access_flags & ACCESS_FLAG_STATIC) != 0)
+		boff_addr = new_r_SymConst(ccode, mode_int, field_symc, symconst_addr_ent);
+	else
+		boff_addr = new_r_SymConst(ccode, mode_int, field_symc, symconst_ofs_ent);
+
+	ir_entity        *boff_addr_ent = emit_primitive_member(fd_type, "boffset/address", type_int, boff_addr);
+	set_initializer_compound_value(cinit, 4, get_entity_initializer(boff_addr_ent));
+
+	set_type_size_bytes(fd_type, FD_SIZE_BYTES);
+	default_layout_compound_type(fd_type);
+
+	ir_entity        *fd_ent        = new_entity(owner, id, fd_type);
+	set_entity_initializer(fd_ent, cinit);
+	set_entity_allocation(fd_ent, allocation_static);
+	set_entity_ld_ident(fd_ent, id);
+
+	return fd_ent;
+}
+
+static ir_entity *emit_field_table(ir_type *classtype)
+{
+	ident            *id            = id_unique("_FT_%u_");
+	ir_type          *ft_type       = new_type_struct(id_mangle(id, new_id_from_str("type")));
+
+	class_t          *linked_class  = (class_t*) get_type_link(classtype);
+	assert (linked_class);
+
+	ir_entity        *cdf           = gcji_get_class_dollar_field(classtype);
+
+	int               n_members     = get_class_n_members(classtype);
+	uint16_t          n_fields      = linked_class->n_fields;
+	ir_initializer_t *cinit         = create_initializer_compound(n_fields);
+	unsigned          cur_init_slot = 0;
+
+	for (int i = 0; i < n_members; i++) {
+		ir_entity *member = get_class_member(classtype, i);
+		if (! is_method_entity(member)) {
+			if (*get_entity_name(member) == '@' || member == cdf)
+				continue; // skip @base, @vptr and class$
+
+			ir_entity *fd_ent = emit_field_desc(ft_type, classtype, member);
+			set_initializer_compound_value(cinit, cur_init_slot++, get_entity_initializer(fd_ent));
+		}
+	}
+	assert (cur_init_slot == n_fields);
+
+	set_type_size_bytes(ft_type, n_fields * FD_SIZE_BYTES);
+	default_layout_compound_type(ft_type);
+
+	ir_entity        *ft_ent        = new_entity(get_glob_type(), id, ft_type);
+	set_entity_initializer(ft_ent, cinit);
+	set_entity_allocation(ft_ent, allocation_static);
+	set_entity_ld_ident(ft_ent, id);
+
+	return ft_ent;
+}
+
+static ir_entity *emit_interface_table(ir_type *classtype)
+{
+	ident            *id            = id_unique("_IF_%u_");
+	ir_type          *if_type       = new_type_struct(id_mangle(id, new_id_from_str("type")));
+
+	class_t          *linked_class  = (class_t*) get_type_link(classtype);
+	assert (linked_class);
+	uint16_t          n_interfaces  = linked_class->n_interfaces;
+	if (n_interfaces == 0)
+		return NULL;
+	ir_initializer_t *cinit         = create_initializer_compound(n_interfaces);
+
+	for (uint16_t i = 0; i < n_interfaces; i++) {
+		uint16_t                iface_ref = linked_class->interfaces[i];
+		constant_classref_t    *clsref    = (constant_classref_t*)    linked_class->constants[iface_ref];
+		constant_utf8_string_t *clsname   = (constant_utf8_string_t*) linked_class->constants[clsref->name_index];
+
+		ir_type    *type = class_registry_get(clsname->bytes);
+		assert (type);
+		ir_entity  *cdf  = gcji_get_class_dollar_field(type);
+		assert (cdf);
+		ir_entity  *entry_ent = emit_primitive_member(if_type, "entry", type_reference, create_ccode_symconst(cdf));
+		set_initializer_compound_value(cinit, i, get_entity_initializer(entry_ent));
+	}
+
+	set_type_size_bytes(if_type, n_interfaces * get_type_size_bytes(type_reference));
+	default_layout_compound_type(if_type);
+
+	ir_entity        *if_ent        = new_entity(get_glob_type(), id, if_type);
+	set_entity_initializer(if_ent, cinit);
+	set_entity_allocation(if_ent, allocation_static);
+	set_entity_ld_ident(if_ent, id);
+
+	return if_ent;
+}
+
+static size_t calc_instance_size(ir_type *classtype)
+{
+	assert (is_Class_type(classtype));
+	size_t s = 0;
+	int n_members = get_class_n_members(classtype);
+	for (int i = 0; i < n_members; i++) {
+		ir_entity *member = get_class_member(classtype, i);
+		if (! is_method_entity(member)) {
+			field_t *linked_field  = (field_t*) get_entity_link(member);
+			if (linked_field != NULL && (linked_field->access_flags & ACCESS_FLAG_STATIC) == 0)
+				s += get_type_size_bytes(get_entity_type(member));
+		}
+	}
+	int n_supertypes = get_class_n_supertypes(classtype);
+	if (n_supertypes > 0) {
+		assert (n_supertypes == 1);
+		ir_type *superclass = get_class_supertype(classtype, 0);
+		s += calc_instance_size(superclass);
+	} else {
+		s += get_type_size_bytes(type_reference); // vptr, defined once in j.l.Object.
+	}
+
+	return s;
+}
+
 #define NUM_FIELDS 39
 #define EMIT_PRIM(name, tp, val) do { \
 	  ir_entity *ent = emit_primitive_member(cur_cdtype, name, tp, val); \
@@ -581,13 +750,12 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	ir_entity *mt_ent = emit_method_table(classtype);
 	EMIT_PRIM("methods", type_reference, create_ccode_symconst(mt_ent)); // FIXME: union, alternative would be the element type in case classtype is an array.
 	EMIT_PRIM("method_count", type_short, new_r_Const_long(ccode, mode_short, linked_class->n_methods));
-	EMIT_PRIM("vtable_method_count", type_short, new_r_Const_long(ccode, mode_short, get_class_vtable_size(classtype)-2)); // w/o slots 0=class$ and 1=some_num. see lower_oo.c
+	EMIT_PRIM("vtable_method_count", type_short, new_r_Const_long(ccode, mode_short, get_class_vtable_size(classtype)-2)); // w/o slots 0=class$ and 1=gc_stuff. see lower_oo.c
 
-	EMIT_PRIM("fields", type_reference, nullref);
+	ir_entity *fields = emit_field_table(classtype);
+	EMIT_PRIM("fields", type_reference, create_ccode_symconst(fields));
 
-	symconst_symbol size_sym;
-	size_sym.type_p = classtype;
-	EMIT_PRIM("size_in_bytes", type_int, new_r_SymConst(ccode, mode_int, size_sym, symconst_type_size)); // FIXME: maybe there's an offset needed here
+	EMIT_PRIM("size_in_bytes", type_int, new_r_Const_long(ccode, mode_int, calc_instance_size(classtype)));
 	EMIT_PRIM("field_count", type_short, new_r_Const_long(ccode, mode_short, linked_class->n_fields));
 	int16_t n_static_fields = 0;
 	for (uint16_t i = 0; i < linked_class->n_fields; i++) {
@@ -615,7 +783,8 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	EMIT_PRIM("itable_syms", type_reference, nullref);
 	EMIT_PRIM("catch_classes", type_reference, nullref);
 
-	EMIT_PRIM("interfaces", type_reference, nullref); //TODO: this will be needed to use _Jv_IsAssignable...
+	ir_entity *interfaces = emit_interface_table(classtype);
+	EMIT_PRIM("interfaces", type_reference, interfaces ? create_ccode_symconst(interfaces) : nullref);
 	EMIT_PRIM("loader", type_reference, nullref);
 
 	EMIT_PRIM("interface_count", type_short, new_r_Const_long(ccode, mode_short, linked_class->n_interfaces));
@@ -655,12 +824,86 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	return class_dollar_field;
 }
 
-ir_entity *gcji_get_class_dollar_field(ir_type *classtype)
+#define MUX_PRIM_TYPES(typevar, action_boolean, action_byte, action_char, action_short, action_int, action_long, action_float, action_double) \
+		do { \
+	      if (typevar == type_boolean) { action_boolean; } \
+		  else if (typevar == type_byte) { action_byte; } \
+		  else if (typevar == type_char) { action_char; } \
+		  else if (typevar == type_short) { action_short; } \
+		  else if (typevar == type_int) { action_int; } \
+		  else if (typevar == type_long) { action_long; } \
+		  else if (typevar == type_float) { action_float; } \
+		  else if (typevar == type_double) { action_double; } \
+		} while (0);
+
+
+static ir_entity *emit_type_signature(ir_type *type)
 {
-	assert (is_Class_type(classtype));
-	ir_entity *cdf = get_class_member_by_name(classtype, class_dollar_ident);
-	if (!cdf)
-	  cdf = add_class_dollar_field_recursive(classtype);
+	ir_type *curtype = type;
+	unsigned n_pointer_levels = 0;
+
+	while (is_Pointer_type(curtype)) {
+		n_pointer_levels++;
+		curtype = get_pointer_points_to_type(curtype);
+	}
+
+	struct obstack obst;
+	obstack_init(&obst);
+
+	if (n_pointer_levels > 0) {
+		for (unsigned i = 0; i < n_pointer_levels-1; i++)
+			obstack_1grow(&obst, '[');
+
+		if (is_Primitive_type(curtype))
+			obstack_1grow(&obst, '[');
+	}
+
+	if (is_Primitive_type(curtype)) {
+		char c;
+		MUX_PRIM_TYPES(curtype, c='Z', c='B', c='C', c='S', c='I', c='J', c='F', c='D');
+		obstack_1grow(&obst, c);
+	} else {
+		assert (is_Class_type(curtype));
+		obstack_1grow(&obst, 'L');
+		obstack_printf(&obst, "%s", get_class_name(curtype));
+		obstack_1grow(&obst, ';');
+		obstack_1grow(&obst, '\0');
+	}
+	const char *sig_bytes = obstack_finish(&obst);
+
+	ir_entity *res = do_emit_utf8_const(sig_bytes, strlen(sig_bytes));
+
+	obstack_free(&obst, NULL);
+	return res;
+}
+
+ir_entity *gcji_get_class_dollar_field(ir_type *type)
+{
+	ir_entity *cdf = NULL;
+	if (is_Class_type(type)) {
+		cdf = get_class_member_by_name(type, class_dollar_ident);
+		if (!cdf) {
+			cdf = add_class_dollar_field_recursive(type);
+		}
+	} else if (is_Primitive_type(type)) {
+		MUX_PRIM_TYPES(type,
+				cdf = gcj_booleanClass_entity,
+				cdf = gcj_byteClass_entity,
+				cdf = gcj_charClass_entity,
+				cdf = gcj_shortClass_entity,
+				cdf = gcj_intClass_entity,
+				cdf = gcj_longClass_entity,
+				cdf = gcj_floatClass_entity,
+				cdf = gcj_doubleClass_entity);
+	} else if (is_Pointer_type(type)) {
+		ir_type *pt = get_pointer_points_to_type(type);
+		if (is_Class_type(pt)) {
+			cdf = gcji_get_class_dollar_field(pt);
+		}
+		/* else return NULL. In case of arrays, gcj emits an utf8const with the signature of the array type instead.
+		It is later exchanged with a real java.lang.Class instance during the (runtime) linking phase. */
+	}
+
 	return cdf;
 }
 

@@ -23,7 +23,7 @@ static ident *abstract_method_ident;
  *   0                                  \  GCJI_VTABLE_OFFSET
  *   0                                  /
  *   <vtable slot 0> _ZNxyz6class$E     <-- vptrs point here
- *   <vtable slot 1> const 4 (?)
+ *   <vtable slot 1> GC bitmap marking descriptor
  *   <vtable slot 2> addr(first method)
  *   ...
  *   <vtable slot n> addr(last method)
@@ -47,8 +47,18 @@ static void setup_vtable(ir_type *clazz, void *env)
 	class_t *linked_class = (class_t*) get_type_link(clazz);
 	if (linked_class == NULL) return;
 
-	if ((linked_class->access_flags & ACCESS_FLAG_INTERFACE) != 0)
+	if ((linked_class->access_flags & ACCESS_FLAG_INTERFACE) != 0) {
+		ir_entity *class_dollar_field = gcji_get_class_dollar_field(clazz);
+		assert (class_dollar_field);
+
+		if (! gcji_is_api_class(clazz)) {
+			ir_entity *real_cdf = gcji_construct_class_dollar_field(clazz);
+			int pos = get_class_member_index(clazz, class_dollar_field);
+			set_class_member(clazz, real_cdf, pos);
+			class_dollar_field = real_cdf;
+		}
 		return;
+	}
 
 	ident *vtable_name = mangle_vtable_name(clazz);
 
@@ -56,7 +66,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 	assert (get_class_member_by_name(global_type, vtable_name) == NULL);
 
 	ir_type *superclass = NULL;
-	unsigned vtable_size = 2; // see above, (class$, some_num)
+	unsigned vtable_size = 2; // see above, (class$, GC stuff)
 	int n_supertypes = get_class_n_supertypes(clazz);
 	if (n_supertypes > 0) {
 		assert (n_supertypes == 1);
@@ -169,8 +179,8 @@ static void setup_vtable(ir_type *clazz, void *env)
 	ir_initializer_t *cdf_init = create_initializer_const(workaround ? const_0 : cdf_symc);
 	set_initializer_compound_value(init, 2, cdf_init);
 
-	ir_initializer_t *const_4 = create_initializer_const(new_r_Const_long(const_code, mode_reference, 4)); //FIXME: understand
-	set_initializer_compound_value(init, 3, const_4);
+	ir_initializer_t *gc_stuff_init = create_initializer_const(const_0);
+	set_initializer_compound_value(init, 3, gc_stuff_init);
 
 	set_entity_initializer(vtable, init);
 }
