@@ -104,7 +104,7 @@ void gcji_init()
 	set_method_res_type(gcj_alloc_method_type, 0, t_ptr);
 	set_method_additional_property(gcj_alloc_method_type, mtp_property_malloc);
 
-	ident   *gcj_alloc_id = new_id_from_str("_Jv_AllocObjectNoInitNoFinalizer");
+	ident   *gcj_alloc_id = new_id_from_str("_Jv_AllocObjectNoFinalizer");
 	gcj_alloc_entity = new_entity(glob, gcj_alloc_id, gcj_alloc_method_type);
 	set_entity_visibility(gcj_alloc_entity, ir_visibility_external);
 
@@ -717,7 +717,6 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 {
 	ir_graph *ccode = get_const_code_irg();
 	ir_node *nullref = new_r_Const_long(ccode, mode_reference, 0);
-	ir_node *deadref = new_r_Const_long(ccode, mode_reference, 0xdeadbeef);
 
 	ir_type *cur_cdtype = new_type_class(id_mangle_dot(get_class_ident(classtype), class_dollar_ident));
 	ir_initializer_t *cur_init = create_initializer_compound(NUM_FIELDS);
@@ -744,11 +743,11 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 
 	// _Jv_Constants inlined. not sure if this is needed for compiled code.
 	EMIT_PRIM("constants.size", type_int, new_r_Const_long(ccode, mode_int, 0));
-	EMIT_PRIM("constants.tags", type_reference, deadref);
-	EMIT_PRIM("constants.data", type_reference, deadref);
+	EMIT_PRIM("constants.tags", type_reference, nullref);
+	EMIT_PRIM("constants.data", type_reference, nullref);
 
 	ir_entity *mt_ent = emit_method_table(classtype);
-	EMIT_PRIM("methods", type_reference, create_ccode_symconst(mt_ent)); // FIXME: union, alternative would be the element type in case classtype is an array.
+	EMIT_PRIM("methods", type_reference, create_ccode_symconst(mt_ent)); // union, alternative would be the element type in case classtype is an array. However, class$ for arrays are generated at runtime.
 	EMIT_PRIM("method_count", type_short, new_r_Const_long(ccode, mode_short, linked_class->n_methods));
 	EMIT_PRIM("vtable_method_count", type_short, new_r_Const_long(ccode, mode_short, get_class_vtable_size(classtype)-2)); // w/o slots 0=class$ and 1=gc_stuff. see lower_oo.c
 
@@ -775,6 +774,8 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 		vtable_ref = nullref;
 	}
 	EMIT_PRIM("vtable", type_reference, vtable_ref);
+
+	// most of the following fields are set at runtime during the class linking.
 	EMIT_PRIM("otable", type_reference, nullref);
 	EMIT_PRIM("otable_syms", type_reference, nullref);
 	EMIT_PRIM("atable", type_reference, nullref);
@@ -788,15 +789,14 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	EMIT_PRIM("loader", type_reference, nullref);
 
 	EMIT_PRIM("interface_count", type_short, new_r_Const_long(ccode, mode_short, linked_class->n_interfaces));
-	EMIT_PRIM("state", type_byte, new_r_Const_long(ccode, mode_byte, 6)); // JV_STATE_COMPILED
+	EMIT_PRIM("state", type_byte, new_r_Const_long(ccode, mode_byte, 0));
 
 	EMIT_PRIM("thread", type_reference, nullref);
 
-	int16_t depth = 0; //TODO: this will be needed to use _Jv_IsAssignable...
-	EMIT_PRIM("depth", type_short, new_r_Const_long(ccode, mode_short, depth));
+	EMIT_PRIM("depth", type_short, new_r_Const_long(ccode, mode_short, 0));
 	EMIT_PRIM("ancestors", type_reference, nullref);
 
-	EMIT_PRIM("idt", type_reference, nullref); // FIXME: distingiush class / iface
+	EMIT_PRIM("idt", type_reference, nullref);
 
 	EMIT_PRIM("arrayclass", type_reference, nullref);
 	EMIT_PRIM("protectionDomain", type_reference, nullref);

@@ -3,7 +3,6 @@
 BUILDDIR=build
 GOAL = $(BUILDDIR)/reader
 CPPFLAGS = -I. $(FIRM_CFLAGS)
-CXXFLAGS = -Wall -W -O0 -g3
 CFLAGS = -Wall -W -Wstrict-prototypes -Wmissing-prototypes -Wunreachable-code -Wlogical-op -Werror -O0 -g3 -std=c99 -pedantic
 LFLAGS = $(FIRM_LIBS)
 SOURCES = $(wildcard *.c) $(wildcard adt/*.c)
@@ -27,10 +26,6 @@ $(BUILDDIR)/%.o: %.c $(BUILDDIR)
 
 $(BUILDDIR):
 	$(INSTALL) -d $(BUILDDIR) $(BUILDDIR)/adt
-
-librts.o: librts/librts.cc
-	@echo '===> Building $<'
-	$(Q)$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 clean:
 	rm -rf $(OBJECTS) $(GOAL) $(DEPS)

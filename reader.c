@@ -2288,20 +2288,13 @@ static void create_method_entity(method_t *method, ir_type *owner)
 		}
 	}
 
-	ident *ld_ident;
 	if (method->access_flags & ACCESS_FLAG_STATIC) {
 		set_entity_allocation(entity, allocation_static);
 	}
 	if (method->access_flags & ACCESS_FLAG_NATIVE) {
 		set_entity_visibility(entity, ir_visibility_external);
 	}
-	if (strcmp(name, "main") == 0
-	 && strcmp(descriptor, "([Ljava/lang/String;)V") == 0
-	 && strcmp(main_class_name, get_class_name(owner)) == 0) {
-		ld_ident = new_id_from_str("__bc2firm_main");
-	} else {
-		ld_ident = mangle_entity_name(entity, id);
-	}
+	ident *ld_ident = mangle_entity_name(entity, id);
 	set_entity_ld_ident(entity, ld_ident);
 }
 
@@ -2460,7 +2453,7 @@ int main(int argc, char **argv)
 	worklist = new_pdeq();
 
 	/* trigger loading of the class specified on commandline */
-	get_class_type(main_class_name);
+	ir_type *main_class_type = get_class_type(main_class_name);
 
 	while (!pdeq_empty(worklist)) {
 		ir_type *classtype = pdeq_getl(worklist);
@@ -2508,7 +2501,7 @@ int main(int argc, char **argv)
 
 	//dump_ir_prog_ext(dump_typegraph, "types.vcg");
 
-	char asm_file[] = "bc2firmXXXXXX";
+	char asm_file[] = "bc2firm_asm_XXXXXX";
 	int asm_fd = mkstemp(asm_file);
 	FILE *asm_out = fdopen(asm_fd, "w");
 
@@ -2519,12 +2512,24 @@ int main(int argc, char **argv)
 
 	fclose(asm_out);
 
+	ir_entity *main_cdf = gcji_get_class_dollar_field(main_class_type);
+	assert (main_cdf);
+	const char *main_cdf_ldident = get_entity_ld_name(main_cdf);
+
+	char startup_file[] = "bc2firm_startup_XXXXXX";
+	int startup_fd = mkstemp(startup_file);
+	FILE *startup_out = fdopen(startup_fd, "w");
+	fprintf(startup_out, "extern void JvRunMain(void* klass, int argc, const char **argv);\n");
+	fprintf(startup_out, "extern void *%s;\n", main_cdf_ldident);
+	fprintf(startup_out, "int main(int argc, const char **argv) { JvRunMain(&%s, argc, argv); return 0; }\n", main_cdf_ldident);
+	fclose(startup_out);
+
 	class_file_exit();
 	deinit_mangle();
 	gcji_deinit();
 
 	char cmd_buffer[1024];
-	sprintf(cmd_buffer, "gcc -g -x assembler %s -x none \"%s/librts.o\" -lgcj -lstdc++ -o %s", asm_file, bootclasspath, output_name);
+	sprintf(cmd_buffer, "gcc -g -x assembler %s -x c %s -x none -lgcj -lstdc++ -o %s", asm_file, startup_file, output_name);
 
 	fprintf(stderr, "===> Assembling & linking (%s)\n", cmd_buffer);
 

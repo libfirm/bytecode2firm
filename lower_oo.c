@@ -109,6 +109,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 	set_type_state(vtable_type, layout_fixed);
 
 	ir_entity *vtable = new_entity(global_type, vtable_name, vtable_type);
+	set_entity_alignment(vtable, 32);
 
 	ir_graph *const_code = get_const_code_irg();
 	ir_initializer_t * init = create_initializer_compound(vtable_ent_size);
@@ -363,7 +364,7 @@ static void lower_graph(ir_graph *irg)
  */
 void lower_oo(void)
 {
-	abstract_method_ident = new_id_from_str("__abstract_method");
+	abstract_method_ident = new_id_from_str("_Jv_ThrowAbstractMethodError");
 
 	class_walk_super2sub(setup_vtable, NULL, NULL);
 
