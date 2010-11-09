@@ -113,9 +113,9 @@ public class Arrays
 	{
 		int m = a.length / 2;
 		a[0] = new Element();
-		a[0].l = -1;
+		a[0].l = 0xdeadbeef;
 		a[m] = new Element();
-		a[m].l = a[0].l + 3;
+		a[m].l = a[0].l + 0xcafebabe;
 		a[a.length-1] = new Element();
 		System.out.println(java.util.Arrays.toString(a));
 	}

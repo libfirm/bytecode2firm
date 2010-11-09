@@ -74,37 +74,37 @@ public class PrimArith {
 		long biggerThanInt = ((int) Math.random()) + 0xdeadbeefbabeL;
 		
 		byte b = (byte) biggerThanByte;
-		System.err.println("i2b: " + b);
+		System.out.println("i2b: " + b);
 		short s = (short) biggerThanShort;
-		System.err.println("i2s: " + s);
+		System.out.println("i2s: " + s);
 		int i = biggerThanShort;
 		long l = i;
-		System.err.println("i2l: " + i);
+		System.out.println("i2l: " + i);
 		float f = i;
-		System.err.println("i2f: " + f);
+		System.out.println("i2f: " + f);
 		double d = i;
-		System.err.println("i2f: " + d);
+		System.out.println("i2f: " + d);
 		
 		i = (int) l; 
-		System.err.println("l2i: " + i);
+		System.out.println("l2i: " + i);
 		f = (float) l;
-		System.err.println("l2f: " + f);
+		System.out.println("l2f: " + f);
 		d = (double) l;
-		System.err.println("l2d: " + d);
+		System.out.println("l2d: " + d);
 
 		i = (int) f;
-		System.err.println("f2i: " + i);
+		System.out.println("f2i: " + i);
 		l = (long) f;
-		System.err.println("f2l: " + l);
+		System.out.println("f2l: " + l);
 		d = (double) f;
-		System.err.println("f2d: " + d);
+		System.out.println("f2d: " + d);
 		
 		i = (int) d;
-		System.err.println("d2i: " + i);
+		System.out.println("d2i: " + i);
 		l = (long) d;
-		System.err.println("d2l: " + l);
+		System.out.println("d2l: " + l);
 		f = (float) d;
-		System.err.println("d2f: " + f);
+		System.out.println("d2f: " + f);
 	}
 	
 	static boolean zs, zsd = true;
@@ -142,7 +142,10 @@ public class PrimArith {
 		System.out.println(p.lid);
 		System.out.println(p.fid);
 		System.out.println(p.did);
-		
+	}
+	
+	static void testDefaultStatic()
+	{
 		System.out.println(zs);
 		System.out.println(bs);
 		System.out.println(ss);
@@ -157,6 +160,10 @@ public class PrimArith {
 		System.out.println(lsd);
 		System.out.println(fsd);
 		System.out.println(dsd);
+	}
+	
+	{
+		testDefaultStatic();
 	}
 	
 	public static void main(String args[])

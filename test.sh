@@ -35,7 +35,7 @@ do_test() {
 
 	classname=`echo $BASEDIR/$name | sed "s|^$dirprefix/||"`
 	classpath="$dirprefix"
-	bootclasspath="/data1/julian/gcj-classes"
+	bootclasspath="$HOME/Src/gcj-classes"
 	output_file="$BASEDIR/$name"
 	cmd="reader -cp $classpath -bootclasspath $bootclasspath -o $output_file $classname"
 	if ! execute_cmd "$cmd" ""; then
