@@ -1876,6 +1876,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				symbolic_push(result);
 			} else {
 				assert(opcode == OPC_PUTSTATIC || opcode == OPC_PUTFIELD);
+				value = new_Conv(value, mode);
 				ir_node *store   = new_Store(cur_mem, addr, value, cons_none);
 				         cur_mem = new_Proj(store, mode_M, pn_Store_M);
 				set_store(cur_mem);
