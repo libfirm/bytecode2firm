@@ -770,7 +770,7 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	assert (class_dollar_field);
 	set_entity_type(class_dollar_field, cur_cdtype);
 	set_entity_initializer(class_dollar_field, cur_init);
-	ident *mangled_id = mangle_entity_name(class_dollar_field, class_dollar_ident);
+	ident *mangled_id = mangle_entity_name(class_dollar_field);
 	set_entity_ld_ident(class_dollar_field, mangled_id);
 	set_entity_allocation(class_dollar_field, allocation_static);
 	set_entity_visibility(class_dollar_field, ir_visibility_default);
@@ -839,7 +839,7 @@ ir_entity *gcji_get_class_dollar_field(ir_type *type)
 		cdf = get_class_member_by_name(type, class_dollar_ident);
 		if (!cdf) {
 			cdf = new_entity(type, class_dollar_ident, type_reference);
-			ident *mangled_id = mangle_entity_name(cdf, class_dollar_ident);
+			ident *mangled_id = mangle_entity_name(cdf);
 			set_entity_ld_ident(cdf, mangled_id);
 			set_entity_allocation(cdf, allocation_static);
 			set_entity_visibility(cdf, ir_visibility_external);

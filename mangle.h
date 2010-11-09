@@ -7,7 +7,7 @@
  * Mangle function type into function names to make polymorphic (overloaded)
  * functions unique
  */
-ident *mangle_entity_name(ir_entity *entity, ident *id);
+ident *mangle_entity_name(ir_entity *entity);
 
 ident *mangle_vtable_name(ir_type *clazz);
 

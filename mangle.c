@@ -36,6 +36,7 @@ static const char* base36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 static char mangle_buffer[1024];
 
 extern char *strdup (__const char *__s); // FIXME: ??
+extern char *strndup (__const char *__s, size_t len); // FIXME: ??
 
 static void flush_ct(void)
 {
@@ -237,7 +238,7 @@ static void mangle_type(ir_type *type, struct obstack *obst)
 /**
  *  mangles in a C++ like fashion so we can use c++filt to demangle
  */
-ident *mangle_entity_name(ir_entity *entity, ident *id)
+ident *mangle_entity_name(ir_entity *entity)
 {
 	assert (obstack_object_size(&obst) == 0);
 	assert (entity != NULL);
@@ -255,26 +256,33 @@ ident *mangle_entity_name(ir_entity *entity, ident *id)
 	int is_ctor = 0;
 
 	/* mangle entity name */
-	const char *string = get_id_str(id);
-	size_t      len    = get_id_strlen(id);
-	if (strcmp(string, "<init>") == 0) {
+	const char *name_sig   = get_entity_name(entity);
+	const char *p          = name_sig;
+
+	// strip signature from the entity name
+	while (*p != '\0' && *p != '.') p++;
+	size_t      len        = (size_t)(p-name_sig);
+	char        *name_only = strndup(name_sig, len);
+
+	if (strcmp(name_only, "<init>") == 0) {
 		obstack_grow(&obst, "C1", 2);
 		is_ctor = 1;
-	} else if (strcmp(string, "<clinit>") == 0) {
+	} else if (strcmp(name_only, "<clinit>") == 0) {
 		obstack_grow(&obst, "18__U3c_clinit__U3e_", 20);
 	} else {
-		obstack_printf(&obst, "%d%s", (int) len, string);
+		obstack_printf(&obst, "%d%s", (int) len, name_only);
 
-		if (strcmp(string, "not") == 0
-		 || strcmp(string, "and") == 0
-		 || strcmp(string, "or") == 0
-		 || strcmp(string, "xor") == 0
-		 || strcmp(string, "delete") == 0) {
+		if (strcmp(name_only, "not") == 0
+		 || strcmp(name_only, "and") == 0
+		 || strcmp(name_only, "or") == 0
+		 || strcmp(name_only, "xor") == 0
+		 || strcmp(name_only, "delete") == 0) {
 			// FIXME: poor man's check for some c++ keywords
 			obstack_1grow(&obst, '$');
 		}
 	}
 	obstack_1grow(&obst, 'E');
+	free(name_only);
 
 	if (!is_Method_type(type))
 		goto name_finished;

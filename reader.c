@@ -278,7 +278,7 @@ static void create_field_entity(field_t *field, ir_type *owner)
 		set_entity_allocation(entity, allocation_static);
 	}
 
-	ident *mangled_id      = mangle_entity_name(entity, id);
+	ident *mangled_id      = mangle_entity_name(entity);
 	set_entity_ld_ident(entity, mangled_id);
 
 #ifdef VERBOSE
@@ -2297,7 +2297,7 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	if (method->access_flags & ACCESS_FLAG_NATIVE) {
 		set_entity_visibility(entity, ir_visibility_external);
 	}
-	ident *ld_ident = mangle_entity_name(entity, id);
+	ident *ld_ident = mangle_entity_name(entity);
 	set_entity_ld_ident(entity, ld_ident);
 }
 
