@@ -3,12 +3,17 @@
 #include <string.h>
 #include <assert.h>
 #include "adt/obst.h"
+#include "adt/cpset.h"
 #include "adt/error.h"
-#include "types.h"
 
 static struct obstack obst;
 
-#define CT_SIZE 36 // FIXME: 36 entries ought to be enough for anybody..
+static const char* base36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+static char *duplicate_string(const char *s);
+static char *duplicate_string_n(const char* s, size_t n);
+
+#define CT_SIZE 36 // theoretically, there could be substitution patterns with more than one digit.
 typedef struct {
 	char *name;
 } cte_entry;
@@ -30,13 +35,6 @@ typedef struct {
  */
 static cte_entry ct[CT_SIZE];
 static int next_ct_entry;
-
-static const char* base36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-static char mangle_buffer[1024];
-
-extern char *strdup (__const char *__s); // FIXME: ??
-extern char *strndup (__const char *__s, size_t len); // FIXME: ??
 
 static void flush_ct(void)
 {
@@ -61,9 +59,45 @@ static int find_in_ct(const char* name)
 static void insert_ct(const char* name)
 {
 	assert (next_ct_entry < CT_SIZE);
-	ct[next_ct_entry].name = strdup(name);
+	ct[next_ct_entry].name = duplicate_string(name);
 	next_ct_entry++;
 }
+
+// mangle buffer
+#define MB_SIZE 1024
+static char mangle_buffer[MB_SIZE];
+
+// (entity name) substitution table
+typedef struct {
+	const char *name;
+	const char *mangled;
+} st_entry;
+
+static int string_cmp (const void *p1, const void *p2)
+{
+	return (strcmp(((st_entry*)p1)->name, ((st_entry*)p2)->name) == 0);
+}
+
+static unsigned string_hash (const void *obj)
+{
+	unsigned hash = 0;
+	const char *s = ((st_entry*)obj)->name;
+	size_t len = strlen(s);
+	for (unsigned i = 0; i < len; i++) {
+		hash = (31 * hash) + s[i];
+	}
+	return hash;
+}
+
+static void free_ste(st_entry *ste)
+{
+	if (! ste) return;
+	free((void*)ste->name);
+	free((void*)ste->mangled);
+	free(ste);
+}
+
+static cpset_t st;
 
 static void emit_substitution(int match, struct obstack *obst)
 {
@@ -71,6 +105,20 @@ static void emit_substitution(int match, struct obstack *obst)
 	if (match > 0)
 		obstack_1grow(obst, base36[match-1]);
 	obstack_1grow(obst, '_');
+}
+
+static char *duplicate_string_n(const char* s, size_t n)
+{
+	char *new_string = malloc ((n+1) * sizeof(char));
+	for (unsigned i = 0; i < n; i++) new_string[i] = s[i];
+	new_string[n] = '\0';
+	return new_string;
+}
+
+static char *duplicate_string(const char *s)
+{
+	size_t len = strlen(s);
+	return duplicate_string_n(s, len);
 }
 
 static void mangle_type(ir_type *type, struct obstack *obst);
@@ -97,6 +145,7 @@ static int mangle_qualified_class_name(ir_type *class_type, int is_pointer, stru
 	int full_match_p        = -1;
 
 	if (is_pointer) {
+		assert (slen+1 < MB_SIZE);
 		mangle_buffer[0] = 'P';
 		strcpy(mangle_buffer+1, string);
 		mangle_buffer[slen+1] = '\0';
@@ -136,6 +185,7 @@ static int mangle_qualified_class_name(ir_type *class_type, int is_pointer, stru
 		const char *comp_begin   = p;
 		const char *comp_end     = p + l;
 		unsigned    comp_end_idx = (comp_end-string);
+		assert (comp_end_idx+1 < MB_SIZE);
 		strncpy(mangle_buffer, string, comp_end_idx);
 		mangle_buffer[comp_end_idx] = '\0';
 		p = comp_end;
@@ -157,6 +207,7 @@ static int mangle_qualified_class_name(ir_type *class_type, int is_pointer, stru
 
 	if (is_pointer) {
 		// insert the *class entry AFTER the class entry (that has been created in the last loop iteration above)
+		assert (slen+1 < MB_SIZE);
 		mangle_buffer[0] = 'P';
 		strcpy(mangle_buffer+1, string);
 		mangle_buffer[slen+1] = '\0';
@@ -184,6 +235,7 @@ static void mangle_type_without_substitition(ir_type *type, struct obstack *obst
 	}
 }
 
+// XXX: the mangling scheme for arrays is Java specific.
 static void mangle_array_type(ir_type *type, struct obstack *obst)
 {
 	struct obstack unsubstituted_obst;
@@ -253,41 +305,30 @@ ident *mangle_entity_name(ir_entity *entity)
 	int emitted_N = mangle_qualified_class_name(owner, 0, &obst);
 	assert (emitted_N);
 
-	int is_ctor = 0;
-
 	/* mangle entity name */
-	const char *name_sig   = get_entity_name(entity);
-	const char *p          = name_sig;
+	const char *name_sig  = get_entity_name(entity);
+	const char *p         = name_sig;
 
-	// strip signature from the entity name
+	// strip signature from the entity name (XXX: this might be Java specific)
 	while (*p != '\0' && *p != '.') p++;
-	size_t      len        = (size_t)(p-name_sig);
-	char        *name_only = strndup(name_sig, len);
+	size_t      len       = (size_t)(p-name_sig);
+	char       *name_only = duplicate_string_n(name_sig, len);
 
-	if (strcmp(name_only, "<init>") == 0) {
-		obstack_grow(&obst, "C1", 2);
-		is_ctor = 1;
-	} else if (strcmp(name_only, "<clinit>") == 0) {
-		obstack_grow(&obst, "18__U3c_clinit__U3e_", 20);
-	} else {
+	st_entry ste;
+	ste.name = name_only;
+	st_entry *found_ste = cpset_find(&st, &ste);
+	if (found_ste == NULL) {
 		obstack_printf(&obst, "%d%s", (int) len, name_only);
-
-		if (strcmp(name_only, "not") == 0
-		 || strcmp(name_only, "and") == 0
-		 || strcmp(name_only, "or") == 0
-		 || strcmp(name_only, "xor") == 0
-		 || strcmp(name_only, "delete") == 0) {
-			// FIXME: poor man's check for some c++ keywords
-			obstack_1grow(&obst, '$');
-		}
+	} else {
+		obstack_printf(&obst, "%s", found_ste->mangled);
 	}
+
 	obstack_1grow(&obst, 'E');
-	free(name_only);
 
 	if (!is_Method_type(type))
 		goto name_finished;
 
-	if (! is_ctor) {
+	if (strcmp(name_only, "<init>") != 0) { //XXX: Java specific
 		obstack_1grow(&obst, 'J');
 
 		/* mangle return type */
@@ -302,7 +343,7 @@ ident *mangle_entity_name(ir_entity *entity)
 
 	/* mangle parameter types */
 	int n_params = get_method_n_params(type);
-	int start    = get_entity_allocation(entity) == allocation_static ? 0 : 1;
+	int start    = get_entity_allocation(entity) == allocation_static ? 0 : 1; // XXX: use of allocation_static
 	if (n_params-start == 0) {
 		obstack_1grow(&obst, 'v');
 	} else {
@@ -318,6 +359,7 @@ name_finished: ;
 	ident  *result        = new_id_from_chars(result_string, result_len);
 	obstack_free(&obst, result_string);
 
+	free(name_only);
 	return result;
 }
 
@@ -343,24 +385,41 @@ ident *mangle_vtable_name(ir_type *clazz)
 	return result;
 }
 
-void init_mangle(void)
+void mangle_init(void)
 {
 	obstack_init(&obst);
-
 	memset(mangle_buffer, 0, 1024);
-
-	set_type_link(type_byte, "c");
-	set_type_link(type_char, "w");
-	set_type_link(type_short, "s");
-	set_type_link(type_int, "i");
-	set_type_link(type_long, "x");
-	set_type_link(type_boolean, "b");
-	set_type_link(type_float, "f");
-	set_type_link(type_double, "d");
+	cpset_init(&st, string_hash, string_cmp);
 }
 
-void deinit_mangle(void)
+void mangle_set_primitive_type_name(ir_type *type, const char *name)
+{
+	assert (is_Primitive_type(type));
+	set_type_link(type, (char*)name);
+}
+
+void mangle_add_name_substitution(const char *name, const char *mangled)
+{
+	st_entry *ste = malloc(sizeof(st_entry));
+	ste->name = duplicate_string(name);
+	ste->mangled = duplicate_string(mangled);
+	st_entry* obj = (st_entry*) cpset_insert(&st, ste);
+	if (obj != ste) free_ste(obj);
+}
+
+void mangle_deinit(void)
 {
 	flush_ct();
 	obstack_free(&obst, NULL);
+
+	cpset_iterator_t iter;
+	cpset_iterator_init(&iter, &st);
+
+	st_entry *cur_ste = NULL;
+	do {
+		cur_ste = (st_entry*) cpset_iterator_next(&iter);
+		free_ste(cur_ste);
+	} while (cur_ste != NULL);
+
+	cpset_destroy(&st);
 }

@@ -11,7 +11,9 @@ ident *mangle_entity_name(ir_entity *entity);
 
 ident *mangle_vtable_name(ir_type *clazz);
 
-void init_mangle(void);
-void deinit_mangle(void);
+void mangle_init(void);
+void mangle_set_primitive_type_name(ir_type *type, const char *name);
+void mangle_add_name_substitution(const char *name, const char *mangled);
+void mangle_deinit(void);
 
 #endif

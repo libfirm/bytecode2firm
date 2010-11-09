@@ -2415,7 +2415,7 @@ int main(int argc, char **argv)
 	ir_init(NULL);
 	init_types();
 	class_registry_init();
-	init_mangle();
+	mangle_init();
 	gcji_init();
 
 	if (argc < 2 || argc > 8) {
@@ -2529,7 +2529,7 @@ int main(int argc, char **argv)
 	fclose(startup_out);
 
 	class_file_exit();
-	deinit_mangle();
+	mangle_deinit();
 	gcji_deinit();
 
 	char cmd_buffer[1024];
