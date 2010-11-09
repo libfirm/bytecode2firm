@@ -48,14 +48,8 @@ static void setup_vtable(ir_type *clazz, void *env)
 	if (linked_class == NULL) return;
 
 	if ((linked_class->access_flags & ACCESS_FLAG_INTERFACE) != 0) {
-		ir_entity *class_dollar_field = gcji_get_class_dollar_field(clazz);
-		assert (class_dollar_field);
-
 		if (! gcji_is_api_class(clazz)) {
-			ir_entity *real_cdf = gcji_construct_class_dollar_field(clazz);
-			int pos = get_class_member_index(clazz, class_dollar_field);
-			set_class_member(clazz, real_cdf, pos);
-			class_dollar_field = real_cdf;
+			gcji_construct_class_dollar_field(clazz);
 		}
 		return;
 	}
@@ -160,10 +154,7 @@ static void setup_vtable(ir_type *clazz, void *env)
 	assert (class_dollar_field);
 
 	if (! gcji_is_api_class(clazz)) {
-		ir_entity *real_cdf = gcji_construct_class_dollar_field(clazz);
-		int pos = get_class_member_index(clazz, class_dollar_field);
-		set_class_member(clazz, real_cdf, pos);
-		class_dollar_field = real_cdf;
+		class_dollar_field = gcji_construct_class_dollar_field(clazz);
 	}
 
 	symconst_symbol cdf_sym;

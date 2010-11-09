@@ -54,32 +54,6 @@ static int set_cmp(const void *elt, const void *key, size_t size)
 	return strcmp(a->s, b->s);
 }
 
-static ir_entity *add_class_dollar_field_recursive(ir_type *type)
-{
-	assert (is_Class_type(type));
-
-	ir_entity *superclass_class_dollar_field = NULL;
-
-	int n_supertypes = get_class_n_supertypes(type);
-	if (n_supertypes > 0) {
-		assert(n_supertypes == 1);
-		ir_type *superclass = get_class_supertype(type, 0);
-		superclass_class_dollar_field = get_class_member_by_name(superclass, class_dollar_ident);
-		if (superclass_class_dollar_field == NULL) {
-			superclass_class_dollar_field = add_class_dollar_field_recursive(superclass);
-		}
-	}
-
-	ir_entity *class_dollar_field = new_entity(type, class_dollar_ident, type_reference);
-	if (superclass_class_dollar_field != NULL) {
-		add_entity_overwrites(class_dollar_field, superclass_class_dollar_field);
-	}
-	ident *mangled_id = mangle_entity_name(class_dollar_field, class_dollar_ident);
-	set_entity_ld_ident(class_dollar_field, mangled_id);
-
-	return class_dollar_field;
-}
-
 int gcji_is_api_class(ir_type *type)
 {
 	assert (is_Class_type(type));
@@ -680,31 +654,6 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 	return if_ent;
 }
 
-static size_t calc_instance_size(ir_type *classtype)
-{
-	assert (is_Class_type(classtype));
-	size_t s = 0;
-	int n_members = get_class_n_members(classtype);
-	for (int i = 0; i < n_members; i++) {
-		ir_entity *member = get_class_member(classtype, i);
-		if (! is_method_entity(member)) {
-			field_t *linked_field  = (field_t*) get_entity_link(member);
-			if (linked_field != NULL && (linked_field->access_flags & ACCESS_FLAG_STATIC) == 0)
-				s += get_type_size_bytes(get_entity_type(member));
-		}
-	}
-	int n_supertypes = get_class_n_supertypes(classtype);
-	if (n_supertypes > 0) {
-		assert (n_supertypes == 1);
-		ir_type *superclass = get_class_supertype(classtype, 0);
-		s += calc_instance_size(superclass);
-	} else {
-		s += get_type_size_bytes(type_reference); // vptr, defined once in j.l.Object.
-	}
-
-	return s;
-}
-
 #define NUM_FIELDS 39
 #define EMIT_PRIM(name, tp, val) do { \
 	  ir_entity *ent = emit_primitive_member(cur_cdtype, name, tp, val); \
@@ -754,7 +703,9 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	ir_entity *fields = emit_field_table(classtype);
 	EMIT_PRIM("fields", type_reference, create_ccode_symconst(fields));
 
-	EMIT_PRIM("size_in_bytes", type_int, new_r_Const_long(ccode, mode_int, calc_instance_size(classtype)));
+	symconst_symbol classtype_sym;
+	classtype_sym.type_p = classtype;
+	EMIT_PRIM("size_in_bytes", type_int, new_r_SymConst(ccode, mode_int, classtype_sym, symconst_type_size));
 	EMIT_PRIM("field_count", type_short, new_r_Const_long(ccode, mode_short, linked_class->n_fields));
 	int16_t n_static_fields = 0;
 	for (uint16_t i = 0; i < linked_class->n_fields; i++) {
@@ -815,11 +766,15 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	set_type_size_bytes(cur_cdtype, cur_type_size);
 	default_layout_compound_type(cur_cdtype);
 
-	ir_entity *class_dollar_field = new_entity(classtype, class_dollar_ident, cur_cdtype);
+	ir_entity *class_dollar_field = gcji_get_class_dollar_field(classtype);
+	assert (class_dollar_field);
+	set_entity_type(class_dollar_field, cur_cdtype);
 	set_entity_initializer(class_dollar_field, cur_init);
-	set_entity_allocation(class_dollar_field, allocation_static);
 	ident *mangled_id = mangle_entity_name(class_dollar_field, class_dollar_ident);
 	set_entity_ld_ident(class_dollar_field, mangled_id);
+	set_entity_allocation(class_dollar_field, allocation_static);
+	set_entity_visibility(class_dollar_field, ir_visibility_default);
+	set_entity_alignment(class_dollar_field, 32);
 
 	return class_dollar_field;
 }
@@ -883,7 +838,12 @@ ir_entity *gcji_get_class_dollar_field(ir_type *type)
 	if (is_Class_type(type)) {
 		cdf = get_class_member_by_name(type, class_dollar_ident);
 		if (!cdf) {
-			cdf = add_class_dollar_field_recursive(type);
+			cdf = new_entity(type, class_dollar_ident, type_reference);
+			ident *mangled_id = mangle_entity_name(cdf, class_dollar_ident);
+			set_entity_ld_ident(cdf, mangled_id);
+			set_entity_allocation(cdf, allocation_static);
+			set_entity_visibility(cdf, ir_visibility_external);
+			set_entity_alignment(cdf, 32);
 		}
 	} else if (is_Primitive_type(type)) {
 		MUX_PRIM_TYPES(type,

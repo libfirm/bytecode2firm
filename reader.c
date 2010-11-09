@@ -107,6 +107,7 @@ static void init_types(void)
 	mode_long
 		= new_ir_mode("J", irms_int_number, 64, 1, irma_twos_complement, 64);
 	type_long = new_type_primitive(mode_long);
+//	set_type_alignment_bytes(type_long, 4); // Setting this creates an object layout equivalent to gcj. (but breaks other things)
 
 	ir_mode *mode_boolean = mode_byte;
 	type_boolean = new_type_primitive(mode_boolean);
@@ -118,6 +119,7 @@ static void init_types(void)
 	mode_double
 		= new_ir_mode("D", irms_float_number, 64, 1, irma_ieee754, 0);
 	type_double = new_type_primitive(mode_double);
+//	set_type_alignment_bytes(type_double, 4); // Setting this creates an object layout equivalent to gcj. (but breaks other things)
 
 	mode_reference = mode_P;
 
@@ -2454,6 +2456,7 @@ int main(int argc, char **argv)
 
 	/* trigger loading of the class specified on commandline */
 	ir_type *main_class_type = get_class_type(main_class_name);
+	ir_entity *main_cdf = gcji_get_class_dollar_field(main_class_type);
 
 	while (!pdeq_empty(worklist)) {
 		ir_type *classtype = pdeq_getl(worklist);
@@ -2512,7 +2515,7 @@ int main(int argc, char **argv)
 
 	fclose(asm_out);
 
-	ir_entity *main_cdf = gcji_get_class_dollar_field(main_class_type);
+	// we had to get the class$ above, because calling gcji_get_class_dollar_field after the class has been lowered (e.g. now) would create a new entity.
 	assert (main_cdf);
 	const char *main_cdf_ldident = get_entity_ld_name(main_cdf);
 
