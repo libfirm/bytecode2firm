@@ -20,6 +20,8 @@ static ir_entity *gcj_new_prim_array_entity;
 static ir_entity *gcj_new_object_array_entity;
 static ir_entity *gcj_abstract_method_entity;
 static ir_entity *gcj_lookup_interface_entity;
+static ir_entity *gcj_instanceof_entity;
+static ir_entity *gcj_checkcast_entity;
 
 static ir_entity *gcj_booleanClass_entity;
 static ir_entity *gcj_byteClass_entity;
@@ -133,6 +135,21 @@ void gcji_init()
 	set_method_res_type(gcj_lookup_interface_type, 0, t_ptr);
 	gcj_lookup_interface_entity = new_entity(glob, new_id_from_str("_Jv_LookupInterfaceMethod"), gcj_lookup_interface_type);
 	set_entity_visibility(gcj_lookup_interface_entity, ir_visibility_external);
+
+	// gcji_instanceof
+	ir_type *gcj_instanceof_type = new_type_method(2,1);
+	set_method_param_type(gcj_instanceof_type, 0, type_reference);
+	set_method_param_type(gcj_instanceof_type, 1, type_reference);
+	set_method_res_type(gcj_instanceof_type, 0, type_int);
+	gcj_instanceof_entity = new_entity(glob, new_id_from_str("_Jv_IsInstanceOf"), gcj_instanceof_type);
+	set_entity_visibility(gcj_instanceof_entity, ir_visibility_external);
+
+	// gcji_checkcast
+	ir_type *gcj_checkcast_type = new_type_method(2,0);
+	set_method_param_type(gcj_checkcast_type, 0, type_reference);
+	set_method_param_type(gcj_checkcast_type, 1, type_reference);
+	gcj_checkcast_entity = new_entity(glob, new_id_from_str("_Jv_CheckCast"), gcj_checkcast_type);
+	set_entity_visibility(gcj_checkcast_entity, ir_visibility_external);
 
 	// primitive classes
 	gcj_booleanClass_entity= new_entity(glob, new_id_from_str("_Jv_booleanClass"), type_reference);
@@ -909,4 +926,41 @@ ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface, ir_entity *metho
 	*mem = cur_mem;
 
 	return res;
+}
+
+ir_node *gcji_instanceof(ir_node *objptr, ir_type *classtype, ir_graph *irg, ir_node *block, ir_node **mem)
+{
+	ir_entity *cdf = gcji_get_class_dollar_field(classtype);
+	assert (cdf);
+	ir_node   *cdf_symc = create_symconst(irg, cdf);
+
+	ir_type   *instanceof_type = get_entity_type(gcj_instanceof_entity);
+	ir_node   *callee = create_symconst(irg, gcj_instanceof_entity);
+	ir_node   *args[] = { objptr, cdf_symc };
+
+	ir_node   *cur_mem = *mem;
+	ir_node   *call = new_r_Call(block, cur_mem, callee, 2, args, instanceof_type);
+	           cur_mem = new_r_Proj(call, mode_M, pn_Call_M);
+	ir_node   *ress = new_r_Proj(call, mode_T, pn_Call_T_result);
+	ir_node   *res = new_r_Proj(ress, mode_int, 0);
+
+	*mem = cur_mem;
+	return res;
+}
+
+void gcji_checkcast(ir_type *classtype, ir_node *objptr, ir_graph *irg, ir_node *block, ir_node **mem)
+{
+	ir_entity *cdf = gcji_get_class_dollar_field(classtype);
+	assert (cdf);
+	ir_node   *cdf_symc = create_symconst(irg, cdf);
+
+	ir_type   *instanceof_type = get_entity_type(gcj_checkcast_entity);
+	ir_node   *callee = create_symconst(irg, gcj_checkcast_entity);
+	ir_node   *args[] = { cdf_symc, objptr };
+
+	ir_node   *cur_mem = *mem;
+	ir_node   *call = new_r_Call(block, cur_mem, callee, 2, args, instanceof_type);
+	cur_mem = new_r_Proj(call, mode_M, pn_Call_M);
+
+	*mem = cur_mem;
 }

@@ -2077,21 +2077,32 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		}
 
 		case OPC_CHECKCAST: {
-			// FIXME: need real implementation.
-			uint16_t index        = get_16bit_arg(&i);
-			ir_node *addr         = symbolic_pop(mode_reference);
+			// FIXME: as long as the exception handling does not work correctly, a failed CHECKCAST results in a scruffy abortion.
+			uint16_t   index     = get_16bit_arg(&i);
+			ir_node   *addr      = symbolic_pop(mode_reference);
+
+			ir_type   *classtype = get_classref_type(index);
+			assert(classtype);
+
+			ir_node   *cur_mem   = get_store();
+			gcji_checkcast(classtype, addr, irg, get_cur_block(), &cur_mem);
+			set_store(cur_mem);
+
 			symbolic_push(addr);
-			(void) index;
 			continue;
 		}
 		case OPC_INSTANCEOF: {
-			// FIXME: need real implementation.
-			uint16_t index        = get_16bit_arg(&i);
-			ir_node *addr         = symbolic_pop(mode_reference);
-			push_const(mode_int, 0);
+			uint16_t   index     = get_16bit_arg(&i);
+			ir_node   *addr      = symbolic_pop(mode_reference);
 
-			(void) index;
-			(void) addr;
+			ir_type   *classtype = get_classref_type(index);
+			assert(classtype);
+
+			ir_node   *cur_mem   = get_store();
+			ir_node   *res       = gcji_instanceof(addr, classtype, irg, get_cur_block(), &cur_mem);
+			set_store(cur_mem);
+
+			symbolic_push(res);
 			continue;
 		}
 		case OPC_ATHROW: {

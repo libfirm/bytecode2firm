@@ -22,5 +22,7 @@ ir_node   *gcji_get_arraylength(ir_node *arrayref, ir_graph *irg, ir_node *block
 ir_entity *gcji_get_class_dollar_field(ir_type *classtype);
 ir_entity *gcji_construct_class_dollar_field(ir_type* classtype);
 ir_node   *gcji_lookup_interface(ir_node *obptr, ir_type *iface, ir_entity *method, ir_graph *irg, ir_node *block, ir_node **mem);
+ir_node   *gcji_instanceof(ir_node *objptr, ir_type *classtype, ir_graph *irg, ir_node *block, ir_node **mem);
+void       gcji_checkcast(ir_type *classtype, ir_node *objptr, ir_graph *irg, ir_node *block, ir_node **mem);
 
 #endif
