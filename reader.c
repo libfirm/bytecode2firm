@@ -985,8 +985,9 @@ static void construct_conv(ir_mode *src, ir_mode *target)
 
 	ir_node *op = symbolic_pop(arith_src);
 
-	ir_node *conv = new_Conv(op, arith_target);
-	symbolic_push(conv);
+	ir_node *conv  = new_Conv(op, target);
+	ir_node *conv2 = new_Conv(conv, arith_target);
+	symbolic_push(conv2);
 }
 
 static uint16_t get_16bit_arg(uint32_t *pos)
