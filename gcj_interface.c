@@ -56,6 +56,26 @@ static int set_cmp(const void *elt, const void *key, size_t size)
 	return strcmp(a->s, b->s);
 }
 
+static void setup_mangling(void)
+{
+	// GCJ specific exceptional cases in name mangling
+	mangle_set_primitive_type_name(type_byte, "c");
+	mangle_set_primitive_type_name(type_char, "w");
+	mangle_set_primitive_type_name(type_short, "s");
+	mangle_set_primitive_type_name(type_int, "i");
+	mangle_set_primitive_type_name(type_long, "x");
+	mangle_set_primitive_type_name(type_boolean, "b");
+	mangle_set_primitive_type_name(type_float, "f");
+	mangle_set_primitive_type_name(type_double, "d");
+	mangle_add_name_substitution("<init>", "C1");
+	mangle_add_name_substitution("<clinit>", "18__U3c_clinit__U3e_");
+	mangle_add_name_substitution("and", "3and$");
+	mangle_add_name_substitution("or", "2or$");
+	mangle_add_name_substitution("not", "3not$");
+	mangle_add_name_substitution("xor", "3xor$");
+	mangle_add_name_substitution("delete", "6delete$");
+}
+
 int gcji_is_api_class(ir_type *type)
 {
 	assert (is_Class_type(type));
@@ -177,6 +197,8 @@ void gcji_init()
 	type_ushort = new_type_primitive(mode_ushort);
 
 	scp = new_set(set_cmp, 16);
+
+	setup_mangling();
 }
 
 void gcji_deinit()
@@ -787,7 +809,7 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	assert (class_dollar_field);
 	set_entity_type(class_dollar_field, cur_cdtype);
 	set_entity_initializer(class_dollar_field, cur_init);
-	ident *mangled_id = mangle_entity_name(class_dollar_field, class_dollar_ident);
+	ident *mangled_id = mangle_entity_name(class_dollar_field);
 	set_entity_ld_ident(class_dollar_field, mangled_id);
 	set_entity_allocation(class_dollar_field, allocation_static);
 	set_entity_visibility(class_dollar_field, ir_visibility_default);
@@ -856,7 +878,7 @@ ir_entity *gcji_get_class_dollar_field(ir_type *type)
 		cdf = get_class_member_by_name(type, class_dollar_ident);
 		if (!cdf) {
 			cdf = new_entity(type, class_dollar_ident, type_reference);
-			ident *mangled_id = mangle_entity_name(cdf, class_dollar_ident);
+			ident *mangled_id = mangle_entity_name(cdf);
 			set_entity_ld_ident(cdf, mangled_id);
 			set_entity_allocation(cdf, allocation_static);
 			set_entity_visibility(cdf, ir_visibility_external);
