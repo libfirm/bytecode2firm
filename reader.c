@@ -148,13 +148,13 @@ static void init_types(void)
 	ir_type *arraylength_type = new_type_method(1, 1);
 	set_method_param_type(arraylength_type, 0, type_array_reference);
 	set_method_res_type(arraylength_type, 0, type_int);
-	set_method_additional_property(arraylength_type, mtp_property_pure);
+	set_method_additional_properties(arraylength_type, mtp_property_pure);
 
 	ir_type *global_type    = get_glob_type();
 	ident   *arraylength_id = new_id_from_str("$builtin_arraylength");
 	builtin_arraylength     = new_entity(global_type, arraylength_id,
 	                                     arraylength_type);
-	set_entity_additional_property(builtin_arraylength,
+	set_entity_additional_properties(builtin_arraylength,
 	                               mtp_property_intrinsic|mtp_property_private);
 }
 

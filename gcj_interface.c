@@ -78,7 +78,7 @@ void gcji_init()
 	ir_type *gcj_alloc_method_type = new_type_method(1, 1);
 	set_method_param_type(gcj_alloc_method_type, 0, t_ptr);
 	set_method_res_type(gcj_alloc_method_type, 0, t_ptr);
-	set_method_additional_property(gcj_alloc_method_type, mtp_property_malloc);
+	set_method_additional_properties(gcj_alloc_method_type, mtp_property_malloc);
 
 	ident   *gcj_alloc_id = new_id_from_str("_Jv_AllocObjectNoFinalizer");
 	gcj_alloc_entity = new_entity(glob, gcj_alloc_id, gcj_alloc_method_type);

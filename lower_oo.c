@@ -365,13 +365,12 @@ void lower_oo(void)
 	set_method_param_type(method_type, 0, t_size_t);
 	set_method_param_type(method_type, 1, t_size_t);
 	set_method_res_type(method_type, 0, t_ptr);
-	set_method_additional_property(method_type, mtp_property_malloc);
+	set_method_additional_properties(method_type, mtp_property_malloc);
 
 	ir_type *glob = get_glob_type();
 	ident   *id   = new_id_from_str("calloc");
 	calloc_entity = new_entity(glob, id, method_type);
 	set_entity_visibility(calloc_entity, ir_visibility_external);
-	set_method_additional_property(method_type, mtp_property_malloc);
 
 	int n_irgs = get_irp_n_irgs();
 	for (int i = 0; i < n_irgs; ++i) {
