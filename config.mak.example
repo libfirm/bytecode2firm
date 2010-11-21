@@ -4,5 +4,10 @@ FIRM_CFLAGS = -I$(FIRM_HOME)/libfirm/include -I$(FIRM_HOME)/obstack -I$(FIRM_HOM
 FIRM_LIBS   = -L$(FIRM_BUILD) -lfirm -lm -lz -ldl
 LIBFIRM_FILE = $(FIRM_BUILD)/libfirm.a
 
+LIBOO_HOME  = $(HOME)/develop/liboo
+LIBOO_BUILD = $(LIBOO_HOME)/build
+LIBOO_CFLAGS= -I$(LIBOO_HOME)/include/
+LIBOO_LIBS  = -L$(LIBOO_BUILD) -loo -Wl,-R$(LIBOO_BUILD)
+
 INSTALL = /usr/bin/install
 

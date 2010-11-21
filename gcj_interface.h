@@ -2,7 +2,6 @@
 #define GCJ_INTERFACE_H
 
 #include <libfirm/firm.h>
-#include "mangle.h"
 #include "class_file.h"
 
 #define GCJI_LENGTH_OFFSET 4

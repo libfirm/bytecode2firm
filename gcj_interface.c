@@ -6,6 +6,7 @@
 
 #include <libfirm/firm.h>
 #include <libfirm/adt/set.h>
+#include <liboo/mangle.h>
 #include "adt/obst.h"
 
 #include <assert.h>

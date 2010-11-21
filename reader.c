@@ -18,11 +18,11 @@
 #include "adt/hashptr.h"
 #include "adt/xmalloc.h"
 
-#include "mangle.h"
 #include "class_registry.h"
 #include "gcj_interface.h"
 
 #include <libfirm/firm.h>
+#include <liboo/mangle.h>
 
 #define VERBOSE
 

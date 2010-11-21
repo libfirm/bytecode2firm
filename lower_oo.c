@@ -3,12 +3,12 @@
 #include <assert.h>
 #include <string.h>
 #include <libfirm/firm.h>
+#include <liboo/mangle.h>
 
 #include "adt/error.h"
 #include "types.h"
 
 #include "class_file.h"
-#include "mangle.h"
 #include "gcj_interface.h"
 
 static ir_entity *calloc_entity;
