@@ -1,6 +1,5 @@
 #include "class_file.h"
 #include "opcodes.h"
-#include "lower_oo.h"
 #include "types.h"
 
 #include <stdint.h>
@@ -20,9 +19,10 @@
 
 #include "class_registry.h"
 #include "gcj_interface.h"
+#include "oo_java.h"
 
 #include <libfirm/firm.h>
-#include <liboo/mangle.h>
+#include <liboo/oo.h>
 
 #define VERBOSE
 
@@ -277,9 +277,6 @@ static void create_field_entity(field_t *field, ir_type *owner)
 	if (field->access_flags & ACCESS_FLAG_STATIC) {
 		set_entity_allocation(entity, allocation_static);
 	}
-
-	ident *mangled_id      = mangle_entity_name(entity);
-	set_entity_ld_ident(entity, mangled_id);
 
 #ifdef VERBOSE
 	fprintf(stderr, "Field %s\n", name);
@@ -2309,8 +2306,6 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	if (method->access_flags & ACCESS_FLAG_NATIVE) {
 		set_entity_visibility(entity, ir_visibility_external);
 	}
-	ident *ld_ident = mangle_entity_name(entity);
-	set_entity_ld_ident(entity, ld_ident);
 }
 
 static void create_method_code(ir_entity *entity)
@@ -2427,8 +2422,8 @@ int main(int argc, char **argv)
 	ir_init(NULL);
 	init_types();
 	class_registry_init();
-	mangle_init();
 	gcji_init();
+	setup_liboo_for_java();
 
 	if (argc < 2 || argc > 8) {
 		fprintf(stderr, "Syntax: %s [-cp <classpath>] [-bootclasspath <bootclasspath>] [-o <output file name>] class_file\n", argv[0]);
@@ -2482,6 +2477,7 @@ int main(int argc, char **argv)
 	//dump_all_ir_graphs("");
 
 	lower_oo();
+	lower_highlevel(0);
 
 	int n_irgs = get_irp_n_irgs();
 	for (int p = 0; p < n_irgs; ++p) {
@@ -2541,7 +2537,7 @@ int main(int argc, char **argv)
 	fclose(startup_out);
 
 	class_file_exit();
-	mangle_deinit();
+	oo_deinit();
 	gcji_deinit();
 
 	char cmd_buffer[1024];

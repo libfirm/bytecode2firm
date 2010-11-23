@@ -57,26 +57,6 @@ static int set_cmp(const void *elt, const void *key, size_t size)
 	return strcmp(a->s, b->s);
 }
 
-static void setup_mangling(void)
-{
-	// GCJ specific exceptional cases in name mangling
-	mangle_set_primitive_type_name(type_byte, "c");
-	mangle_set_primitive_type_name(type_char, "w");
-	mangle_set_primitive_type_name(type_short, "s");
-	mangle_set_primitive_type_name(type_int, "i");
-	mangle_set_primitive_type_name(type_long, "x");
-	mangle_set_primitive_type_name(type_boolean, "b");
-	mangle_set_primitive_type_name(type_float, "f");
-	mangle_set_primitive_type_name(type_double, "d");
-	mangle_add_name_substitution("<init>", "C1");
-	mangle_add_name_substitution("<clinit>", "18__U3c_clinit__U3e_");
-	mangle_add_name_substitution("and", "3and$");
-	mangle_add_name_substitution("or", "2or$");
-	mangle_add_name_substitution("not", "3not$");
-	mangle_add_name_substitution("xor", "3xor$");
-	mangle_add_name_substitution("delete", "6delete$");
-}
-
 int gcji_is_api_class(ir_type *type)
 {
 	assert (is_Class_type(type));
@@ -198,8 +178,6 @@ void gcji_init()
 	type_ushort = new_type_primitive(mode_ushort);
 
 	scp = new_set(set_cmp, 16);
-
-	setup_mangling();
 }
 
 void gcji_deinit()
