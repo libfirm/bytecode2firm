@@ -76,7 +76,7 @@ static void java_init_vtable_slots(ir_type *klass, ir_initializer_t *vtable_init
 	set_initializer_compound_value(vtable_init, 3, gc_stuff_init);
 }
 
-static void java_construct_runtime_classinfo(ir_type *klass)
+static void java_construct_runtime_typeinfo(ir_type *klass)
 {
 	assert (is_Class_type(klass));
 	if (klass == get_glob_type())
@@ -97,9 +97,10 @@ void oo_java_init(void)
 	ddispatch_set_vtable_layout(GCJI_VTABLE_OFFSET, GCJI_VTABLE_OFFSET+2, java_init_vtable_slots);
 	ddispatch_set_interface_lookup_constructor(gcji_lookup_interface);
 	ddispatch_set_abstract_method_ident(new_id_from_str("_Jv_ThrowAbstractMethodError"));
-	ddispatch_set_runtime_classinfo_constructor(java_construct_runtime_classinfo);
 
 	dmemory_set_allocation_methods(gcji_allocate_object, gcji_allocate_array, gcji_get_arraylength);
+
+	rtti_set_runtime_typeinfo_constructor(java_construct_runtime_typeinfo);
 }
 
 void oo_java_deinit(void)
