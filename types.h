@@ -30,7 +30,4 @@ extern ir_mode *mode_float;
 extern ir_mode *mode_double;
 extern ir_mode *mode_reference;
 
-extern ir_entity *vptr_entity;
-extern ir_entity *builtin_arraylength;
-
 #endif

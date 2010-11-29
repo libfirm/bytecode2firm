@@ -84,7 +84,6 @@ static ident *vptr_ident;
 static ident *subobject_ident;
 
 ir_entity *vptr_entity; // there's exactly one vptr entity, member of java.lang.Object.
-ir_entity *builtin_arraylength;
 
 static void init_types(void)
 {
@@ -144,18 +143,6 @@ static void init_types(void)
 
 	vptr_ident              = new_id_from_str("@vptr");
 	subobject_ident         = new_id_from_str("@base");
-
-	ir_type *arraylength_type = new_type_method(1, 1);
-	set_method_param_type(arraylength_type, 0, type_array_reference);
-	set_method_res_type(arraylength_type, 0, type_int);
-	set_method_additional_properties(arraylength_type, mtp_property_pure);
-
-	ir_type *global_type    = get_glob_type();
-	ident   *arraylength_id = new_id_from_str("$builtin_arraylength");
-	builtin_arraylength     = new_entity(global_type, arraylength_id,
-	                                     arraylength_type);
-	set_entity_additional_properties(builtin_arraylength,
-	                               mtp_property_intrinsic|mtp_property_private);
 }
 
 static ir_type *descriptor_to_type(const char **descriptor);
@@ -272,7 +259,8 @@ static void create_field_entity(field_t *field, ir_type *owner)
 	ir_type    *type       = complete_descriptor_to_type(descriptor);
 	ident      *id         = new_id_from_str(name);
 	ir_entity  *entity     = new_entity(owner, id, type);
-	set_entity_link(entity, field);
+	bc2firm_entity_info *fi= create_field_info(field, class_file);
+	set_entity_link(entity, fi);
 
 	if (field->access_flags & ACCESS_FLAG_STATIC) {
 		set_entity_allocation(entity, allocation_static);
@@ -403,7 +391,7 @@ static ir_entity *find_entity(ir_type *classtype, ident *id)
 	}
 
 	// 3. is the entity defined in an interface?
-	class_t *cls = (class_t*) get_type_link(classtype);
+	class_t *cls = get_class_info_class_t(classtype);
 	if (entity == NULL && cls->n_interfaces > 0) {
 		// the current class_file is managed like a stack. See: get_class_type(..)
 		class_t *old = class_file;
@@ -961,6 +949,8 @@ static void construct_new_array(ir_type *array_type, ir_node *count)
 
 static void construct_arraylength(void)
 {
+	ir_entity *builtin_arraylength = dmemory_get_arraylength_entity();
+
 	ir_node *mem      = get_store();
 	ir_node *arrayref = symbolic_pop(mode_reference);
 	ir_node *symc     = create_symconst(builtin_arraylength);
@@ -2274,7 +2264,8 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	                                                     method->access_flags);
 	ident      *mangled_id   = id_mangle_dot(id, descriptorid);
 	ir_entity  *entity       = new_entity(owner, mangled_id, type);
-	set_entity_link(entity, method);
+	bc2firm_entity_info *mi  = create_method_info(method, class_file);
+	set_entity_link(entity, mi);
 
 	if (! (method->access_flags & ACCESS_FLAG_STATIC)) {
 		assert(is_Class_type(owner));
@@ -2316,7 +2307,7 @@ static void create_method_code(ir_entity *entity)
 #endif
 
 	/* transform code to firm graph */
-	const method_t *method = get_entity_link(entity);
+	const method_t *method = get_entity_info_method_t(entity);
 	for (size_t a = 0; a < (size_t) method->n_attributes; ++a) {
 		const attribute_t *attribute = method->attributes[a];
 		if (attribute->kind != ATTRIBUTE_CODE)
@@ -2336,7 +2327,8 @@ static ir_type *get_class_type(const char *name)
 #endif
 
 	class_t *cls = read_class(name);
-	set_type_link(type, cls);
+	bc2firm_type_info *ci = create_class_info(cls);
+	set_type_link(type, ci);
 
 	class_t *old_class_file = class_file;
 	class_file = cls;
@@ -2351,6 +2343,7 @@ static ir_type *get_class_type(const char *name)
 		/* this should only happen for java.lang.Object */
 		assert(strcmp(name, "java/lang/Object") == 0);
 		vptr_entity = new_entity(type, vptr_ident, type_reference);
+		fprintf(stderr, "here\n");
 	}
 
 	for (size_t f = 0; f < (size_t) class_file->n_fields; ++f) {
@@ -2399,7 +2392,7 @@ static ir_type *construct_class_methods(ir_type *type)
 #endif
 
 	class_t *old_class = class_file;
-	class_file = get_type_link(type);
+	class_file = get_class_info_class_t(type);
 
 	int n_members = get_class_n_members(type);
 	for (int m = 0; m < n_members; ++m) {
@@ -2409,7 +2402,7 @@ static ir_type *construct_class_methods(ir_type *type)
 		create_method_code(member);
 	}
 
-	assert(class_file == get_type_link(type));
+	assert(class_file == get_class_info_class_t(type));
 	class_file = old_class;
 
 	return type;
@@ -2422,8 +2415,8 @@ int main(int argc, char **argv)
 	ir_init(NULL);
 	init_types();
 	class_registry_init();
+	oo_java_init();
 	gcji_init();
-	setup_liboo_for_java();
 
 	if (argc < 2 || argc > 8) {
 		fprintf(stderr, "Syntax: %s [-cp <classpath>] [-bootclasspath <bootclasspath>] [-o <output file name>] class_file\n", argv[0]);
@@ -2537,8 +2530,8 @@ int main(int argc, char **argv)
 	fclose(startup_out);
 
 	class_file_exit();
-	oo_deinit();
 	gcji_deinit();
+	oo_java_deinit();
 
 	char cmd_buffer[1024];
 	sprintf(cmd_buffer, "gcc -g -x assembler %s -x c %s -x none -lgcj -lstdc++ -o %s", asm_file, startup_file, output_name);

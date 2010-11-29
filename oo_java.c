@@ -2,11 +2,14 @@
 
 #include "types.h"
 #include "gcj_interface.h"
+#include "adt/obst.h"
 #include <libfirm/firm.h>
-#include <liboo/oo.h>
 
 #include <assert.h>
 #include <string.h>
+
+static struct obstack oo_info_obst;
+extern ir_entity *vptr_entity;
 
 static void java_setup_mangling(void)
 {
@@ -28,41 +31,6 @@ static void java_setup_mangling(void)
 	mangle_add_name_substitution("delete", "6delete$");
 }
 
-static int java_vtable_create_pred(ir_type *klass)
-{
-	class_t *linked_class = (class_t*) get_type_link(klass);
-	if ((linked_class == NULL)
-	 || (linked_class->access_flags & ACCESS_FLAG_INTERFACE) != 0) {
-		// don't create a vtable, however, the interface's class$ must be constructed.
-		if (! gcji_is_api_class(klass))
-			gcji_construct_class_dollar_field(klass);
-
-		return 0;
-	}
-
-	return 1;
-}
-
-static int java_vtable_include_pred(ir_entity *member)
-{
-	method_t *linked_method = (method_t *)get_entity_link(member);
-	if ((linked_method == NULL)
-	 || (linked_method->access_flags & ACCESS_FLAG_STATIC)
-	 || (linked_method->access_flags & ACCESS_FLAG_PRIAVTE)
-	 || (linked_method->access_flags & ACCESS_FLAG_FINAL) // calls to final methods are "devirtualized" when lowering the call.
-	 || (strncmp(get_entity_name(member), "<init>", 6) == 0))
-		return 0;
-
-	return 1;
-}
-
-static int java_vtable_is_abstract_pred(ir_entity *member)
-{
-	method_t *linked_method = (method_t *)get_entity_link(member);
-	assert (linked_method != NULL);
-	return linked_method->access_flags & ACCESS_FLAG_ABSTRACT;
-}
-
 /*
  * vtable layout (a la gcj)
  *
@@ -76,7 +44,7 @@ static int java_vtable_is_abstract_pred(ir_entity *member)
  *   <vtable slot n> addr(last method)
  */
 
-static void java_vtable_init_slots(ir_type *klass, ir_initializer_t *vtable_init, unsigned vtable_size)
+static void java_init_vtable_slots(ir_type *klass, ir_initializer_t *vtable_init, unsigned vtable_size)
 {
 	assert (vtable_size > 3); // setting initializers for slots 0..3 here.
 
@@ -90,10 +58,6 @@ static void java_vtable_init_slots(ir_type *klass, ir_initializer_t *vtable_init
 
 	ir_entity *class_dollar_field = gcji_get_class_dollar_field(klass);
 	assert (class_dollar_field);
-
-	if (! gcji_is_api_class(klass)) {
-		class_dollar_field = gcji_construct_class_dollar_field(klass);
-	}
 
 	symconst_symbol cdf_sym;
 	cdf_sym.entity_p = class_dollar_field;
@@ -113,69 +77,79 @@ static void java_vtable_init_slots(ir_type *klass, ir_initializer_t *vtable_init
 	set_initializer_compound_value(vtable_init, 3, gc_stuff_init);
 }
 
-static ddispatch_binding java_call_decide_binding(ir_node* call)
+static void java_construct_runtime_classinfo(ir_type *klass)
 {
-	ir_node *callee = get_Call_ptr(call);
-	if (is_SymConst(callee)
-			&& get_SymConst_entity(callee) == builtin_arraylength) {
-		return bind_builtin;
-	}
-
-	if (! is_Sel(callee))
-		return bind_already_bound;
-
-	ir_entity *method_entity = get_Sel_entity(callee);
-	if (! is_method_entity(method_entity))
-		return bind_already_bound;
-
-	ir_type *classtype    = get_entity_owner(method_entity);
-	if (! is_Class_type(classtype))
-		return bind_already_bound;
-
-	uint16_t cl_access_flags = ((class_t*)get_type_link(classtype))->access_flags;
-	uint16_t mt_access_flags = ((method_t*)get_entity_link(method_entity))->access_flags;
-
-	if ((cl_access_flags & ACCESS_FLAG_INTERFACE) != 0)
-		return bind_interface;
-
-	if ((cl_access_flags & ACCESS_FLAG_FINAL) + (mt_access_flags & ACCESS_FLAG_FINAL) != 0)
-		return bind_static;
-
-	return bind_dynamic;
-}
-
-static void java_call_lower_builtin(ir_node *call)
-{
-	ir_node *callee = get_Call_ptr(call);
-	if (is_SymConst(callee)	&& get_SymConst_entity(callee) == builtin_arraylength) {
-		dmemory_lower_arraylength(call);
+	assert (is_Class_type(klass));
+	if (klass == get_glob_type())
 		return;
+
+	if (! gcji_is_api_class(klass)) {
+		gcji_construct_class_dollar_field(klass);
 	}
-	assert(0);
 }
 
-extern ir_entity *vptr_entity;
-
-void setup_liboo_for_java(void)
+void oo_java_init(void)
 {
-	ddispatch_params ddp;
-	ddp.vtable_create_pred           = java_vtable_create_pred;
-	ddp.vtable_include_pred          = java_vtable_include_pred;
-	ddp.vtable_is_abstract_pred      = java_vtable_is_abstract_pred;
-	ddp.vtable_init_slots            = java_vtable_init_slots;
-	ddp.vtable_abstract_method_ident = new_id_from_str("_Jv_ThrowAbstractMethodError");
-	ddp.vtable_vptr_points_to_index  = GCJI_VTABLE_OFFSET;
-	ddp.vtable_index_of_first_method = GCJI_VTABLE_OFFSET + 2; // (class$, GC stuff)
-	ddp.call_decide_binding          = java_call_decide_binding;
-	ddp.call_lookup_interface_method = gcji_lookup_interface;
-	ddp.call_lower_builtin           = java_call_lower_builtin;
-	ddp.call_vptr_entity             = &vptr_entity;
+	obstack_init(&oo_info_obst);
+	oo_init();
 
-	dmemory_params dmp;
-	dmp.heap_alloc_object            = gcji_allocate_object;
-	dmp.heap_alloc_array             = gcji_allocate_array;
-	dmp.arraylength_get              = gcji_get_arraylength;
-
-	oo_init(ddp, dmp);
 	java_setup_mangling();
+
+	ddispatch_set_vtable_layout(GCJI_VTABLE_OFFSET, GCJI_VTABLE_OFFSET+2, java_init_vtable_slots);
+	ddispatch_set_interface_lookup_constructor(gcji_lookup_interface);
+	ddispatch_set_abstract_method_ident(new_id_from_str("_Jv_ThrowAbstractMethodError"));
+	ddispatch_set_runtime_classinfo_constructor(java_construct_runtime_classinfo);
+
+	dmemory_set_allocation_methods(gcji_allocate_object, gcji_allocate_array, gcji_get_arraylength);
+}
+
+void oo_java_deinit(void)
+{
+	oo_deinit();
+	obstack_free(&oo_info_obst, NULL);
+}
+
+bc2firm_type_info *create_class_info(class_t* javaclass)
+{
+	bc2firm_type_info *ci = obstack_alloc(&oo_info_obst, sizeof(bc2firm_type_info));
+	ci->base.vptr = &vptr_entity;
+	ci->base.needs_vtable = (javaclass->access_flags & ACCESS_FLAG_INTERFACE) == 0;
+	ci->class_info = javaclass;
+	return ci;
+}
+
+bc2firm_entity_info *create_method_info(method_t* javamethod, class_t* owner)
+{
+	bc2firm_entity_info *mi = obstack_alloc(&oo_info_obst, sizeof(bc2firm_entity_info));
+
+	char *name = ((constant_utf8_string_t*)owner->constants[javamethod->name_index])->bytes;
+
+	mi->base.include_in_vtable =
+	 ! ((javamethod->access_flags & ACCESS_FLAG_STATIC)
+	 || (javamethod->access_flags & ACCESS_FLAG_PRIAVTE)
+	 || (javamethod->access_flags & ACCESS_FLAG_FINAL) // calls to final methods are "devirtualized" when lowering the call.
+	 || (strncmp(name, "<init>", 6) == 0));
+
+	mi->base.is_abstract = javamethod->access_flags & ACCESS_FLAG_ABSTRACT;
+
+	if (! mi->base.include_in_vtable || (owner->access_flags & ACCESS_FLAG_FINAL))
+		mi->base.binding = bind_static;
+	else if ((owner->access_flags & ACCESS_FLAG_INTERFACE))
+		mi->base.binding = bind_interface;
+	else
+		mi->base.binding = bind_dynamic;
+
+	mi->member_info.method_info = javamethod;
+
+	return mi;
+}
+
+bc2firm_entity_info *create_field_info(field_t* javafield, class_t* owner)
+{
+	(void) owner;
+	bc2firm_entity_info *fi = obstack_alloc(&oo_info_obst, sizeof(bc2firm_entity_info));
+	fi->base.include_in_vtable = 0;
+	fi->base.binding = bind_static;
+	fi->member_info.field_info = javafield;
+	return fi;
 }

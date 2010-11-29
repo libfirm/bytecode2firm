@@ -3,6 +3,7 @@
 #include "types.h"
 #include "class_file.h"
 #include "class_registry.h"
+#include "oo_java.h"
 
 #include <libfirm/firm.h>
 #include <libfirm/adt/set.h>
@@ -457,8 +458,8 @@ static ir_entity *emit_method_desc(ir_type *owner, ir_type *classtype, ir_entity
 
 	ir_initializer_t *cinit         = create_initializer_compound(6);
 
-	class_t          *linked_class  = (class_t*) get_type_link(classtype);
-	method_t         *linked_method = (method_t*) get_entity_link(ent);
+	class_t          *linked_class  = get_class_info_class_t(classtype);
+	method_t         *linked_method = get_entity_info_method_t(ent);
 	assert (linked_class && linked_method);
 
 	constant_t       *name_const    = linked_class->constants[linked_method->name_index];
@@ -509,7 +510,7 @@ static ir_entity *emit_method_table(ir_type *classtype)
 	ident            *id            = id_unique("_MT_%u_");
 	ir_type          *mt_type       = new_type_struct(id_mangle(id, new_id_from_str("type")));
 
-	class_t          *linked_class  = (class_t*) get_type_link(classtype);
+	class_t          *linked_class  = get_class_info_class_t(classtype);
 	assert (linked_class);
 
 	int               n_members     = get_class_n_members(classtype);
@@ -547,8 +548,8 @@ static ir_entity *emit_field_desc(ir_type *owner, ir_type *classtype, ir_entity 
 
 	ir_initializer_t *cinit         = create_initializer_compound(5);
 
-	class_t          *linked_class  = (class_t*) get_type_link(classtype);
-	field_t          *linked_field  = (field_t*) get_entity_link(ent);
+	class_t          *linked_class  = get_class_info_class_t(classtype);
+	field_t          *linked_field  = get_entity_info_field_t(ent);
 	assert (linked_class && linked_field);
 
 	constant_t       *name_const    = linked_class->constants[linked_field->name_index];
@@ -603,7 +604,7 @@ static ir_entity *emit_field_table(ir_type *classtype)
 	ident            *id            = id_unique("_FT_%u_");
 	ir_type          *ft_type       = new_type_struct(id_mangle(id, new_id_from_str("type")));
 
-	class_t          *linked_class  = (class_t*) get_type_link(classtype);
+	class_t          *linked_class  = get_class_info_class_t(classtype);
 	assert (linked_class);
 
 	ir_entity        *cdf           = gcji_get_class_dollar_field(classtype);
@@ -641,7 +642,7 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 	ident            *id            = id_unique("_IF_%u_");
 	ir_type          *if_type       = new_type_struct(id_mangle(id, new_id_from_str("type")));
 
-	class_t          *linked_class  = (class_t*) get_type_link(classtype);
+	class_t          *linked_class  = get_class_info_class_t(classtype);
 	assert (linked_class);
 	uint16_t          n_interfaces  = linked_class->n_interfaces;
 	if (n_interfaces == 0)
@@ -690,7 +691,7 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	unsigned cur_init_slot = 0;
 	unsigned cur_type_size = 0;
 
-	class_t *linked_class = (class_t*)get_type_link(classtype);
+	class_t *linked_class = get_class_info_class_t(classtype);
 	assert (linked_class);
 
 	EMIT_PRIM("next_or_version", type_reference, nullref);
@@ -901,8 +902,8 @@ ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface, ir_entity *metho
 	ir_node   *cd_ref        = new_r_Proj(cd_load, mode_reference, pn_Load_res);
 	           cur_mem       = new_r_Proj(cd_load, mode_M, pn_Load_M);
 
-	class_t   *linked_class  = (class_t*) get_type_link(iface);
-	method_t  *linked_method = (method_t *) get_entity_link(method);
+	class_t   *linked_class  = get_class_info_class_t(iface);
+	method_t  *linked_method = get_entity_info_method_t(method);
 	assert (linked_class && linked_method);
 
 	constant_t *name_const   = linked_class->constants[linked_method->name_index];
