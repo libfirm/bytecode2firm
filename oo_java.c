@@ -3,7 +3,6 @@
 #include "types.h"
 #include "gcj_interface.h"
 #include "adt/obst.h"
-#include <libfirm/firm.h>
 
 #include <assert.h>
 #include <string.h>
@@ -109,47 +108,38 @@ void oo_java_deinit(void)
 	obstack_free(&oo_info_obst, NULL);
 }
 
-bc2firm_type_info *create_class_info(class_t* javaclass)
+void oo_java_setup_type_info(ir_type *classtype, class_t* javaclass)
 {
-	bc2firm_type_info *ci = obstack_alloc(&oo_info_obst, sizeof(bc2firm_type_info));
-	ci->base.vptr = &vptr_entity;
-	ci->base.needs_vtable = (javaclass->access_flags & ACCESS_FLAG_INTERFACE) == 0;
-	ci->class_info = javaclass;
-	return ci;
+	set_class_needs_vtable(classtype, (javaclass->access_flags & ACCESS_FLAG_INTERFACE) == 0);
+	set_class_vptr_entity_ptr(classtype, &vptr_entity);
+	set_oo_type_link(classtype, javaclass);
 }
 
-bc2firm_entity_info *create_method_info(method_t* javamethod, class_t* owner)
+void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, class_t* owner)
 {
-	bc2firm_entity_info *mi = obstack_alloc(&oo_info_obst, sizeof(bc2firm_entity_info));
-
-	char *name = ((constant_utf8_string_t*)owner->constants[javamethod->name_index])->bytes;
-
-	mi->base.include_in_vtable =
+	const char *name = ((constant_utf8_string_t*)owner->constants[javamethod->name_index])->bytes;
+	int include_in_vtable =
 	 ! ((javamethod->access_flags & ACCESS_FLAG_STATIC)
 	 || (javamethod->access_flags & ACCESS_FLAG_PRIAVTE)
 	 || (javamethod->access_flags & ACCESS_FLAG_FINAL) // calls to final methods are "devirtualized" when lowering the call.
 	 || (strncmp(name, "<init>", 6) == 0));
+	set_method_include_in_vtable(method, include_in_vtable);
+	set_method_is_abstract(method, javamethod->access_flags & ACCESS_FLAG_ABSTRACT);
 
-	mi->base.is_abstract = javamethod->access_flags & ACCESS_FLAG_ABSTRACT;
-
-	if (! mi->base.include_in_vtable || (owner->access_flags & ACCESS_FLAG_FINAL))
-		mi->base.binding = bind_static;
+	ddispatch_binding binding = bind_unknown;
+	if (! include_in_vtable || (owner->access_flags & ACCESS_FLAG_FINAL))
+		binding = bind_static;
 	else if ((owner->access_flags & ACCESS_FLAG_INTERFACE))
-		mi->base.binding = bind_interface;
+		binding = bind_interface;
 	else
-		mi->base.binding = bind_dynamic;
+		binding = bind_dynamic;
 
-	mi->member_info.method_info = javamethod;
-
-	return mi;
+	set_method_binding(method, binding);
+	set_oo_entity_link(method, javamethod);
 }
 
-bc2firm_entity_info *create_field_info(field_t* javafield, class_t* owner)
+void oo_java_setup_field_info(ir_entity *field, field_t* javafield, class_t* owner)
 {
 	(void) owner;
-	bc2firm_entity_info *fi = obstack_alloc(&oo_info_obst, sizeof(bc2firm_entity_info));
-	fi->base.include_in_vtable = 0;
-	fi->base.binding = bind_static;
-	fi->member_info.field_info = javafield;
-	return fi;
+	set_oo_entity_link(field, javafield);
 }

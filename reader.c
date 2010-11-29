@@ -259,8 +259,7 @@ static void create_field_entity(field_t *field, ir_type *owner)
 	ir_type    *type       = complete_descriptor_to_type(descriptor);
 	ident      *id         = new_id_from_str(name);
 	ir_entity  *entity     = new_entity(owner, id, type);
-	bc2firm_entity_info *fi= create_field_info(field, class_file);
-	set_entity_link(entity, fi);
+	oo_java_setup_field_info(entity, field, class_file);
 
 	if (field->access_flags & ACCESS_FLAG_STATIC) {
 		set_entity_allocation(entity, allocation_static);
@@ -391,7 +390,7 @@ static ir_entity *find_entity(ir_type *classtype, ident *id)
 	}
 
 	// 3. is the entity defined in an interface?
-	class_t *cls = get_class_info_class_t(classtype);
+	class_t *cls = (class_t*) get_oo_type_link(classtype);
 	if (entity == NULL && cls->n_interfaces > 0) {
 		// the current class_file is managed like a stack. See: get_class_type(..)
 		class_t *old = class_file;
@@ -2264,8 +2263,7 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	                                                     method->access_flags);
 	ident      *mangled_id   = id_mangle_dot(id, descriptorid);
 	ir_entity  *entity       = new_entity(owner, mangled_id, type);
-	bc2firm_entity_info *mi  = create_method_info(method, class_file);
-	set_entity_link(entity, mi);
+	oo_java_setup_method_info(entity, method, class_file);
 
 	if (! (method->access_flags & ACCESS_FLAG_STATIC)) {
 		assert(is_Class_type(owner));
@@ -2307,7 +2305,7 @@ static void create_method_code(ir_entity *entity)
 #endif
 
 	/* transform code to firm graph */
-	const method_t *method = get_entity_info_method_t(entity);
+	const method_t *method = (method_t*) get_oo_entity_link(entity);
 	for (size_t a = 0; a < (size_t) method->n_attributes; ++a) {
 		const attribute_t *attribute = method->attributes[a];
 		if (attribute->kind != ATTRIBUTE_CODE)
@@ -2319,7 +2317,7 @@ static void create_method_code(ir_entity *entity)
 static ir_type *get_class_type(const char *name)
 {
 	ir_type *type = class_registry_get(name);
-	if (get_type_link(type) != NULL)
+	if (get_oo_type_link(type) != NULL)
 		return type;
 
 #ifdef VERBOSE
@@ -2327,8 +2325,7 @@ static ir_type *get_class_type(const char *name)
 #endif
 
 	class_t *cls = read_class(name);
-	bc2firm_type_info *ci = create_class_info(cls);
-	set_type_link(type, ci);
+	oo_java_setup_type_info(type, cls);
 
 	class_t *old_class_file = class_file;
 	class_file = cls;
@@ -2343,7 +2340,6 @@ static ir_type *get_class_type(const char *name)
 		/* this should only happen for java.lang.Object */
 		assert(strcmp(name, "java/lang/Object") == 0);
 		vptr_entity = new_entity(type, vptr_ident, type_reference);
-		fprintf(stderr, "here\n");
 	}
 
 	for (size_t f = 0; f < (size_t) class_file->n_fields; ++f) {
@@ -2392,7 +2388,7 @@ static ir_type *construct_class_methods(ir_type *type)
 #endif
 
 	class_t *old_class = class_file;
-	class_file = get_class_info_class_t(type);
+	class_file = (class_t*) get_oo_type_link(type);
 
 	int n_members = get_class_n_members(type);
 	for (int m = 0; m < n_members; ++m) {
@@ -2402,7 +2398,7 @@ static ir_type *construct_class_methods(ir_type *type)
 		create_method_code(member);
 	}
 
-	assert(class_file == get_class_info_class_t(type));
+	assert(class_file == (class_t*) get_oo_type_link(type));
 	class_file = old_class;
 
 	return type;
