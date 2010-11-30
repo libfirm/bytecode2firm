@@ -19,7 +19,7 @@ typedef enum {
 
 typedef enum access_flags_t {
 	ACCESS_FLAG_PUBLIC          = 1U << 0,
-	ACCESS_FLAG_PRIAVTE         = 1U << 1,
+	ACCESS_FLAG_PRIVATE         = 1U << 1,
 	ACCESS_FLAG_PROTECTED       = 1U << 2,
 	ACCESS_FLAG_STATIC          = 1U << 3,
 	ACCESS_FLAG_FINAL           = 1U << 4,

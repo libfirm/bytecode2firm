@@ -121,7 +121,7 @@ void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, class_t*
 	const char *name = ((constant_utf8_string_t*)owner->constants[javamethod->name_index])->bytes;
 	int include_in_vtable =
 	 ! ((javamethod->access_flags & ACCESS_FLAG_STATIC)
-	 || (javamethod->access_flags & ACCESS_FLAG_PRIAVTE)
+	 || (javamethod->access_flags & ACCESS_FLAG_PRIVATE)
 	 || (javamethod->access_flags & ACCESS_FLAG_FINAL) // calls to final methods are "devirtualized" when lowering the call.
 	 || (strncmp(name, "<init>", 6) == 0));
 	set_method_include_in_vtable(method, include_in_vtable);
