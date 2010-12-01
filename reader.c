@@ -2508,7 +2508,7 @@ int main(int argc, char **argv)
 
 	fprintf(stderr, "===> Running backend\n");
 
-	be_parse_arg("omitfp");
+	//be_parse_arg("omitfp"); // stack unwinding becomes easier with the frame pointer.
 	be_main(asm_out, "bytecode");
 
 	fclose(asm_out);
