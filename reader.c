@@ -23,6 +23,7 @@
 
 #include <libfirm/firm.h>
 #include <liboo/oo.h>
+#include <liboo/dmemory.h>
 
 #define VERBOSE
 
@@ -390,7 +391,7 @@ static ir_entity *find_entity(ir_type *classtype, ident *id)
 	}
 
 	// 3. is the entity defined in an interface?
-	class_t *cls = (class_t*) get_oo_type_link(classtype);
+	class_t *cls = (class_t*) oo_get_type_link(classtype);
 	if (entity == NULL && cls->n_interfaces > 0) {
 		// the current class_file is managed like a stack. See: get_class_type(..)
 		class_t *old = class_file;
@@ -2305,7 +2306,7 @@ static void create_method_code(ir_entity *entity)
 #endif
 
 	/* transform code to firm graph */
-	const method_t *method = (method_t*) get_oo_entity_link(entity);
+	const method_t *method = (method_t*) oo_get_entity_link(entity);
 	for (size_t a = 0; a < (size_t) method->n_attributes; ++a) {
 		const attribute_t *attribute = method->attributes[a];
 		if (attribute->kind != ATTRIBUTE_CODE)
@@ -2317,7 +2318,7 @@ static void create_method_code(ir_entity *entity)
 static ir_type *get_class_type(const char *name)
 {
 	ir_type *type = class_registry_get(name);
-	if (get_oo_type_link(type) != NULL)
+	if (oo_get_type_link(type) != NULL)
 		return type;
 
 #ifdef VERBOSE
@@ -2388,7 +2389,7 @@ static ir_type *construct_class_methods(ir_type *type)
 #endif
 
 	class_t *old_class = class_file;
-	class_file = (class_t*) get_oo_type_link(type);
+	class_file = (class_t*) oo_get_type_link(type);
 
 	int n_members = get_class_n_members(type);
 	for (int m = 0; m < n_members; ++m) {
@@ -2398,7 +2399,7 @@ static ir_type *construct_class_methods(ir_type *type)
 		create_method_code(member);
 	}
 
-	assert(class_file == (class_t*) get_oo_type_link(type));
+	assert(class_file == (class_t*) oo_get_type_link(type));
 	class_file = old_class;
 
 	return type;
@@ -2465,7 +2466,7 @@ int main(int argc, char **argv)
 	irp_finalize_cons();
 	//dump_all_ir_graphs("");
 
-	lower_oo();
+	oo_lower();
 	lower_highlevel(0);
 
 	int n_irgs = get_irp_n_irgs();
@@ -2491,7 +2492,7 @@ int main(int argc, char **argv)
 
 	fprintf(stderr, "\n");
 
-	be_get_backend_param()->lower_for_target();
+	be_lower_for_target();
 
 	for (int p = 0; p < n_irgs; ++p) {
 		ir_graph *irg = get_irp_irg(p);

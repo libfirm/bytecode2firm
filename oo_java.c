@@ -4,6 +4,11 @@
 #include "gcj_interface.h"
 #include "adt/obst.h"
 
+#include <liboo/ddispatch.h>
+#include <liboo/dmemory.h>
+#include <liboo/mangle.h>
+#include <liboo/rtti.h>
+
 #include <assert.h>
 #include <string.h>
 
@@ -111,36 +116,36 @@ void oo_java_deinit(void)
 
 void oo_java_setup_type_info(ir_type *classtype, class_t* javaclass)
 {
-	set_class_needs_vtable(classtype, (javaclass->access_flags & ACCESS_FLAG_INTERFACE) == 0);
-	set_class_vptr_entity_ptr(classtype, &vptr_entity);
-	set_oo_type_link(classtype, javaclass);
+	oo_set_class_omit_vtable(classtype, (javaclass->access_flags & ACCESS_FLAG_INTERFACE) != 0);
+	oo_set_class_vptr_entity(classtype, vptr_entity);
+	oo_set_type_link(classtype, javaclass);
 }
 
 void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, class_t* owner)
 {
 	const char *name = ((constant_utf8_string_t*)owner->constants[javamethod->name_index])->bytes;
-	int include_in_vtable =
-	 ! ((javamethod->access_flags & ACCESS_FLAG_STATIC)
+	int exclude_from_vtable =
+	   ((javamethod->access_flags & ACCESS_FLAG_STATIC)
 	 || (javamethod->access_flags & ACCESS_FLAG_PRIVATE)
 	 || (javamethod->access_flags & ACCESS_FLAG_FINAL) // calls to final methods are "devirtualized" when lowering the call.
 	 || (strncmp(name, "<init>", 6) == 0));
-	set_method_include_in_vtable(method, include_in_vtable);
-	set_method_is_abstract(method, javamethod->access_flags & ACCESS_FLAG_ABSTRACT);
+	oo_set_method_exclude_from_vtable(method, exclude_from_vtable);
+	oo_set_method_is_abstract(method, javamethod->access_flags & ACCESS_FLAG_ABSTRACT);
 
 	ddispatch_binding binding = bind_unknown;
-	if (! include_in_vtable || (owner->access_flags & ACCESS_FLAG_FINAL))
+	if (exclude_from_vtable || (owner->access_flags & ACCESS_FLAG_FINAL))
 		binding = bind_static;
 	else if ((owner->access_flags & ACCESS_FLAG_INTERFACE))
 		binding = bind_interface;
 	else
 		binding = bind_dynamic;
 
-	set_method_binding(method, binding);
-	set_oo_entity_link(method, javamethod);
+	oo_set_entity_binding(method, binding);
+	oo_set_entity_link(method, javamethod);
 }
 
 void oo_java_setup_field_info(ir_entity *field, field_t* javafield, class_t* owner)
 {
 	(void) owner;
-	set_oo_entity_link(field, javafield);
+	oo_set_entity_link(field, javafield);
 }
