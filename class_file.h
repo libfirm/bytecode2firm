@@ -2,6 +2,7 @@
 #define CLASS_FILE_H
 
 #include <stdint.h>
+#include <libfirm/firm.h>
 
 typedef enum {
 	CONSTANT_UTF8_STRING        = 1,
@@ -172,6 +173,8 @@ typedef struct field_t {
 	uint16_t      descriptor_index;
 	uint16_t      n_attributes;
 	attribute_t **attributes;
+
+	ir_entity    *link;
 } field_t;
 
 typedef struct method_t {
@@ -180,6 +183,8 @@ typedef struct method_t {
 	uint16_t      descriptor_index;
 	uint16_t      n_attributes;
 	attribute_t **attributes;
+
+	ir_entity    *link;
 } method_t;
 
 typedef struct {
@@ -196,6 +201,8 @@ typedef struct {
 	method_t    **methods;
 	uint16_t      n_attributes;
 	attribute_t **attributes;
+
+	ir_type      *link;
 } class_t;
 
 void class_file_init(const char *classpath, const char *bootclasspath);

@@ -439,7 +439,6 @@ static ir_entity *do_emit_utf8_const(const char *bytes, size_t len)
 	// finally, the entity for the utf8 constant
 	ir_entity        *utf8c   = new_entity(get_glob_type(), id, utf8c_type);
 	set_entity_initializer(utf8c, cinit);
-	set_entity_allocation(utf8c, allocation_static);
 	set_entity_ld_ident(utf8c, id);
 
 	scp_ent.utf8c = utf8c;
@@ -499,7 +498,6 @@ static ir_entity *emit_method_desc(ir_type *owner, ir_type *classtype, ir_entity
 
 	ir_entity        *md_ent        = new_entity(owner, id, md_type);
 	set_entity_initializer(md_ent, cinit);
-	set_entity_allocation(md_ent, allocation_static);
 	set_entity_ld_ident(md_ent, id);
 
 	return md_ent;
@@ -513,26 +511,21 @@ static ir_entity *emit_method_table(ir_type *classtype)
 	class_t          *linked_class  = (class_t*) oo_get_type_link(classtype);
 	assert (linked_class);
 
-	int               n_members     = get_class_n_members(classtype);
 	uint16_t          n_methods     = linked_class->n_methods;
 	ir_initializer_t *cinit         = create_initializer_compound(n_methods);
 	unsigned          cur_init_slot = 0;
 
-	for (int i = 0; i < n_members; i++) {
-		ir_entity *member = get_class_member(classtype, i);
-		if (is_method_entity(member)) {
-			ir_entity *md_ent = emit_method_desc(mt_type, classtype, member);
-			set_initializer_compound_value(cinit, cur_init_slot++, get_entity_initializer(md_ent));
-		}
+	for (uint16_t i = 0; i < n_methods; i++) {
+		ir_entity *method = linked_class->methods[i]->link;
+		ir_entity *md_ent = emit_method_desc(mt_type, classtype, method);
+		set_initializer_compound_value(cinit, cur_init_slot++, get_entity_initializer(md_ent));
 	}
-	assert (cur_init_slot == n_methods);
 
 	set_type_size_bytes(mt_type, n_methods * MD_SIZE_BYTES);
 	default_layout_compound_type(mt_type);
 
 	ir_entity        *mt_ent        = new_entity(get_glob_type(), id, mt_type);
 	set_entity_initializer(mt_ent, cinit);
-	set_entity_allocation(mt_ent, allocation_static);
 	set_entity_ld_ident(mt_ent, id);
 
 	return mt_ent;
@@ -593,7 +586,6 @@ static ir_entity *emit_field_desc(ir_type *owner, ir_type *classtype, ir_entity 
 
 	ir_entity        *fd_ent        = new_entity(owner, id, fd_type);
 	set_entity_initializer(fd_ent, cinit);
-	set_entity_allocation(fd_ent, allocation_static);
 	set_entity_ld_ident(fd_ent, id);
 
 	return fd_ent;
@@ -607,31 +599,21 @@ static ir_entity *emit_field_table(ir_type *classtype)
 	class_t          *linked_class  = (class_t*) oo_get_type_link(classtype);
 	assert (linked_class);
 
-	ir_entity        *cdf           = gcji_get_class_dollar_field(classtype);
-
-	int               n_members     = get_class_n_members(classtype);
 	uint16_t          n_fields      = linked_class->n_fields;
 	ir_initializer_t *cinit         = create_initializer_compound(n_fields);
 	unsigned          cur_init_slot = 0;
 
-	for (int i = 0; i < n_members; i++) {
-		ir_entity *member = get_class_member(classtype, i);
-		if (! is_method_entity(member)) {
-			if (*get_entity_name(member) == '@' || member == cdf)
-				continue; // skip @base, @vptr and class$
-
-			ir_entity *fd_ent = emit_field_desc(ft_type, classtype, member);
-			set_initializer_compound_value(cinit, cur_init_slot++, get_entity_initializer(fd_ent));
-		}
+	for (uint16_t i = 0; i < n_fields; i++) {
+		ir_entity *field = linked_class->fields[i]->link;
+		ir_entity *fd_ent = emit_field_desc(ft_type, classtype, field);
+		set_initializer_compound_value(cinit, cur_init_slot++, get_entity_initializer(fd_ent));
 	}
-	assert (cur_init_slot == n_fields);
 
 	set_type_size_bytes(ft_type, n_fields * FD_SIZE_BYTES);
 	default_layout_compound_type(ft_type);
 
 	ir_entity        *ft_ent        = new_entity(get_glob_type(), id, ft_type);
 	set_entity_initializer(ft_ent, cinit);
-	set_entity_allocation(ft_ent, allocation_static);
 	set_entity_ld_ident(ft_ent, id);
 
 	return ft_ent;
@@ -667,7 +649,6 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 
 	ir_entity        *if_ent        = new_entity(get_glob_type(), id, if_type);
 	set_entity_initializer(if_ent, cinit);
-	set_entity_allocation(if_ent, allocation_static);
 	set_entity_ld_ident(if_ent, id);
 
 	return if_ent;
@@ -705,7 +686,7 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 
 	assert (get_class_n_supertypes(classtype) == 1);
 	ir_type *superclass = get_class_supertype(classtype, 0);
-	ir_entity *sccdf = get_class_member_by_name(superclass, class_dollar_ident);
+	ir_entity *sccdf = gcji_get_class_dollar_field(superclass);
 	assert (sccdf);
 	EMIT_PRIM("superclass", type_reference, create_ccode_symconst(sccdf));
 
@@ -789,9 +770,6 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	assert (class_dollar_field);
 	set_entity_type(class_dollar_field, cur_cdtype);
 	set_entity_initializer(class_dollar_field, cur_init);
-	ident *mangled_id = mangle_entity_name(class_dollar_field);
-	set_entity_ld_ident(class_dollar_field, mangled_id);
-	set_entity_allocation(class_dollar_field, allocation_static);
 	set_entity_visibility(class_dollar_field, ir_visibility_default);
 	set_entity_alignment(class_dollar_field, 32);
 
@@ -853,14 +831,15 @@ static ir_entity *emit_type_signature(ir_type *type)
 
 ir_entity *gcji_get_class_dollar_field(ir_type *type)
 {
+	assert (type != get_glob_type());
+
 	ir_entity *cdf = NULL;
 	if (is_Class_type(type)) {
-		cdf = get_class_member_by_name(type, class_dollar_ident);
+		cdf = oo_get_class_rtti_entity(type);
 		if (!cdf) {
-			cdf = new_entity(type, class_dollar_ident, type_reference);
-			ident *mangled_id = mangle_entity_name(cdf);
-			set_entity_ld_ident(cdf, mangled_id);
-			set_entity_allocation(cdf, allocation_static);
+			cdf = new_entity(get_glob_type(), class_dollar_ident, type_reference);
+			oo_set_entity_alt_namespace(cdf, type);
+			oo_set_class_rtti_entity(type, cdf);
 			set_entity_visibility(cdf, ir_visibility_external);
 			set_entity_alignment(cdf, 32);
 		}

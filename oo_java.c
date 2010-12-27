@@ -119,11 +119,12 @@ void oo_java_setup_type_info(ir_type *classtype, class_t* javaclass)
 	oo_set_class_omit_vtable(classtype, (javaclass->access_flags & ACCESS_FLAG_INTERFACE) != 0);
 	oo_set_class_vptr_entity(classtype, vptr_entity);
 	oo_set_type_link(classtype, javaclass);
+	javaclass->link = classtype;
 }
 
-void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, class_t* owner)
+void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, ir_type *defining_class, uint16_t owner_access_flags)
 {
-	const char *name = ((constant_utf8_string_t*)owner->constants[javamethod->name_index])->bytes;
+	const char *name = get_entity_name(method);
 	int exclude_from_vtable =
 	   ((javamethod->access_flags & ACCESS_FLAG_STATIC)
 	 || (javamethod->access_flags & ACCESS_FLAG_PRIVATE)
@@ -133,19 +134,26 @@ void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, class_t*
 	oo_set_method_is_abstract(method, javamethod->access_flags & ACCESS_FLAG_ABSTRACT);
 
 	ddispatch_binding binding = bind_unknown;
-	if (exclude_from_vtable || (owner->access_flags & ACCESS_FLAG_FINAL))
+	if (exclude_from_vtable || (owner_access_flags & ACCESS_FLAG_FINAL))
 		binding = bind_static;
-	else if ((owner->access_flags & ACCESS_FLAG_INTERFACE))
+	else if ((owner_access_flags & ACCESS_FLAG_INTERFACE))
 		binding = bind_interface;
 	else
 		binding = bind_dynamic;
 
 	oo_set_entity_binding(method, binding);
+
+	if (javamethod->access_flags & ACCESS_FLAG_STATIC)
+		oo_set_entity_alt_namespace(method, defining_class);
+
 	oo_set_entity_link(method, javamethod);
+	javamethod->link = method;
 }
 
-void oo_java_setup_field_info(ir_entity *field, field_t* javafield, class_t* owner)
+void oo_java_setup_field_info(ir_entity *field, field_t* javafield, ir_type *defining_class)
 {
-	(void) owner;
+	if (javafield->access_flags & ACCESS_FLAG_STATIC)
+		oo_set_entity_alt_namespace(field, defining_class);
 	oo_set_entity_link(field, javafield);
+	javafield->link = field;
 }

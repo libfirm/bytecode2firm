@@ -9,7 +9,7 @@ void oo_java_init(void);
 void oo_java_deinit(void);
 
 void oo_java_setup_type_info(ir_type *classtype, class_t* javaclass);
-void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, class_t* owner);
-void oo_java_setup_field_info(ir_entity *field, field_t* javafield, class_t* owner);
+void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, ir_type *defining_class, uint16_t owner_access_flags);
+void oo_java_setup_field_info(ir_entity *field, field_t* javafield, ir_type *defining_class);
 
 #endif
