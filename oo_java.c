@@ -125,13 +125,17 @@ void oo_java_setup_type_info(ir_type *classtype, class_t* javaclass)
 void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, ir_type *defining_class, uint16_t owner_access_flags)
 {
 	const char *name = get_entity_name(method);
+	uint16_t    accs = javamethod->access_flags;
+
+	int is_constructor = strncmp(name, "<init>", 6) == 0;
 	int exclude_from_vtable =
-	   ((javamethod->access_flags & ACCESS_FLAG_STATIC)
-	 || (javamethod->access_flags & ACCESS_FLAG_PRIVATE)
-	 || (javamethod->access_flags & ACCESS_FLAG_FINAL) // calls to final methods are "devirtualized" when lowering the call.
-	 || (strncmp(name, "<init>", 6) == 0));
+	   ((accs & ACCESS_FLAG_STATIC)
+	 || (accs & ACCESS_FLAG_PRIVATE)
+	 || (accs & ACCESS_FLAG_FINAL) // calls to final methods are "devirtualized" when lowering the call.
+	 || (is_constructor));
 	oo_set_method_exclude_from_vtable(method, exclude_from_vtable);
-	oo_set_method_is_abstract(method, javamethod->access_flags & ACCESS_FLAG_ABSTRACT);
+	oo_set_method_is_abstract(method, accs & ACCESS_FLAG_ABSTRACT);
+	oo_set_method_is_constructor(method, is_constructor);
 
 	ddispatch_binding binding = bind_unknown;
 	if (exclude_from_vtable || (owner_access_flags & ACCESS_FLAG_FINAL))
@@ -143,7 +147,7 @@ void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, ir_type 
 
 	oo_set_entity_binding(method, binding);
 
-	if (javamethod->access_flags & ACCESS_FLAG_STATIC)
+	if (accs & ACCESS_FLAG_STATIC)
 		oo_set_entity_alt_namespace(method, defining_class);
 
 	oo_set_entity_link(method, javamethod);
