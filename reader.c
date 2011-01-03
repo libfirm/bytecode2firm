@@ -966,19 +966,12 @@ static void construct_new_array(ir_type *array_type, ir_node *count)
 
 static void construct_arraylength(void)
 {
-	ir_entity *builtin_arraylength = dmemory_get_arraylength_entity();
-
-	ir_node *mem      = get_store();
+	ir_node *cur_mem  = get_store();
 	ir_node *arrayref = symbolic_pop(mode_reference);
-	ir_node *symc     = create_symconst(builtin_arraylength);
-	ir_node *in[]     = { arrayref };
-	ir_type *type     = get_entity_type(builtin_arraylength);
-	ir_node *call     = new_Call(mem, symc, sizeof(in)/sizeof(*in), in, type);
-	ir_node *new_mem  = new_Proj(call, mode_M, pn_Call_M);
-	set_store(new_mem);
-
-	ir_node *ress = new_Proj(call, mode_T, pn_Call_T_result);
-	ir_node *res  = new_Proj(ress, mode_int, 0);
+	ir_node *arlen    = new_Arraylength(cur_mem, arrayref);
+	ir_node *res      = new_Proj(arlen, mode_int, pn_Arraylength_Is_result);
+	         cur_mem  = new_Proj(arlen, mode_M, pn_Arraylength_M);
+	set_store(cur_mem);
 	symbolic_push(res);
 }
 
