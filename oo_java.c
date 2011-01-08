@@ -106,6 +106,7 @@ void oo_java_init(void)
 	dmemory_set_allocation_methods(gcji_allocate_object, gcji_allocate_array, gcji_get_arraylength);
 
 	rtti_set_runtime_typeinfo_constructor(java_construct_runtime_typeinfo);
+	rtti_set_instanceof_constructor(gcji_instanceof);
 }
 
 void oo_java_deinit(void)

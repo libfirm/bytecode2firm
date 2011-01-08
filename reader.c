@@ -24,6 +24,7 @@
 #include <libfirm/firm.h>
 #include <liboo/oo.h>
 #include <liboo/dmemory.h>
+#include <liboo/rtti.h>
 
 #define VERBOSE
 
@@ -961,17 +962,6 @@ static void construct_new_array(ir_type *array_type, ir_node *count)
 	ir_node *new_mem = new_Proj(alloc, mode_M, pn_Alloc_M);
 	ir_node *res     = new_Proj(alloc, mode_reference, pn_Alloc_res);
 	set_store(new_mem);
-	symbolic_push(res);
-}
-
-static void construct_arraylength(void)
-{
-	ir_node *cur_mem  = get_store();
-	ir_node *arrayref = symbolic_pop(mode_reference);
-	ir_node *arlen    = new_Arraylength(cur_mem, arrayref);
-	ir_node *res      = new_Proj(arlen, mode_int, pn_Arraylength_Is_result);
-	         cur_mem  = new_Proj(arlen, mode_M, pn_Arraylength_M);
-	set_store(cur_mem);
 	symbolic_push(res);
 }
 
@@ -2075,7 +2065,13 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 		case OPC_ARRAYLENGTH: {
-			construct_arraylength();
+			ir_node *cur_mem  = get_store();
+			ir_node *arrayref = symbolic_pop(mode_reference);
+			ir_node *arlen    = new_Arraylength(cur_mem, arrayref);
+			ir_node *res      = new_Proj(arlen, mode_int, pn_Arraylength_Is_result);
+			cur_mem  = new_Proj(arlen, mode_M, pn_Arraylength_M);
+			set_store(cur_mem);
+			symbolic_push(res);
 			continue;
 		}
 
@@ -2095,14 +2091,16 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 		case OPC_INSTANCEOF: {
-			uint16_t   index     = get_16bit_arg(&i);
-			ir_node   *addr      = symbolic_pop(mode_reference);
+			uint16_t index      = get_16bit_arg(&i);
+			ir_node *addr       = symbolic_pop(mode_reference);
 
-			ir_type   *classtype = get_classref_type(index);
+			ir_type *classtype  = get_classref_type(index);
 			assert(classtype);
 
-			ir_node   *cur_mem   = get_store();
-			ir_node   *res       = gcji_instanceof(addr, classtype, irg, get_cur_block(), &cur_mem);
+			ir_node *cur_mem    = get_store();
+			ir_node *instanceof = new_InstanceOf(cur_mem, addr, classtype);
+			ir_node *res        = new_Proj(instanceof, mode_int, pn_InstanceOf_Is_result);
+			cur_mem    = new_Proj(instanceof, mode_M, pn_InstanceOf_M);
 			set_store(cur_mem);
 
 			symbolic_push(res);
@@ -2344,12 +2342,12 @@ static ir_type *get_class_type(const char *name)
 #endif
 
 	class_t *cls = read_class(name);
-	oo_java_setup_type_info(type, cls);
 
 	class_t *old_class_file = class_file;
 	class_file = cls;
 
 	if (class_file->super_class != 0) {
+		oo_java_setup_type_info(type, cls);
 		ir_type *supertype = get_classref_type(class_file->super_class);
 		assert (supertype != type);
 		add_class_supertype(type, supertype);
@@ -2359,6 +2357,7 @@ static ir_type *get_class_type(const char *name)
 		/* this should only happen for java.lang.Object */
 		assert(strcmp(name, "java/lang/Object") == 0);
 		vptr_entity = new_entity(type, vptr_ident, type_reference);
+		oo_java_setup_type_info(type, cls);
 	}
 
 	for (size_t f = 0; f < (size_t) class_file->n_fields; ++f) {

@@ -11,7 +11,12 @@ OBJECTS = $(addprefix $(BUILDDIR)/, $(addsuffix .o, $(basename $(SOURCES))))
 
 Q ?= @
 
-all: $(GOAL)
+.phony: liboo
+liboo:
+	$(MAKE) -C $(LIBOO_HOME)
+	$(MAKE) $(GOAL)
+
+all: liboo 
 
 -include $(DEPS)
 
