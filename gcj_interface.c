@@ -6,7 +6,7 @@
 #include "oo_java.h"
 
 #include <libfirm/firm.h>
-#include <libfirm/adt/set.h>
+#include "adt/cpset.h"
 #include <liboo/mangle.h>
 #include "adt/obst.h"
 
@@ -44,18 +44,44 @@ extern char* strdup(const char* s);
 static ir_entity *do_emit_utf8_const(const char *bytes, size_t len);
 static ir_entity *emit_type_signature(ir_type *type);
 
-static set* scp;
+static unsigned java_style_hash(const char* s)
+{
+	unsigned hash = 0;
+	size_t len = strlen(s);
+	for (size_t i = 0; i < len; i++) {
+		hash = (31 * hash) + s[i]; // FIXME: this doesn't work for codepoints that are not ASCII.
+	}
+	return hash;
+}
+
+static cpset_t scp; // static constant pool
+
 typedef struct {
-	const char* s;
+	char* s;
 	ir_entity* utf8c;
 } scp_entry;
-static int set_cmp(const void *elt, const void *key, size_t size)
-{
-	(void)size;
-	const scp_entry *a = (const scp_entry*) elt;
-	const scp_entry *b = (const scp_entry*) key;
 
-	return strcmp(a->s, b->s);
+static int scp_cmp(const void *p1, const void *p2)
+{
+	const scp_entry *a = (const scp_entry*) p1;
+	const scp_entry *b = (const scp_entry*) p2;
+
+	return strcmp(a->s, b->s) == 0;
+}
+
+static unsigned scp_hash (const void *obj)
+{
+	const char *s = ((scp_entry*)obj)->s;
+	return java_style_hash(s);
+}
+
+static void free_scpe(scp_entry *scpe)
+{
+	if (scpe == NULL)
+		return;
+
+	free(scpe->s);
+	free(scpe);
 }
 
 int gcji_is_api_class(ir_type *type)
@@ -178,12 +204,20 @@ void gcji_init()
 	mode_ushort = new_ir_mode("US", irms_int_number, 16, 0, irma_twos_complement, 16);
 	type_ushort = new_type_primitive(mode_ushort);
 
-	scp = new_set(set_cmp, 16);
+	cpset_init(&scp, scp_hash, scp_cmp);
 }
 
 void gcji_deinit()
 {
-	del_set(scp);
+	cpset_iterator_t iter;
+	cpset_iterator_init(&iter, &scp);
+
+	scp_entry *cur_scpe;
+	while ( (cur_scpe = (scp_entry*)cpset_iterator_next(&iter)) != NULL) {
+		free_scpe(cur_scpe);
+	}
+
+	cpset_destroy(&scp);
 }
 
 void gcji_class_init(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem)
@@ -377,18 +411,14 @@ static ir_entity *do_emit_utf8_const(const char *bytes, size_t len)
 {
 	size_t len0 = len + 1; // incl. the '\0' byte
 
-	int hash = 0;
-	for (uint16_t i = 0; i < len; i++) {
-		hash = (31 * hash) + bytes[i]; // FIXME: this doesn't work for codepoints that are not ASCII.
-	}
-	hash &= 0xFFFF;
+	int hash = java_style_hash(bytes) & 0xFFFF;
 
-	scp_entry scp_ent;
-	scp_ent.s = bytes;
+	scp_entry test_scpe;
+	test_scpe.s = (char*)bytes;
 
-	void *scp_find_res = set_find(scp, &scp_ent, sizeof(scp_entry), hash);
-	if (scp_find_res != NULL) {
-		ir_entity *utf8const = ((scp_entry*) scp_find_res)->utf8c;
+	scp_entry *found_scpe = cpset_find(&scp, &test_scpe);
+	if (found_scpe != NULL) {
+		ir_entity *utf8const = found_scpe->utf8c;
 		assert (is_entity(utf8const));
 		return utf8const;
 	}
@@ -441,8 +471,13 @@ static ir_entity *do_emit_utf8_const(const char *bytes, size_t len)
 	set_entity_initializer(utf8c, cinit);
 	set_entity_ld_ident(utf8c, id);
 
-	scp_ent.utf8c = utf8c;
-	set_insert(scp, &scp_ent, sizeof(scp_entry), hash);
+	scp_entry *new_scpe = XMALLOC(scp_entry);
+	new_scpe->s = XMALLOCN(char, len0);
+	for (unsigned i = 0; i < len0; i++)
+		new_scpe->s[i] = bytes[i];
+
+	new_scpe->utf8c = utf8c;
+	cpset_insert(&scp, new_scpe);
 
 	return utf8c;
 }
