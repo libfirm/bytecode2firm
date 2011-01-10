@@ -2286,30 +2286,6 @@ static void create_method_entity(method_t *method, ir_type *owner)
 
 	oo_java_setup_method_info(entity, method, owner, class_file->access_flags);
 
-	if (! (method->access_flags & ACCESS_FLAG_STATIC)) {
-		assert(is_Class_type(owner));
-		ir_type *superclass_type = owner;
-		ir_entity *superclass_method = NULL;
-
-		while(superclass_type != NULL && superclass_method == NULL) {
-			int n_supertypes = get_class_n_supertypes(superclass_type);
-			if (n_supertypes > 0) {
-					assert (n_supertypes == 1);
-					superclass_type = get_class_supertype(superclass_type, 0);
-					ir_entity *member_in_superclass = get_class_member_by_name(superclass_type, mangled_id);
-					if (member_in_superclass != NULL && is_method_entity(member_in_superclass)) {
-						superclass_method = member_in_superclass;
-					}
-			} else {
-				superclass_type = NULL;
-			}
-		}
-
-		if (superclass_method != NULL) {
-			add_entity_overwrites(entity, superclass_method);
-		}
-	}
-
 	if (method->access_flags & ACCESS_FLAG_NATIVE || gcji_is_api_class(owner)) {
 		set_entity_visibility(entity, ir_visibility_external);
 	}
@@ -2421,6 +2397,33 @@ static ir_type *construct_class_methods(ir_type *type)
 	return type;
 }
 
+static void link_methods(ir_type *klass, void *env)
+{
+	(void) env;
+
+	// don't need to iterate the class_t structure, as we are only interested in non-static methods
+	int n_subclasses = get_class_n_subtypes(klass);
+	if (n_subclasses == 0)
+		return;
+
+	int n_member = get_class_n_members(klass);
+	for (int m = 0; m < n_member; m++) {
+		ir_entity *member = get_class_member(klass, m);
+		if (! is_method_entity(member) || oo_get_method_is_constructor(member))
+			continue;
+
+		ident *mid = get_entity_ident(member);
+
+		for (int sc = 0; sc < n_subclasses; sc++) {
+			ir_type *subclass = get_class_subtype(klass, sc);
+			ir_entity *subclass_ent = get_class_member_by_name(subclass, mid);
+			if (subclass_ent != NULL && is_method_entity(subclass_ent)) {
+				add_entity_overwrites(subclass_ent, member);
+			}
+		}
+	}
+}
+
 int main(int argc, char **argv)
 {
 	be_opt_register();
@@ -2484,6 +2487,8 @@ int main(int argc, char **argv)
 
 	irp_finalize_cons();
 	//dump_all_ir_graphs("");
+
+	class_walk_super2sub(link_methods, NULL, NULL);
 
 	oo_lower();
 	lower_highlevel(0);
