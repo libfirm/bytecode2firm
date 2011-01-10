@@ -722,12 +722,18 @@ static void push_load_const(uint16_t index)
 		break;
 	}
 	case CONSTANT_CLASSREF: {
-		// FIXME: need real implementation
-		push_const(mode_reference, 0);
+		const char *classname = get_constant_string(constant->classref.name_index);
+		ir_type *klass = get_class_type(classname);
+		assert (klass);
+		ir_entity *cdf = gcji_get_class_dollar_field(klass);
+		assert (cdf);
+		ir_node *cdf_symc = create_symconst(cdf);
+
+		symbolic_push(cdf_symc);
 		break;
 	}
 	default:
-		panic("ldc without int, float or string constant");
+		panic("ldc without int, float, string or classref constant");
 	}
 }
 
