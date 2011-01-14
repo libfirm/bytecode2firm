@@ -516,7 +516,6 @@ static ir_entity *get_field_entity(uint16_t index)
 		ir_type *classtype
 			= get_classref_type(fieldref->fieldref.class_index);
 
-		/* TODO: we could have a method with the same name */
 		const char *fieldname
 			= get_constant_string(name_and_type->name_and_type.name_index);
 		const char *descriptor
@@ -1996,12 +1995,13 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_INVOKEINTERFACE: {
 			uint16_t   index   = get_16bit_arg(&i);
 			uint8_t    count   = code->code[i++];
+			(void) count;
 			assert (code->code[i++] == 0);
 			ir_entity *entity = get_interface_entity(index);
 
 			ir_type   *type   = get_entity_type(entity);
 			unsigned   n_args = get_method_n_params(type);
-			assert (n_args == count);
+			//assert (n_args == count); // Wrong assertion. Count is the # of slots needed for the params, e.g. double contributes 2 to this value.
 			ir_node   *args[n_args];
 
 			for (int i = n_args-1; i >= 0; --i) {
