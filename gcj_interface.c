@@ -7,7 +7,7 @@
 
 #include <libfirm/firm.h>
 #include "adt/cpset.h"
-#include <liboo/mangle.h>
+#include "mangle.h"
 #include "adt/obst.h"
 
 #include <assert.h>
@@ -750,7 +750,7 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 
 	ir_node *vtable_ref = NULL;
 	if ((linked_class->access_flags & ACCESS_FLAG_INTERFACE) == 0) {
-		ir_entity *vtable = get_class_member_by_name(glob, mangle_vtable_name(classtype));
+		ir_entity *vtable = get_class_member_by_name(glob, oo_get_class_vtable_ld_ident(classtype));
 		assert (vtable);
 		vtable_ref = create_ccode_symconst(vtable);
 		ir_node *block = get_r_cur_block(ccode);
@@ -873,7 +873,10 @@ ir_entity *gcji_get_class_dollar_field(ir_type *type)
 		cdf = oo_get_class_rtti_entity(type);
 		if (!cdf) {
 			cdf = new_entity(get_glob_type(), class_dollar_ident, type_reference);
-			oo_set_entity_alt_namespace(cdf, type);
+			const char *classname  = get_class_name(type);
+			const char *membername = get_id_str(class_dollar_ident);
+			ident *mangled_id = mangle_member_name(classname, membername, NULL);
+			set_entity_ld_ident(cdf, mangled_id);
 			oo_set_class_rtti_entity(type, cdf);
 			set_entity_visibility(cdf, ir_visibility_external);
 			set_entity_alignment(cdf, 32);

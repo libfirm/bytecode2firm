@@ -2,38 +2,18 @@
 
 #include "types.h"
 #include "gcj_interface.h"
+#include "mangle.h"
 #include "adt/obst.h"
 
 #include <liboo/ddispatch.h>
 #include <liboo/dmemory.h>
-#include <liboo/mangle.h>
+
 #include <liboo/rtti.h>
 
 #include <assert.h>
 #include <string.h>
 
-static struct obstack oo_info_obst;
 extern ir_entity *vptr_entity;
-
-static void java_setup_mangling(void)
-{
-	// GCJ specific exceptional cases in name mangling
-	mangle_set_primitive_type_name(type_byte, "c");
-	mangle_set_primitive_type_name(type_char, "w");
-	mangle_set_primitive_type_name(type_short, "s");
-	mangle_set_primitive_type_name(type_int, "i");
-	mangle_set_primitive_type_name(type_long, "x");
-	mangle_set_primitive_type_name(type_boolean, "b");
-	mangle_set_primitive_type_name(type_float, "f");
-	mangle_set_primitive_type_name(type_double, "d");
-	mangle_add_name_substitution("<init>", "C1");
-	mangle_add_name_substitution("<clinit>", "18__U3c_clinit__U3e_");
-	mangle_add_name_substitution("and", "3and$");
-	mangle_add_name_substitution("or", "2or$");
-	mangle_add_name_substitution("not", "3not$");
-	mangle_add_name_substitution("xor", "3xor$");
-	mangle_add_name_substitution("delete", "6delete$");
-}
 
 /*
  * vtable layout (a la gcj)
@@ -94,10 +74,8 @@ static void java_construct_runtime_typeinfo(ir_type *klass)
 
 void oo_java_init(void)
 {
-	obstack_init(&oo_info_obst);
+	mangle_init();
 	oo_init();
-
-	java_setup_mangling();
 
 	ddispatch_set_vtable_layout(GCJI_VTABLE_OFFSET, GCJI_VTABLE_OFFSET+2, java_init_vtable_slots);
 	ddispatch_set_interface_lookup_constructor(gcji_lookup_interface);
@@ -112,7 +90,7 @@ void oo_java_init(void)
 void oo_java_deinit(void)
 {
 	oo_deinit();
-	obstack_free(&oo_info_obst, NULL);
+	mangle_deinit();
 }
 
 void oo_java_setup_type_info(ir_type *classtype, class_t* javaclass)
@@ -121,12 +99,18 @@ void oo_java_setup_type_info(ir_type *classtype, class_t* javaclass)
 	oo_set_class_vptr_entity(classtype, vptr_entity);
 	oo_set_type_link(classtype, javaclass);
 	javaclass->link = classtype;
+
+	gcji_get_class_dollar_field(classtype); // trigger construction of entity
+	const char *classname = get_class_name(classtype);
+	ident *vtable_ident = mangle_vtable_name(classname);
+	oo_set_class_vtable_ld_ident(classtype, vtable_ident);
 }
 
-void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, ir_type *defining_class, uint16_t owner_access_flags)
+void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, ir_type *defining_class, class_t *defining_javaclass)
 {
-	const char *name = get_entity_name(method);
-	uint16_t    accs = javamethod->access_flags;
+	const char *name               = ((constant_utf8_string_t*)defining_javaclass->constants[javamethod->name_index])->bytes;
+	uint16_t    accs               = javamethod->access_flags;
+	uint16_t    owner_access_flags = defining_javaclass->access_flags;
 
 	int is_constructor = strncmp(name, "<init>", 6) == 0;
 	int exclude_from_vtable =
@@ -155,8 +139,9 @@ void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, ir_type 
 	javamethod->link = method;
 }
 
-void oo_java_setup_field_info(ir_entity *field, field_t* javafield, ir_type *defining_class)
+void oo_java_setup_field_info(ir_entity *field, field_t* javafield, ir_type *defining_class, class_t *defining_javaclass)
 {
+	(void) *defining_javaclass;
 	if (javafield->access_flags & ACCESS_FLAG_STATIC)
 		oo_set_entity_alt_namespace(field, defining_class);
 	oo_set_entity_link(field, javafield);

@@ -20,6 +20,7 @@
 #include "class_registry.h"
 #include "gcj_interface.h"
 #include "oo_java.h"
+#include "mangle.h"
 
 #include <libfirm/firm.h>
 #include <liboo/oo.h>
@@ -267,7 +268,11 @@ static void create_field_entity(field_t *field, ir_type *owner)
 	else
 		entity = new_entity(owner, id, type);
 
-	oo_java_setup_field_info(entity, field, owner);
+	const char *classname    = get_class_name(owner);
+	ident      *ld_id        = mangle_member_name(classname, name, NULL);
+	set_entity_ld_ident(entity, ld_id);
+
+	oo_java_setup_field_info(entity, field, owner, class_file);
 
 	if (gcji_is_api_class(owner))
 		set_entity_visibility(entity, ir_visibility_external);
@@ -2290,7 +2295,11 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	else
 		entity = new_entity(owner, mangled_id, type);
 
-	oo_java_setup_method_info(entity, method, owner, class_file->access_flags);
+	const char *classname    = get_class_name(owner);
+	ident      *ld_id        = mangle_member_name(classname, name, descriptor);
+	set_entity_ld_ident(entity, ld_id);
+
+	oo_java_setup_method_info(entity, method, owner, class_file);
 
 	if (method->access_flags & ACCESS_FLAG_NATIVE || gcji_is_api_class(owner)) {
 		set_entity_visibility(entity, ir_visibility_external);
