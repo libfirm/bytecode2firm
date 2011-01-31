@@ -396,7 +396,6 @@ name_finished: ;
 	ident  *result        = new_id_from_chars(result_string, result_len);
 	obstack_free(&mobst, result_string);
 
-	mangle_ct_dump(&ct);
 	mangle_ct_flush(&ct);
 
 	return result;
