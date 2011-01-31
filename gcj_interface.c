@@ -750,7 +750,7 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 
 	ir_node *vtable_ref = NULL;
 	if ((linked_class->access_flags & ACCESS_FLAG_INTERFACE) == 0) {
-		ir_entity *vtable = get_class_member_by_name(glob, oo_get_class_vtable_ld_ident(classtype));
+		ir_entity *vtable = oo_get_class_vtable_entity(classtype);
 		assert (vtable);
 		vtable_ref = create_ccode_symconst(vtable);
 		ir_node *block = get_r_cur_block(ccode);

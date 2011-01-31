@@ -95,18 +95,24 @@ void oo_java_deinit(void)
 
 void oo_java_setup_type_info(ir_type *classtype, class_t* javaclass)
 {
-	oo_set_class_omit_vtable(classtype, (javaclass->access_flags & ACCESS_FLAG_INTERFACE) != 0);
+	if (((javaclass->access_flags & ACCESS_FLAG_INTERFACE) == 0)) {
+		const char *classname  = get_class_name(classtype);
+		ident *vtable_ident    = id_mangle_dot(get_class_ident(classtype), new_id_from_str("vtable"));
+		ident *vtable_ld_ident = mangle_vtable_name(classname);
+
+		ir_entity *vtable = new_entity(get_glob_type(), vtable_ident, type_reference);
+		set_entity_ld_ident(vtable, vtable_ld_ident);
+		oo_set_class_vtable_entity(classtype, vtable);
+	}
+
 	oo_set_class_vptr_entity(classtype, vptr_entity);
 	oo_set_type_link(classtype, javaclass);
 	javaclass->link = classtype;
 
 	gcji_get_class_dollar_field(classtype); // trigger construction of entity
-	const char *classname = get_class_name(classtype);
-	ident *vtable_ident = mangle_vtable_name(classname);
-	oo_set_class_vtable_ld_ident(classtype, vtable_ident);
 }
 
-void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, ir_type *defining_class, class_t *defining_javaclass)
+void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, class_t *defining_javaclass)
 {
 	const char *name               = ((constant_utf8_string_t*)defining_javaclass->constants[javamethod->name_index])->bytes;
 	uint16_t    accs               = javamethod->access_flags;
@@ -120,7 +126,6 @@ void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, ir_type 
 	 || (is_constructor));
 	oo_set_method_exclude_from_vtable(method, exclude_from_vtable);
 	oo_set_method_is_abstract(method, accs & ACCESS_FLAG_ABSTRACT);
-	oo_set_method_is_constructor(method, is_constructor);
 
 	ddispatch_binding binding = bind_unknown;
 	if (exclude_from_vtable || (owner_access_flags & ACCESS_FLAG_FINAL))
@@ -132,18 +137,12 @@ void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, ir_type 
 
 	oo_set_entity_binding(method, binding);
 
-	if (accs & ACCESS_FLAG_STATIC)
-		oo_set_entity_alt_namespace(method, defining_class);
-
 	oo_set_entity_link(method, javamethod);
 	javamethod->link = method;
 }
 
-void oo_java_setup_field_info(ir_entity *field, field_t* javafield, ir_type *defining_class, class_t *defining_javaclass)
+void oo_java_setup_field_info(ir_entity *field, field_t* javafield)
 {
-	(void) *defining_javaclass;
-	if (javafield->access_flags & ACCESS_FLAG_STATIC)
-		oo_set_entity_alt_namespace(field, defining_class);
 	oo_set_entity_link(field, javafield);
 	javafield->link = field;
 }

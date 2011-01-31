@@ -272,7 +272,7 @@ static void create_field_entity(field_t *field, ir_type *owner)
 	ident      *ld_id        = mangle_member_name(classname, name, NULL);
 	set_entity_ld_ident(entity, ld_id);
 
-	oo_java_setup_field_info(entity, field, owner, class_file);
+	oo_java_setup_field_info(entity, field);
 
 	if (gcji_is_api_class(owner))
 		set_entity_visibility(entity, ir_visibility_external);
@@ -440,6 +440,60 @@ static ir_entity *find_entity(ir_type *classtype, const char *name, const char *
 	return entity;
 }
 
+static ir_type *find_entity_defining_class(ir_type *classtype, const char *name, const char *desc)
+{
+	assert (is_Class_type(classtype));
+
+	ir_type *defining_class = NULL;
+
+	// the current class_file is managed like a stack. See: get_class_type(..)
+	class_t *old_class    = class_file;
+	class_t *linked_class = (class_t*) oo_get_type_link(classtype);
+	class_file = linked_class;
+
+	// 1. is the entity defined in this class?
+	for (uint16_t i = 0; defining_class == NULL && i < class_file->n_methods; i++) {
+		method_t *m = class_file->methods[i];
+		const char *n = get_constant_string(m->name_index);
+		const char *s = get_constant_string(m->descriptor_index);
+
+		if (strcmp(name, n) == 0 && strcmp(desc, s) == 0) {
+			defining_class = classtype;
+		}
+	}
+	for (uint16_t i = 0; defining_class == NULL && i < class_file->n_fields; i++) {
+		field_t *f = class_file->fields[i];
+		const char *n = get_constant_string(f->name_index);
+		const char *s = get_constant_string(f->descriptor_index);
+
+		if (strcmp(name, n) == 0 && strcmp(desc, s) == 0) {
+			defining_class = classtype;
+		}
+	}
+
+	// 2. is the entity defined in the superclass?
+	if (defining_class == NULL && class_file->super_class > 0) {
+		ir_type *supertype = get_classref_type(class_file->super_class);
+		assert (supertype);
+		defining_class = find_entity_defining_class(supertype, name, desc);
+	}
+
+	// 3. is the entity defined in an interface?
+	if (defining_class == NULL && class_file->n_interfaces > 0) {
+		for (uint16_t i = 0; i < class_file->n_interfaces && defining_class == NULL; i++) {
+			uint16_t interface_ref = class_file->interfaces[i];
+			ir_type *interface     = get_classref_type(interface_ref);
+			assert (interface);
+			defining_class = find_entity_defining_class(interface, name, desc);
+		}
+	}
+
+	assert (class_file == linked_class);
+	class_file = old_class;
+
+	return defining_class;
+}
+
 static ir_entity *get_method_entity(uint16_t index)
 {
 	constant_t *methodref = get_constant(index);
@@ -473,6 +527,35 @@ static ir_entity *get_method_entity(uint16_t index)
 	}
 
 	return entity;
+}
+
+static ir_type *get_method_defining_class(uint16_t index)
+{
+	constant_t *methodref = get_constant(index);
+	if (methodref->kind != CONSTANT_METHODREF) {
+		panic("get_method_entity index argument not a methodref");
+	}
+
+	const constant_t *name_and_type
+	  = get_constant(methodref->methodref.name_and_type_index);
+	if (name_and_type->kind != CONSTANT_NAMEANDTYPE) {
+		panic("invalid name_and_type in method %u", index);
+	}
+	ir_type *classtype
+	  = get_classref_type(methodref->methodref.class_index);
+
+	if (! is_Class_type(classtype)) {
+		// semantically, this is correct (array types support the methods of j.l.Object.
+		// We might need real array types for type info stuff later.
+		classtype = get_class_type("java/lang/Object");
+	}
+
+	const char *methodname
+	  = get_constant_string(name_and_type->name_and_type.name_index);
+	const char *descriptor
+	  = get_constant_string(name_and_type->name_and_type.descriptor_index);
+
+	return find_entity_defining_class(classtype, methodname, descriptor);
 }
 
 static ir_entity *get_interface_entity(uint16_t index)
@@ -532,6 +615,29 @@ static ir_entity *get_field_entity(uint16_t index)
 	}
 
 	return entity;
+}
+
+static ir_type *get_field_defining_class(uint16_t index)
+{
+	constant_t *fieldref = get_constant(index);
+	if (fieldref->kind != CONSTANT_FIELDREF) {
+		panic("get_field_entity index argumetn not a fieldref");
+	}
+
+	const constant_t *name_and_type
+	  = get_constant(fieldref->fieldref.name_and_type_index);
+	if (name_and_type->kind != CONSTANT_NAMEANDTYPE) {
+		panic("invalid name_and_type in field %u", index);
+	}
+	ir_type *classtype
+	  = get_classref_type(fieldref->fieldref.class_index);
+
+	const char *fieldname
+	  = get_constant_string(name_and_type->name_and_type.name_index);
+	const char *descriptor
+	  = get_constant_string(name_and_type->name_and_type.descriptor_index);
+
+	return find_entity_defining_class(classtype, fieldname, descriptor);
 }
 
 typedef struct basic_block_t {
@@ -1855,8 +1961,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			}
 
 			if (opcode == OPC_GETSTATIC || opcode == OPC_PUTSTATIC) {
-				 // static fields are always members of GlobalType and thus have an alt namespace set.
-				ir_type  *owner  = oo_get_entity_alt_namespace(entity);
+				ir_type  *owner  = get_field_defining_class(index);
 				assert (owner);
 
 				ir_graph *irg    = get_current_ir_graph();
@@ -1926,8 +2031,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_entity *entity = get_method_entity(index);
 			ir_node   *callee = create_symconst(entity);
 			ir_type   *type   = get_entity_type(entity);
-			 // static methods are always members of GlobalType and thus have an alt namespace set.
-			ir_type   *owner  = oo_get_entity_alt_namespace(entity);
+			ir_type   *owner  = get_method_defining_class(index);
 			assert (owner);
 			unsigned   n_args = get_method_n_params(type);
 			ir_node   *args[n_args];
@@ -2299,7 +2403,7 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	ident      *ld_id        = mangle_member_name(classname, name, descriptor);
 	set_entity_ld_ident(entity, ld_id);
 
-	oo_java_setup_method_info(entity, method, owner, class_file);
+	oo_java_setup_method_info(entity, method, class_file);
 
 	if (method->access_flags & ACCESS_FLAG_NATIVE || gcji_is_api_class(owner)) {
 		set_entity_visibility(entity, ir_visibility_external);
@@ -2424,7 +2528,7 @@ static void link_methods(ir_type *klass, void *env)
 	int n_member = get_class_n_members(klass);
 	for (int m = 0; m < n_member; m++) {
 		ir_entity *member = get_class_member(klass, m);
-		if (! is_method_entity(member) || oo_get_method_is_constructor(member))
+		if (! is_method_entity(member) || strncmp(get_entity_name(member), "<init>", 6) == 0)
 			continue;
 
 		ident *mid = get_entity_ident(member);
