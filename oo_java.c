@@ -9,19 +9,21 @@
 #include <liboo/dmemory.h>
 
 #include <liboo/rtti.h>
+#include <liboo/oo_nodes.h>
 
 #include <assert.h>
 #include <string.h>
 
-extern ir_entity *vptr_entity;
+extern ir_entity  *vptr_entity;
+static const char *class_info_name = "CI$";
 
 /*
- * vtable layout (a la gcj)
+ * vtable layout (a la gcj, hacked to use the liboo classinfo in parallel)
  *
  * _ZTVNxyzE:
  *   0                                  \  GCJI_VTABLE_OFFSET
- *   0                                  /
- *   <vtable slot 0> _ZNxyz6class$E     <-- vptrs point here
+ *                   _ZNxyz3CI$         /                       liboo class info
+ *   <vtable slot 0> _ZNxyz6class$E     <-- vptrs point here    gcj class info
  *   <vtable slot 1> GC bitmap marking descriptor
  *   <vtable slot 2> addr(first method)
  *   ...
@@ -34,20 +36,22 @@ static void java_init_vtable_slots(ir_type *klass, ir_initializer_t *vtable_init
 
 	ir_graph *const_code = get_const_code_irg();
 	ir_node *const_0 = new_r_Const_long(const_code, mode_reference, 0);
-	for (int i = 0; i < 2; i++) {
+	ir_initializer_t *init_0 = create_initializer_const(const_0);
+	set_initializer_compound_value (vtable_init, 0, init_0);
 
-		ir_initializer_t *val = create_initializer_const(const_0);
-		set_initializer_compound_value (vtable_init, i, val);
-	}
+	ir_entity *oo_ci = oo_get_class_rtti_entity(klass);
+	assert (oo_ci);
+	symconst_symbol oo_ci_sym;
+	oo_ci_sym.entity_p = oo_ci;
+	ir_node *oo_ci_symc = new_r_SymConst(const_code, mode_reference, oo_ci_sym, symconst_addr_ent);
+	ir_initializer_t *oo_ci_init = create_initializer_const(oo_ci_symc);
+	set_initializer_compound_value(vtable_init, 1, oo_ci_init);
 
 	ir_entity *class_dollar_field = gcji_get_class_dollar_field(klass);
 	assert (class_dollar_field);
-
 	symconst_symbol cdf_sym;
 	cdf_sym.entity_p = class_dollar_field;
 	ir_node *cdf_symc = new_r_SymConst(const_code, mode_reference, cdf_sym, symconst_addr_ent);
-
-	// FIXME: ^^ triggers a bug in the name mangling
 
 	const char *cname = get_class_name(klass);
 	int workaround = 0;
@@ -57,19 +61,14 @@ static void java_init_vtable_slots(ir_type *klass, ir_initializer_t *vtable_init
 	ir_initializer_t *cdf_init = create_initializer_const(workaround ? const_0 : cdf_symc);
 	set_initializer_compound_value(vtable_init, 2, cdf_init);
 
-	ir_initializer_t *gc_stuff_init = create_initializer_const(const_0);
-	set_initializer_compound_value(vtable_init, 3, gc_stuff_init);
+	set_initializer_compound_value(vtable_init, 3, init_0);
 }
 
 static void java_construct_runtime_typeinfo(ir_type *klass)
 {
-	assert (is_Class_type(klass));
-	if (klass == get_glob_type())
-		return;
-
-	if (! gcji_is_api_class(klass)) {
+	rtti_default_construct_runtime_typeinfo(klass);
+	if (! gcji_is_api_class(klass))
 		gcji_construct_class_dollar_field(klass);
-	}
 }
 
 void oo_java_init(void)
@@ -77,14 +76,12 @@ void oo_java_init(void)
 	mangle_init();
 	oo_init();
 
-	ddispatch_set_vtable_layout(GCJI_VTABLE_OFFSET, GCJI_VTABLE_OFFSET+2, java_init_vtable_slots);
-	ddispatch_set_interface_lookup_constructor(gcji_lookup_interface);
+	ddispatch_set_vtable_layout(GCJI_VTABLE_OFFSET, GCJI_VTABLE_OFFSET+2, GCJI_VTABLE_OFFSET-1, java_init_vtable_slots);
 	ddispatch_set_abstract_method_ident(new_id_from_str("_Jv_ThrowAbstractMethodError"));
 
 	dmemory_set_allocation_methods(gcji_allocate_object, gcji_allocate_array, gcji_get_arraylength);
 
 	rtti_set_runtime_typeinfo_constructor(java_construct_runtime_typeinfo);
-	rtti_set_instanceof_constructor(gcji_instanceof);
 }
 
 void oo_java_deinit(void)
@@ -103,13 +100,18 @@ void oo_java_setup_type_info(ir_type *classtype, class_t* javaclass)
 		ir_entity *vtable = new_entity(get_glob_type(), vtable_ident, type_reference);
 		set_entity_ld_ident(vtable, vtable_ld_ident);
 		oo_set_class_vtable_entity(classtype, vtable);
+	} else {
+		oo_set_class_is_interface(classtype, true);
 	}
 
 	oo_set_class_vptr_entity(classtype, vptr_entity);
 	oo_set_type_link(classtype, javaclass);
 	javaclass->link = classtype;
 
-	gcji_get_class_dollar_field(classtype); // trigger construction of entity
+	const char *classname  = get_class_name(classtype);
+	ident *mangled_id = mangle_member_name(classname, class_info_name, NULL);
+	ir_entity *ci = new_entity(get_glob_type(), mangled_id, type_reference);
+	oo_set_class_rtti_entity(classtype, ci);
 }
 
 void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, class_t *defining_javaclass)

@@ -719,8 +719,9 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 
 	EMIT_PRIM("acc_flags", type_ushort, new_r_Const_long(ccode, mode_ushort, linked_class->access_flags));
 
-	assert (get_class_n_supertypes(classtype) == 1);
+	assert (get_class_n_supertypes(classtype) > 0);
 	ir_type *superclass = get_class_supertype(classtype, 0);
+	assert (! oo_get_class_is_interface(superclass));
 	ir_entity *sccdf = gcji_get_class_dollar_field(superclass);
 	assert (sccdf);
 	EMIT_PRIM("superclass", type_reference, create_ccode_symconst(sccdf));
@@ -870,14 +871,13 @@ ir_entity *gcji_get_class_dollar_field(ir_type *type)
 
 	ir_entity *cdf = NULL;
 	if (is_Class_type(type)) {
-		cdf = oo_get_class_rtti_entity(type);
+		const char *classname  = get_class_name(type);
+		const char *membername = get_id_str(class_dollar_ident);
+		ident *mangled_id = mangle_member_name(classname, membername, NULL);
+		cdf = get_class_member_by_name(get_glob_type(), mangled_id);
 		if (!cdf) {
 			cdf = new_entity(get_glob_type(), class_dollar_ident, type_reference);
-			const char *classname  = get_class_name(type);
-			const char *membername = get_id_str(class_dollar_ident);
-			ident *mangled_id = mangle_member_name(classname, membername, NULL);
 			set_entity_ld_ident(cdf, mangled_id);
-			oo_set_class_rtti_entity(type, cdf);
 			set_entity_visibility(cdf, ir_visibility_external);
 			set_entity_alignment(cdf, 32);
 		}

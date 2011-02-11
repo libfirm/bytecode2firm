@@ -26,6 +26,7 @@
 #include <liboo/oo.h>
 #include <liboo/dmemory.h>
 #include <liboo/rtti.h>
+#include <liboo/oo_nodes.h>
 
 #define VERBOSE
 
@@ -2464,6 +2465,10 @@ static ir_type *get_class_type(const char *name)
 		method_t *method = class_file->methods[m];
 		create_method_entity(method, type);
 	}
+	for (size_t i = 0; i < (size_t) class_file->n_interfaces; ++i) {
+		ir_type *iface = get_classref_type(class_file->interfaces[i]);
+		add_class_supertype(type, iface);
+	}
 
 	assert(class_file == cls);
 	class_file = old_class_file;
@@ -2520,6 +2525,14 @@ static void link_methods(ir_type *klass, void *env)
 {
 	(void) env;
 
+	/*
+	 * don't establish overwritten-link between
+	 * 1) interface methods and implementations and
+	 * 2) interface methods and sub-interface methods
+	 */
+	if (oo_get_class_is_interface(klass))
+		return;
+
 	// don't need to iterate the class_t structure, as we are only interested in non-static methods
 	int n_subclasses = get_class_n_subtypes(klass);
 	if (n_subclasses == 0)
@@ -2537,7 +2550,7 @@ static void link_methods(ir_type *klass, void *env)
 			ir_type *subclass = get_class_subtype(klass, sc);
 			ir_entity *subclass_ent = get_class_member_by_name(subclass, mid);
 			if (subclass_ent != NULL && is_method_entity(subclass_ent)) {
-				add_entity_overwrites(subclass_ent, member);
+				add_entity_overwrites(subclass_ent, member); // FIXME: this doesn't work if C {foo()} extends B {} extends A {foo()}
 			}
 		}
 	}
@@ -2674,7 +2687,7 @@ int main(int argc, char **argv)
 	oo_java_deinit();
 
 	char cmd_buffer[1024];
-	sprintf(cmd_buffer, "gcc -g -x assembler %s -x c %s -x none -lgcj -lstdc++ -o %s", asm_file, startup_file, output_name);
+	sprintf(cmd_buffer, "gcc -g -x assembler %s -x c %s -x none -lgcj -lstdc++ -L. -Wl,-R. -loo_rt -o %s", asm_file, startup_file, output_name);
 
 	fprintf(stderr, "===> Assembling & linking (%s)\n", cmd_buffer);
 
