@@ -2520,6 +2520,30 @@ static ir_type *construct_class_methods(ir_type *type)
 	return type;
 }
 
+static void link_method_recursive(ir_type *klass, ir_entity *superclass_method)
+{
+	assert (is_Class_type(klass));
+	assert (! oo_get_class_is_interface(klass));
+	assert (is_method_entity(superclass_method));
+
+	ident *method_id = get_entity_ident(superclass_method);
+	ir_entity *m = get_class_member_by_name(klass, method_id);
+	if (m) {
+		add_entity_overwrites(m, superclass_method);
+		return;
+	}
+
+	size_t n_subclasses = get_class_n_subtypes(klass);
+	if (n_subclasses == 0)
+		return;
+
+
+	for (size_t i = 0; i < n_subclasses; i++) {
+		ir_type *subclass = get_class_subtype(klass, i);
+		link_method_recursive(subclass, superclass_method);
+	}
+}
+
 static void link_methods(ir_type *klass, void *env)
 {
 	(void) env;
@@ -2533,24 +2557,20 @@ static void link_methods(ir_type *klass, void *env)
 		return;
 
 	// don't need to iterate the class_t structure, as we are only interested in non-static methods
-	int n_subclasses = get_class_n_subtypes(klass);
+	size_t n_subclasses = get_class_n_subtypes(klass);
 	if (n_subclasses == 0)
 		return;
 
-	int n_member = get_class_n_members(klass);
-	for (int m = 0; m < n_member; m++) {
+	size_t n_member = get_class_n_members(klass);
+	for (size_t m = 0; m < n_member; m++) {
 		ir_entity *member = get_class_member(klass, m);
-		if (! is_method_entity(member) || strncmp(get_entity_name(member), "<init>", 6) == 0)
+		if (! is_method_entity(member) || oo_get_method_exclude_from_vtable(member)	)
 			continue;
 
-		ident *mid = get_entity_ident(member);
-
-		for (int sc = 0; sc < n_subclasses; sc++) {
+		for (size_t sc = 0; sc < n_subclasses; sc++) {
 			ir_type *subclass = get_class_subtype(klass, sc);
-			ir_entity *subclass_ent = get_class_member_by_name(subclass, mid);
-			if (subclass_ent != NULL && is_method_entity(subclass_ent)) {
-				add_entity_overwrites(subclass_ent, member); // FIXME: this doesn't work if C {foo()} extends B {} extends A {foo()}
-			}
+			if (oo_get_class_is_interface(subclass)) continue;
+			link_method_recursive(subclass, member);
 		}
 	}
 }
