@@ -1580,10 +1580,13 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	set_cur_block(NULL);
 	basic_block_t *next_target = &basic_blocks[0];
 
+	int no_fallthrough = 0;
+
 	for (uint32_t i = 0; i < code->code_length; /* nothing */) {
 		if (i == next_target->pc) {
 			if (next_target->stack_pointer < 0) {
-				next_target->stack_pointer = stack_pointer;
+				if (! no_fallthrough)
+					next_target->stack_pointer = stack_pointer;
 			} else {
 				if (get_cur_block() != NULL
 						&& next_target->stack_pointer != stack_pointer) {
@@ -1602,6 +1605,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		} else {
 			assert(i < next_target->pc);
 		}
+
+		no_fallthrough = 0;
 
 		// simulate that an exception object is pushed onto the stack
 		// if we enter an execption handler
@@ -1933,15 +1938,17 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 			keep_alive(target_block);
 			set_cur_block(NULL);
+
+			no_fallthrough = 1;
 			continue;
 		}
 
-		case OPC_IRETURN: construct_vreturn(method_type, mode_int);    continue;
-		case OPC_LRETURN: construct_vreturn(method_type, mode_long);   continue;
-		case OPC_FRETURN: construct_vreturn(method_type, mode_float);  continue;
-		case OPC_DRETURN: construct_vreturn(method_type, mode_double); continue;
-		case OPC_ARETURN: construct_vreturn(method_type, mode_reference); continue;
-		case OPC_RETURN:  construct_vreturn(method_type, NULL);        continue;
+		case OPC_IRETURN: construct_vreturn(method_type, mode_int);       no_fallthrough = 1; continue;
+		case OPC_LRETURN: construct_vreturn(method_type, mode_long);      no_fallthrough = 1; continue;
+		case OPC_FRETURN: construct_vreturn(method_type, mode_float);     no_fallthrough = 1; continue;
+		case OPC_DRETURN: construct_vreturn(method_type, mode_double);    no_fallthrough = 1; continue;
+		case OPC_ARETURN: construct_vreturn(method_type, mode_reference); no_fallthrough = 1; continue;
+		case OPC_RETURN:  construct_vreturn(method_type, NULL);           no_fallthrough = 1; continue;
 
 		case OPC_GETSTATIC:
 		case OPC_PUTSTATIC:
@@ -2248,6 +2255,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node *end_block = get_irg_end_block(current_ir_graph);
 			add_immBlock_pred(end_block, ret);
 			set_cur_block(NULL);
+
+			no_fallthrough = 1;
 			continue;
 		}
 		case OPC_MONITORENTER:
