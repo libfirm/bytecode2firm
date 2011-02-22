@@ -215,7 +215,7 @@ static ir_type *method_descriptor_to_type(const char *descriptor,
 	}
 
 	ir_type *method_type = new_type_method(ARR_LEN(arguments), n_res);
-	for (int i = 0; i < ARR_LEN(arguments); ++i) {
+	for (size_t i = 0; i < ARR_LEN(arguments); ++i) {
 		set_method_param_type(method_type, i, arguments[i]);
 	}
 	for (int r = 0; r < n_res; ++r) {
@@ -716,15 +716,6 @@ static ir_node *simple_new_Div(ir_node *left, ir_node *right, ir_mode *mode)
 {
 	ir_node *mem     = get_store();
 	ir_node *div     = new_Div(mem, left, right, mode, op_pin_state_pinned);
-	ir_node *new_mem = new_Proj(div, mode_M, pn_Div_M);
-	set_store(new_mem);
-	return new_Proj(div, mode, pn_Div_res);
-}
-
-static ir_node *simple_new_Quot(ir_node *left, ir_node *right, ir_mode *mode)
-{
-	ir_node *mem     = get_store();
-	ir_node *div     = new_Quot(mem, left, right, mode, op_pin_state_pinned);
 	ir_node *new_mem = new_Proj(div, mode_M, pn_Div_M);
 	set_store(new_mem);
 	return new_Proj(div, mode, pn_Div_res);
@@ -1743,8 +1734,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_DMUL:  construct_arith(mode_double, new_Mul);        continue;
 		case OPC_IDIV:  construct_arith(mode_int,    simple_new_Div); continue;
 		case OPC_LDIV:  construct_arith(mode_long,   simple_new_Div); continue;
-		case OPC_FDIV:  construct_arith(mode_float,  simple_new_Quot);continue;
-		case OPC_DDIV:  construct_arith(mode_double, simple_new_Quot);continue;
+		case OPC_FDIV:  construct_arith(mode_float,  simple_new_Div); continue;
+		case OPC_DDIV:  construct_arith(mode_double, simple_new_Div); continue;
 		case OPC_IREM:  construct_arith(mode_int,    simple_new_Mod); continue;
 		case OPC_LREM:  construct_arith(mode_long,   simple_new_Mod); continue;
 		case OPC_FREM:  construct_arith(mode_float,  simple_new_Mod); continue;
