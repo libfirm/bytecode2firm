@@ -33,6 +33,8 @@
 #include <liboo/rtti.h>
 #include <liboo/oo_nodes.h>
 
+#include <libfirm/rta.h>
+
 #define VERBOSE
 
 extern FILE *fdopen (int __fd, __const char *__modes);
@@ -133,21 +135,29 @@ static void init_types(void)
 
 	type_array_byte_boolean = new_type_array(1, type_byte);
 	set_type_state(type_array_byte_boolean, layout_fixed);
+	set_array_lower_bound_int(type_array_byte_boolean, 0, 0);
 	type_array_short        = new_type_array(1, type_short);
 	set_type_state(type_array_short, layout_fixed);
+	set_array_lower_bound_int(type_array_short, 0, 0);
 	type_array_char         = new_type_array(1, type_char);
 	set_type_state(type_array_char, layout_fixed);
+	set_array_lower_bound_int(type_array_char, 0, 0);
 	type_array_int          = new_type_array(1, type_int);
 	set_type_state(type_array_int, layout_fixed);
+	set_array_lower_bound_int(type_array_int, 0, 0);
 	type_array_long         = new_type_array(1, type_long);
 	set_type_state(type_array_long, layout_fixed);
+	set_array_lower_bound_int(type_array_long, 0, 0);
 	type_array_float        = new_type_array(1, type_float);
 	set_type_state(type_array_float, layout_fixed);
+	set_array_lower_bound_int(type_array_float, 0, 0);
 	type_array_double       = new_type_array(1, type_double);
 	set_type_state(type_array_double, layout_fixed);
+	set_array_lower_bound_int(type_array_double, 0, 0);
 
 	type_reference          = new_type_primitive(mode_reference);
 	type_array_reference    = new_type_array(1, type_reference);
+	set_array_lower_bound_int(type_array_reference, 0, 0);
 	set_type_state(type_array_reference, layout_fixed);
 
 	vptr_ident              = new_id_from_str("@vptr");
@@ -2477,10 +2487,10 @@ static ir_type *get_class_type(const char *name)
 		method_t *method = class_file->methods[m];
 		create_method_entity(method, type);
 	}
-	for (size_t i = 0; i < (size_t) class_file->n_interfaces; ++i) {
-		ir_type *iface = get_classref_type(class_file->interfaces[i]);
-		add_class_supertype(type, iface);
-	}
+//	for (size_t i = 0; i < (size_t) class_file->n_interfaces; ++i) {
+//		ir_type *iface = get_classref_type(class_file->interfaces[i]);
+//		add_class_supertype(type, iface);
+//	}
 
 	assert(class_file == cls);
 	class_file = old_class_file;
@@ -2672,7 +2682,7 @@ int main(int argc, char **argv)
 	}
 
 	irp_finalize_cons();
-	//dump_all_ir_graphs("");
+	dump_all_ir_graphs("");
 
 	class_walk_super2sub(link_methods, NULL, NULL);
 
@@ -2685,6 +2695,11 @@ int main(int argc, char **argv)
 		ir_graph *irg = get_irp_irg(p);
 		local_optimize_graph(irg); // Hint: opt_polymorphy is implemented as an local opt.
 	}
+
+	//dump_ir_prog_ext(dump_typegraph, "types.vcg");
+
+	rta_init();
+	rta_report();
 
 	oo_lower();
 	lower_highlevel(0);
@@ -2703,11 +2718,16 @@ int main(int argc, char **argv)
 		optimize_cf(irg);
 		optimize_reassociation(irg);
 		optimize_graph_df(irg);
-		//opt_jumpthreading(irg);
+		opt_jumpthreading(irg);
+		conv_opt(irg);
+		dead_node_elimination(irg);
+		fixpoint_vrp(irg);
 //		optimize_load_store(irg);
 		optimize_graph_df(irg);
 		optimize_cf(irg);
 	}
+
+	dump_all_ir_graphs("--opt");
 
 	fprintf(stderr, "\n");
 
@@ -2719,8 +2739,6 @@ int main(int argc, char **argv)
 			     dead Phi nodes if we don't do this */
 		edges_deactivate(irg);
 	}
-
-	//dump_ir_prog_ext(dump_typegraph, "types.vcg");
 
 	char asm_file[] = "bc2firm_asm_XXXXXX";
 	int asm_fd = mkstemp(asm_file);
