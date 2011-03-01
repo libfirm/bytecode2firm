@@ -2521,7 +2521,6 @@ static ir_type *construct_class_methods(ir_type *type)
 static void link_method_recursive(ir_type *klass, ir_entity *superclass_method)
 {
 	assert (is_Class_type(klass));
-	assert (! oo_get_class_is_interface(klass));
 	assert (is_method_entity(superclass_method));
 
 	ident *method_id = get_entity_ident(superclass_method);
@@ -2546,14 +2545,6 @@ static void link_methods(ir_type *klass, void *env)
 {
 	(void) env;
 
-	/*
-	 * don't establish overwritten-link between
-	 * 1) interface methods and implementations and
-	 * 2) interface methods and sub-interface methods
-	 */
-	if (oo_get_class_is_interface(klass))
-		return;
-
 	// don't need to iterate the class_t structure, as we are only interested in non-static methods
 	size_t n_subclasses = get_class_n_subtypes(klass);
 	if (n_subclasses == 0)
@@ -2567,7 +2558,6 @@ static void link_methods(ir_type *klass, void *env)
 
 		for (size_t sc = 0; sc < n_subclasses; sc++) {
 			ir_type *subclass = get_class_subtype(klass, sc);
-			if (oo_get_class_is_interface(subclass)) continue;
 			link_method_recursive(subclass, member);
 		}
 	}
@@ -2639,10 +2629,19 @@ int main(int argc, char **argv)
 
 	class_walk_super2sub(link_methods, NULL, NULL);
 
+	// opt_polymorphy
+	set_opt_dyn_meth_dispatch(1);
+	compute_inh_transitive_closure(); // will need is_Subclass_of(..) during opt, so precompute this info now.
+
+	int n_irgs = get_irp_n_irgs();
+	for (int p = 0; p < n_irgs; ++p) {
+		ir_graph *irg = get_irp_irg(p);
+		local_optimize_graph(irg); // Hint: opt_polymorphy is implemented as an local opt.
+	}
+
 	oo_lower();
 	lower_highlevel(0);
 
-	int n_irgs = get_irp_n_irgs();
 	for (int p = 0; p < n_irgs; ++p) {
 		ir_graph *irg = get_irp_irg(p);
 
