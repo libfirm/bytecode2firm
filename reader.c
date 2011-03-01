@@ -2487,10 +2487,10 @@ static ir_type *get_class_type(const char *name)
 		method_t *method = class_file->methods[m];
 		create_method_entity(method, type);
 	}
-//	for (size_t i = 0; i < (size_t) class_file->n_interfaces; ++i) {
-//		ir_type *iface = get_classref_type(class_file->interfaces[i]);
-//		add_class_supertype(type, iface);
-//	}
+	for (size_t i = 0; i < (size_t) class_file->n_interfaces; ++i) {
+		ir_type *iface = get_classref_type(class_file->interfaces[i]);
+		add_class_supertype(type, iface);
+	}
 
 	assert(class_file == cls);
 	class_file = old_class_file;
