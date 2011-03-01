@@ -24,10 +24,7 @@
 							<tool id="cdt.managedbuild.tool.gnu.archiver.base.1502423316" name="GCC Archiver" superClass="cdt.managedbuild.tool.gnu.archiver.base"/>
 							<tool id="cdt.managedbuild.tool.gnu.cpp.compiler.base.1932943131" name="GCC C++ Compiler" superClass="cdt.managedbuild.tool.gnu.cpp.compiler.base"/>
 							<tool id="cdt.managedbuild.tool.gnu.c.compiler.base.571383351" name="GCC C Compiler" superClass="cdt.managedbuild.tool.gnu.c.compiler.base">
-								<option id="gnu.c.compiler.option.include.paths.443082577" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;${env_var:FIRM_HOME}/libfirm/include&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${env_var:LIBOO_HOME}/include&quot;"/>
-								</option>
+								<option id="gnu.c.compiler.option.include.paths.443082577" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" valueType="includePath"/>
 								<inputType id="cdt.managedbuild.tool.gnu.c.compiler.input.1966684774" superClass="cdt.managedbuild.tool.gnu.c.compiler.input"/>
 							</tool>
 							<tool id="cdt.managedbuild.tool.gnu.c.linker.base.711515033" name="GCC C Linker" superClass="cdt.managedbuild.tool.gnu.c.linker.base">

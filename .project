@@ -3,6 +3,8 @@
 	<name>bytecode2firm</name>
 	<comment></comment>
 	<projects>
+		<project>libfirm</project>
+		<project>liboo</project>
 	</projects>
 	<buildSpec>
 		<buildCommand>
