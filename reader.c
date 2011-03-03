@@ -1003,16 +1003,15 @@ static void construct_dup2_x2(void)
 	assert ((sp+2) == stack_pointer);
 }
 
-static void construct_xcmp(ir_mode *mode, int pn_Cmp_1, int pn_Cmp_2)
+static void construct_xcmp(ir_mode *mode, ir_relation rel_1, ir_relation rel_2)
 {
 	ir_node *val2 = symbolic_pop(mode);
 	ir_node *val1 = symbolic_pop(mode);
 
-	ir_node *cmp     = new_Cmp(val1, val2);
-	ir_node *proj_lt = new_Proj(cmp, mode_b, pn_Cmp_1);
-	ir_node *proj_gt = new_Proj(cmp, mode_b, pn_Cmp_2);
-	ir_node *conv_lt = new_Conv(proj_lt, mode_int);
-	ir_node *conv_gt = new_Conv(proj_gt, mode_int);
+	ir_node *cmp_lt  = new_Cmp(val1, val2, rel_1);
+	ir_node *cmp_gt  = new_Cmp(val1, val2, rel_2);
+	ir_node *conv_lt = new_Conv(cmp_lt, mode_int);
+	ir_node *conv_gt = new_Conv(cmp_gt, mode_int);
 	ir_node *res     = new_Sub(conv_gt, conv_lt, mode_int);
 
 	symbolic_push(res);
@@ -1775,11 +1774,11 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_I2C:   construct_conv(mode_int, mode_char);          continue;
 		case OPC_I2S:   construct_conv(mode_int, mode_short);         continue;
 
-		case OPC_LCMP:  construct_xcmp(mode_long, pn_Cmp_Lt, pn_Cmp_Gt);   continue;
-		case OPC_FCMPL: construct_xcmp(mode_float, pn_Cmp_Ul, pn_Cmp_Gt);  continue;
-		case OPC_FCMPG: construct_xcmp(mode_float, pn_Cmp_Lt, pn_Cmp_Ug);  continue;
-		case OPC_DCMPL: construct_xcmp(mode_double, pn_Cmp_Ul, pn_Cmp_Gt); continue;
-		case OPC_DCMPG: construct_xcmp(mode_double, pn_Cmp_Lt, pn_Cmp_Ug); continue;
+		case OPC_LCMP:  construct_xcmp(mode_long,   ir_relation_less,           ir_relation_greater);           continue;
+		case OPC_FCMPL: construct_xcmp(mode_float,  ir_relation_unordered_less, ir_relation_greater);           continue;
+		case OPC_FCMPG: construct_xcmp(mode_float,  ir_relation_less,           ir_relation_unordered_greater); continue;
+		case OPC_DCMPL: construct_xcmp(mode_double, ir_relation_unordered_less, ir_relation_greater);           continue;
+		case OPC_DCMPG: construct_xcmp(mode_double, ir_relation_less,           ir_relation_unordered_greater); continue;
 
 		case OPC_IINC: {
 			uint8_t  index = code->code[i++];
@@ -1855,27 +1854,27 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				val2 = symbolic_pop(mode_int);
 			}
 			ir_node *val1 = symbolic_pop(mode_int);
-			ir_node *cmp  = new_Cmp(val1, val2);
 
-			long pnc;
+
+			ir_relation rel;
 			switch(opcode) {
 			case OPC_IFEQ:
-			case OPC_ICMPEQ: pnc = pn_Cmp_Eq; break;
+			case OPC_ICMPEQ: rel = ir_relation_equal; break;
 			case OPC_IFNE:
-			case OPC_ICMPNE: pnc = pn_Cmp_Lg; break;
+			case OPC_ICMPNE: rel = ir_relation_less_greater; break;
 			case OPC_IFLT:
-			case OPC_ICMPLT: pnc = pn_Cmp_Lt; break;
+			case OPC_ICMPLT: rel = ir_relation_less; break;
 			case OPC_IFLE:
-			case OPC_ICMPLE: pnc = pn_Cmp_Le; break;
+			case OPC_ICMPLE: rel = ir_relation_less_equal; break;
 			case OPC_IFGT:
-			case OPC_ICMPGT: pnc = pn_Cmp_Gt; break;
+			case OPC_ICMPGT: rel = ir_relation_greater; break;
 			case OPC_IFGE:
-			case OPC_ICMPGE: pnc = pn_Cmp_Ge; break;
+			case OPC_ICMPGE: rel = ir_relation_greater_equal; break;
 			default: abort();
 			}
 
-			ir_node *proj = new_Proj(cmp, mode_b, pnc);
-			construct_cond(index, i, proj);
+			ir_node *cmp  = new_Cmp(val1, val2, rel);
+			construct_cond(index, i, cmp);
 			continue;
 		}
 
@@ -1893,19 +1892,18 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			} else {
 				val2 = symbolic_pop(mode_reference);
 			}
-			ir_node *cmp  = new_Cmp(val1, val2);
 
-			long pnc;
+			ir_relation rel;
 			switch(opcode) {
 			case OPC_ACMPEQ:
-			case OPC_IFNULL:    pnc = pn_Cmp_Eq; break;
+			case OPC_IFNULL:    rel = ir_relation_equal; break;
 			case OPC_ACMPNE:
-			case OPC_IFNONNULL: pnc = pn_Cmp_Lg; break;
+			case OPC_IFNONNULL: rel = ir_relation_less_greater; break;
 			default: abort();
 			}
 
-			ir_node *proj = new_Proj(cmp, mode_b, pnc);
-			construct_cond(index, i, proj);
+			ir_node *cmp  = new_Cmp(val1, val2, rel);
+			construct_cond(index, i, cmp);
 			continue;
 		}
 
