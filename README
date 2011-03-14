@@ -14,11 +14,11 @@ Setup
 Running
 --------
 
-$ ./reader -cp <class path> <Main class name>
+$ ./bytecode2firm -cp <class path> <Main class name>
 
 for example,
 
-$ ./reader -cp $HOME/Src/bytecode2firm-testsuite InvokeX
+$ ./bytecode2firm -cp $HOME/Src/bytecode2firm-testsuite InvokeX
 
 The resulting linked executable needs liboo_rt.so. It is compiled to look in the current directory.
 
