@@ -247,17 +247,14 @@ void gcji_class_init(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem
 	init_sym.entity_p = gcj_init_entity;
 	ir_node *init_callee = new_r_SymConst(irg, mode_reference, init_sym, symconst_addr_ent);
 
-	ir_entity *class_dollar_field = gcji_get_class_dollar_field(type);
-	assert (class_dollar_field);
+	ir_node *cur_mem        = *mem;
+	ir_node *jclass         = gcji_get_runtime_classinfo(type, irg, block, &cur_mem);
+	ir_node *init_args[1]   = { jclass };
+	ir_type *init_call_type = get_entity_type(gcj_init_entity);
+	ir_node *init_call      = new_r_Call(block, *mem, init_callee, 1, init_args, init_call_type);
+	         cur_mem        = new_r_Proj(init_call, mode_M, pn_Call_M);
 
-	symconst_symbol class_dollar_sym;
-	class_dollar_sym.entity_p   = class_dollar_field;
-	ir_node *class_dollar_symc = new_r_SymConst(irg, mode_reference, class_dollar_sym, symconst_addr_ent);
-
-	ir_node *init_args[1]     = { class_dollar_symc };
-	ir_type *init_call_type   = get_entity_type(gcj_init_entity);
-	ir_node *init_call        = new_r_Call(block, *mem, init_callee, 1, init_args, init_call_type);
-	        *mem              = new_r_Proj(init_call, mode_M, pn_Call_M);
+	*mem = cur_mem;
 }
 
 ir_node *gcji_allocate_object(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem)
@@ -271,14 +268,8 @@ ir_node *gcji_allocate_object(ir_type *type, ir_graph *irg, ir_node *block, ir_n
 	alloc_sym.entity_p = gcj_alloc_entity;
 	ir_node *alloc_callee = new_r_SymConst(irg, mode_reference, alloc_sym, symconst_addr_ent);
 
-	ir_entity *class_dollar_field = gcji_get_class_dollar_field(type);
-	assert (class_dollar_field);
-
-	symconst_symbol class_dollar_sym;
-	class_dollar_sym.entity_p   = class_dollar_field;
-	ir_node *class_dollar_symc = new_r_SymConst(irg, mode_reference, class_dollar_sym, symconst_addr_ent);
-
-	ir_node *alloc_args[1]   = { class_dollar_symc };
+	ir_node *jclass          = gcji_get_runtime_classinfo(type, irg, block, &cur_mem);
+	ir_node *alloc_args[1]   = { jclass };
 	ir_type *alloc_call_type = get_entity_type(gcj_alloc_entity);
 	ir_node *alloc_call      = new_r_Call(block, cur_mem, alloc_callee, 1, alloc_args, alloc_call_type);
              cur_mem         = new_r_Proj(alloc_call, mode_M, pn_Call_M);
@@ -295,44 +286,25 @@ ir_node *gcji_allocate_array(ir_type *eltype, ir_node *count, ir_graph *irg, ir_
 	ir_node   *cur_mem    = *mem;
 
 	if (is_Primitive_type(eltype)) {
-		ir_entity *jclass_ref = gcji_get_class_dollar_field(eltype);
-		assert (jclass_ref);
-
 		symconst_symbol callee_sym;
 		callee_sym.entity_p = gcj_new_prim_array_entity;
 		ir_node *callee = new_r_SymConst(irg, mode_reference, callee_sym, symconst_addr_ent);
 
-		symconst_symbol jclass_sym;
-		jclass_sym.entity_p = jclass_ref;
-		ir_node *jclass = new_r_SymConst(irg, mode_reference, jclass_sym, symconst_addr_ent);
-
-		ir_node *args[2] = { jclass, count };
-
-
+		ir_node *jclass      = gcji_get_runtime_classinfo(eltype, irg, block, &cur_mem);
+		ir_node *args[2]     = { jclass, count };
 		ir_type *callee_type = get_entity_type(gcj_new_prim_array_entity);
 		ir_node *call        = new_r_Call(block, cur_mem, callee, 2, args, callee_type);
 		         cur_mem     = new_r_Proj(call, mode_M, pn_Call_M);
 		ir_node *ress        = new_r_Proj(call, mode_T, pn_Call_T_result);
 		         res         = new_r_Proj(ress, mode_reference, 0);
 	} else {
-		assert (is_Class_type(eltype));
-
-		ir_entity *class_dollar_field = gcji_get_class_dollar_field(eltype);
-		assert (class_dollar_field);
-
 		symconst_symbol callee_sym;
 		callee_sym.entity_p = gcj_new_object_array_entity;
 		ir_node *callee = new_r_SymConst(irg, mode_reference, callee_sym, symconst_addr_ent);
 
-		symconst_symbol jclass_sym;
-		jclass_sym.entity_p = class_dollar_field;
-		ir_node *jclass = new_r_SymConst(irg, mode_reference, jclass_sym, symconst_addr_ent);
-
-		ir_node *nullptr = new_r_Const_long(irg, mode_reference, 0);
-
-		ir_node *args[3] = { count, jclass, nullptr };
-
-
+		ir_node *jclass      = gcji_get_runtime_classinfo(eltype, irg, block, &cur_mem);
+		ir_node *nullptr     = new_r_Const_long(irg, mode_reference, 0);
+		ir_node *args[3]     = { count, jclass, nullptr };
 		ir_type *callee_type = get_entity_type(gcj_new_object_array_entity);
 		ir_node *call        = new_r_Call(block, cur_mem, callee, 3, args, callee_type);
 		         cur_mem     = new_r_Proj(call, mode_M, pn_Call_M);
@@ -942,6 +914,47 @@ ir_entity *gcji_get_class_dollar_field(ir_type *type)
 	return cdf;
 }
 
+ir_node *gcji_get_runtime_classinfo(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem)
+{
+	ir_entity *cdf = gcji_get_class_dollar_field(type);
+	if (cdf) {
+		return create_symconst(irg, cdf);
+	}
+
+	/* Arrays are represented as pointer types. We extract the base type,
+	 * get its classinfo and let gcj give the array type for that.
+	 *
+	 * gcj emits the type signature to the class' constant pool. During
+	 * class linking, the reference to the utf8const is replaced by the
+	 * reference to the appropriate class object.
+	 */
+
+	assert (is_Pointer_type(type));
+
+	unsigned n_pointer_levels = 0;
+	ir_type *eltype = type;
+	while (is_Pointer_type(eltype)) {
+		n_pointer_levels++;
+		eltype = get_pointer_points_to_type(eltype);
+	}
+
+	if (! is_Primitive_type(eltype)) n_pointer_levels--;
+
+	ir_entity *elem_cdf = gcji_get_class_dollar_field(eltype);
+	assert (elem_cdf);
+	ir_node *array_class_ref = create_symconst(irg, elem_cdf);
+
+	ir_node *cur_mem = *mem;
+
+	for (unsigned d = 0; d < n_pointer_levels; d++) {
+		array_class_ref = gcji_get_arrayclass(array_class_ref, irg, block, &cur_mem);
+	}
+
+	*mem = cur_mem;
+
+	return array_class_ref;
+}
+
 ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface, ir_entity *method, ir_graph *irg, ir_node *block, ir_node **mem)
 {
 	ir_node   *cur_mem       = *mem;
@@ -988,15 +1001,13 @@ ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface, ir_entity *metho
 
 ir_node *gcji_instanceof(ir_node *objptr, ir_type *classtype, ir_graph *irg, ir_node *block, ir_node **mem)
 {
-	ir_entity *cdf = gcji_get_class_dollar_field(classtype);
-	assert (cdf);
-	ir_node   *cdf_symc = create_symconst(irg, cdf);
+	ir_node   *cur_mem = *mem;
+	ir_node   *jclass = gcji_get_runtime_classinfo(classtype, irg, block, &cur_mem);
 
 	ir_type   *instanceof_type = get_entity_type(gcj_instanceof_entity);
 	ir_node   *callee = create_symconst(irg, gcj_instanceof_entity);
-	ir_node   *args[] = { objptr, cdf_symc };
+	ir_node   *args[] = { objptr, jclass };
 
-	ir_node   *cur_mem = *mem;
 	ir_node   *call = new_r_Call(block, cur_mem, callee, 2, args, instanceof_type);
 	           cur_mem = new_r_Proj(call, mode_M, pn_Call_M);
 	ir_node   *ress = new_r_Proj(call, mode_T, pn_Call_T_result);
@@ -1008,15 +1019,13 @@ ir_node *gcji_instanceof(ir_node *objptr, ir_type *classtype, ir_graph *irg, ir_
 
 void gcji_checkcast(ir_type *classtype, ir_node *objptr, ir_graph *irg, ir_node *block, ir_node **mem)
 {
-	ir_entity *cdf = gcji_get_class_dollar_field(classtype);
-	assert (cdf);
-	ir_node   *cdf_symc = create_symconst(irg, cdf);
+	ir_node   *cur_mem = *mem;
+	ir_node   *jclass = gcji_get_runtime_classinfo(classtype, irg, block, &cur_mem);
 
 	ir_type   *instanceof_type = get_entity_type(gcj_checkcast_entity);
 	ir_node   *callee = create_symconst(irg, gcj_checkcast_entity);
-	ir_node   *args[] = { cdf_symc, objptr };
+	ir_node   *args[] = { jclass, objptr };
 
-	ir_node   *cur_mem = *mem;
 	ir_node   *call = new_r_Call(block, cur_mem, callee, 2, args, instanceof_type);
 	cur_mem = new_r_Proj(call, mode_M, pn_Call_M);
 
