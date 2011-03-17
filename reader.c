@@ -2259,14 +2259,45 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			// FIXME: need real implementation.
 			uint16_t index        = get_16bit_arg(&i);
 			uint8_t  dims         = code->code[i++];
-			(void) index;
 
-			for (int ci = 0; ci < dims; ci++) {
-				ir_node *unused = symbolic_pop(mode_int);
-				(void) unused;
+
+			/* Arrays are represented as pointer types. We extract the base type,
+			 * get its classinfo and let gcj give the array type for that.
+			 *
+			 * gcj emits the type signature to the class' constant pool. During
+			 * class linking, the reference to the utf8const is replaced by the
+			 * reference to the appropriate class object.
+			 */
+			ir_type *array_type   = get_classref_type(index);
+			ir_type *eltype       = array_type;
+			assert (is_Pointer_type(array_type));
+			while (is_Pointer_type(eltype)) {
+				eltype = get_pointer_points_to_type(eltype);
 			}
 
-			symbolic_push(new_Const_long(mode_reference, 0));
+			ir_entity *cdf = gcji_get_class_dollar_field(eltype);
+			assert (cdf);
+			ir_node *array_class_ref = create_symconst(cdf);
+
+			ir_node *block = get_cur_block();
+			ir_node *cur_mem = get_store();
+
+			for (int d = 0; d < dims; d++) {
+				array_class_ref = gcji_get_arrayclass(array_class_ref, irg, block, &cur_mem);
+			}
+
+			ir_node **sizes = XMALLOCN(ir_node *, dims);
+
+			for (int ci = dims-1; ci >= 0; ci--) {
+				sizes[ci] = symbolic_pop(mode_int);
+			}
+
+			ir_node *marray = gcji_new_multiarray(array_class_ref, dims, sizes, irg, block, &cur_mem);
+			set_store(cur_mem);
+
+			xfree(sizes);
+
+			symbolic_push(marray);
 			continue;
 		}
 

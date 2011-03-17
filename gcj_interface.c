@@ -24,6 +24,8 @@ static ir_entity *gcj_abstract_method_entity;
 static ir_entity *gcj_lookup_interface_entity;
 static ir_entity *gcj_instanceof_entity;
 static ir_entity *gcj_checkcast_entity;
+static ir_entity *gcj_get_array_class_entity;
+static ir_entity *gcj_new_multiarray_entity;
 
 static ir_entity *gcj_booleanClass_entity;
 static ir_entity *gcj_byteClass_entity;
@@ -178,6 +180,23 @@ void gcji_init()
 	set_method_param_type(gcj_checkcast_type, 1, type_reference);
 	gcj_checkcast_entity = new_entity(glob, new_id_from_str("_Jv_CheckCast"), gcj_checkcast_type);
 	set_entity_visibility(gcj_checkcast_entity, ir_visibility_external);
+
+	// gcji_get_array_class
+	ir_type *gcj_get_array_class_type = new_type_method(2,1);
+	set_method_param_type(gcj_get_array_class_type, 0, type_reference);
+	set_method_param_type(gcj_get_array_class_type, 1, type_reference);
+	set_method_res_type(gcj_get_array_class_type, 0, type_reference);
+	gcj_get_array_class_entity = new_entity(glob, new_id_from_str("_Z17_Jv_GetArrayClassPN4java4lang5ClassEPNS0_11ClassLoaderE"), gcj_get_array_class_type);
+	set_entity_visibility(gcj_get_array_class_entity, ir_visibility_external);
+
+	// gcji_new_multi_array
+	ir_type *gcj_new_multiarray_type = new_type_method(3,1);
+	set_method_param_type(gcj_new_multiarray_type, 0, type_reference);
+	set_method_param_type(gcj_new_multiarray_type, 1, type_int);
+	set_method_param_type(gcj_new_multiarray_type, 2, type_reference); // XXX: actually int[]
+	set_method_res_type(gcj_new_multiarray_type, 0, type_reference);
+	gcj_new_multiarray_entity = new_entity(glob, new_id_from_str("_Z17_Jv_NewMultiArrayPN4java4lang5ClassEiPi"), gcj_new_multiarray_type);
+	set_entity_visibility(gcj_new_multiarray_entity, ir_visibility_external);
 
 	// primitive classes
 	gcj_booleanClass_entity= new_entity(glob, new_id_from_str("_Jv_booleanClass"), type_reference);
@@ -358,6 +377,26 @@ ir_node *gcji_get_arraylength(ir_node *arrayref, ir_graph *irg, ir_node *block, 
 	ir_node *length_load   = new_r_Load(block, cur_mem, length_addr, mode_int, cons_none);
 	         cur_mem       = new_r_Proj(length_load, mode_M, pn_Load_M);
 	ir_node *res           = new_r_Proj(length_load, mode_int, pn_Load_res);
+
+	*mem = cur_mem;
+	return res;
+}
+
+ir_node *gcji_get_arrayclass(ir_node *array_class_ref, ir_graph *irg, ir_node *block, ir_node **mem)
+{
+	ir_node *cur_mem = *mem;
+
+	symconst_symbol callee_sym;
+	callee_sym.entity_p = gcj_get_array_class_entity;
+
+	ir_node *callee      = new_r_SymConst(irg, mode_reference, callee_sym, symconst_addr_ent);
+
+	ir_node *args[]      = { array_class_ref, new_r_Const_long(irg, mode_reference, 0) };
+	ir_type *callee_type = get_entity_type(gcj_get_array_class_entity);
+	ir_node *call        = new_r_Call(block, cur_mem, callee, 2, args, callee_type);
+	         cur_mem     = new_r_Proj(call, mode_M, pn_Call_M);
+	ir_node *ress        = new_r_Proj(call, mode_T, pn_Call_T_result);
+	ir_node *res         = new_r_Proj(ress, mode_reference, 0);
 
 	*mem = cur_mem;
 	return res;
@@ -982,4 +1021,48 @@ void gcji_checkcast(ir_type *classtype, ir_node *objptr, ir_graph *irg, ir_node 
 	cur_mem = new_r_Proj(call, mode_M, pn_Call_M);
 
 	*mem = cur_mem;
+}
+
+static ir_node *alloc_dims_array(unsigned dims, ir_node **sizes, ir_graph *irg, ir_node *block, ir_node **mem)
+{
+	ir_node *cur_mem = *mem;
+
+	ir_node *dims_const = new_r_Const_long(irg, mode_ushort, dims);
+	ir_node *alloc = new_r_Alloc(block, cur_mem, dims_const, type_int, stack_alloc);
+	ir_node *arr   = new_r_Proj(alloc, mode_reference, pn_Alloc_res);
+	cur_mem = new_r_Proj(alloc, mode_M, pn_Alloc_M);
+
+	ir_entity *elem_ent = get_array_element_entity(type_array_int);
+
+	for (unsigned d = 0; d < dims; d++) {
+		ir_node *index_const = new_r_Const_long(irg, mode_int, d);
+		ir_node *in[] = { index_const };
+		ir_node *sel = new_r_Sel(block, new_r_NoMem(irg), arr, 1, in, elem_ent);
+		ir_node *store = new_r_Store(block, cur_mem, sel, sizes[d], cons_none);
+		cur_mem = new_r_Proj(store, mode_M, pn_Store_M);
+	}
+
+	*mem = cur_mem;
+
+	return arr;
+}
+
+ir_node *gcji_new_multiarray(ir_node *array_class_ref, unsigned dims, ir_node **sizes, ir_graph *irg, ir_node *block, ir_node **mem)
+{
+	ir_node *cur_mem = *mem;
+
+	symconst_symbol callee_sym;
+	callee_sym.entity_p = gcj_new_multiarray_entity;
+
+	ir_node *callee      = new_r_SymConst(irg, mode_reference, callee_sym, symconst_addr_ent);
+	ir_node *dims_arr    = alloc_dims_array(dims, sizes, irg, block, &cur_mem);
+	ir_node *args[]      = { array_class_ref, new_r_Const_long(irg, mode_int, dims), dims_arr };
+	ir_type *callee_type = get_entity_type(gcj_new_multiarray_entity);
+	ir_node *call        = new_r_Call(block, cur_mem, callee, 3, args, callee_type);
+	         cur_mem     = new_r_Proj(call, mode_M, pn_Call_M);
+	ir_node *ress        = new_r_Proj(call, mode_T, pn_Call_T_result);
+	ir_node *res         = new_r_Proj(ress, mode_reference, 0);
+
+	*mem = cur_mem;
+	return res;
 }
