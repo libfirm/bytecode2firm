@@ -1,7 +1,7 @@
 -include config.mak
 
 BUILDDIR=build
-GOAL = $(BUILDDIR)/reader
+GOAL = $(BUILDDIR)/bytecode2firm
 CPPFLAGS = -I. $(FIRM_CFLAGS) $(LIBOO_CFLAGS)
 CFLAGS = -Wall -W -Wstrict-prototypes -Wmissing-prototypes -Wunreachable-code -Wlogical-op -Werror -O0 -g3 -std=c99 -pedantic
 LFLAGS = $(FIRM_LIBS) $(LIBOO_LIBS)

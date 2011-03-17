@@ -1,3 +1,6 @@
+#define _XOPEN_SOURCE
+#define _XOPEN_SOURCE_EXTENDED
+
 #include "class_file.h"
 #include "opcodes.h"
 #include "types.h"
@@ -7,6 +10,8 @@
 #include <string.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <unistd.h>
+#include <libgen.h>
 
 #include "adt/error.h"
 #include "adt/obst.h"
@@ -2573,6 +2578,34 @@ static void link_methods(ir_type *klass, void *env)
 	}
 }
 
+/**
+ * Return the path to ourself (if possible)
+ */
+static char *get_exe_path(void)
+{
+	/* in linux /proc/self/exe should be a symlink to us
+	 * TODO: write windows/mac/whatever specific code
+	 */
+	char *buf = malloc(4096);
+	ssize_t s = readlink("/proc/self/exe", buf, 2048);
+	if (s < 0 || s == 2048)
+		return NULL;
+	return buf;
+}
+
+/**
+ * assume the "rt" directory is in `readlink /proc/self/exe`/../rt
+ */
+static char *guess_rt_path(void)
+{
+	char *my_place = get_exe_path();
+	char *my_dir   = dirname(my_place);
+	char *buf      = malloc(4096);
+	snprintf(buf, 4096, "%s/../rt", my_dir);
+	free(my_place);
+	return buf;
+}
+
 int main(int argc, char **argv)
 {
 	be_opt_register();
@@ -2611,9 +2644,13 @@ int main(int argc, char **argv)
 	main_class_name_short = main_class_name + arg_len - 1;
 	while (main_class_name_short > main_class_name && *(main_class_name_short-1) != '/') main_class_name_short--;
 
-	if (! bootclasspath)
-		bootclasspath = classpath;
-	class_file_init(classpath, bootclasspath);
+	if (bootclasspath != NULL) {
+		class_file_init(classpath, bootclasspath);
+	} else {
+		char *guess = guess_rt_path();
+		class_file_init(classpath, guess);
+		free(guess);
+	}
 
 	if (! output_name)
 		output_name = main_class_name_short;
