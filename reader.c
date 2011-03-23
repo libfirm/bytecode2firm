@@ -2551,7 +2551,8 @@ static void link_method_recursive(ir_type *klass, ir_entity *superclass_method)
 	ident *method_id = get_entity_ident(superclass_method);
 	ir_entity *m = get_class_member_by_name(klass, method_id);
 	if (m) {
-		add_entity_overwrites(m, superclass_method);
+		if (get_entity_overwrites_index(m, superclass_method) != INVALID_MEMBER_INDEX)
+			add_entity_overwrites(m, superclass_method);
 		return;
 	}
 
