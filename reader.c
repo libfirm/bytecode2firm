@@ -32,8 +32,7 @@
 #include <liboo/dmemory.h>
 #include <liboo/rtti.h>
 #include <liboo/oo_nodes.h>
-
-#include <libfirm/rta.h>
+#include <liboo/ooopt.h>
 
 #define VERBOSE
 
@@ -2543,33 +2542,75 @@ static ir_type *construct_class_methods(ir_type *type)
 	return type;
 }
 
-static void link_method_recursive(ir_type *klass, ir_entity *superclass_method)
+
+static void link_interface_method_recursive(ir_type *klass, ir_entity *interface_method)
 {
 	assert (is_Class_type(klass));
-	assert (is_method_entity(superclass_method));
+	assert (is_method_entity(interface_method));
+	assert (oo_get_class_is_interface(get_entity_owner(interface_method)));
 
-	ident *method_id = get_entity_ident(superclass_method);
+	ident *method_id = get_entity_ident(interface_method);
 	ir_entity *m = get_class_member_by_name(klass, method_id);
 	if (m) {
-		if (get_entity_overwrites_index(m, superclass_method) != INVALID_MEMBER_INDEX)
-			add_entity_overwrites(m, superclass_method);
+		if (get_entity_overwrites_index(m, interface_method) == INVALID_MEMBER_INDEX)
+			add_entity_overwrites(m, interface_method);
+		return;
+	}
+
+	if (! (oo_get_class_is_abstract(klass) || oo_get_class_is_interface(klass))) {
+		/*
+		 * this means there must be an implementation in a superclass
+		 *
+		 * Class C [foo()]      Interface I [foo()]
+		 *     \                      /
+		 *      \_________  ........./
+		 *                \/
+		 *            Class Sub []
+		 *
+		 */
+
+		ir_entity *impl = NULL;
+		ir_type   *cur_class = klass;
+
+		// find the implementation
+		while (! impl) {
+			cur_class = oo_get_class_superclass(cur_class);
+			assert (cur_class); // we assert that there will be superclasses as long as we haven't found an impl.
+			impl = get_class_member_by_name(cur_class, method_id);
+		}
+
+		// copy the method into the interface's implementor
+		ir_type   *impl_type = get_entity_type(impl);
+		ir_entity *impl_copy = new_entity(klass, method_id, impl_type);
+		set_entity_ld_ident(impl_copy, id_mangle3("inh__", get_entity_ld_ident(impl), ""));
+		set_entity_visibility(impl_copy, ir_visibility_private);
+		oo_copy_entity_info(impl, impl_copy);
+		oo_set_method_is_inherited(impl_copy, true);
+
+		ir_initializer_t *init = get_entity_initializer(impl); // XXX: required?
+		set_entity_initializer(impl_copy, init);
+
+		add_entity_overwrites(impl_copy, impl);
+		add_entity_overwrites(impl_copy, interface_method);
+
 		return;
 	}
 
 	size_t n_subclasses = get_class_n_subtypes(klass);
-	if (n_subclasses == 0)
-		return;
-
-
 	for (size_t i = 0; i < n_subclasses; i++) {
 		ir_type *subclass = get_class_subtype(klass, i);
-		link_method_recursive(subclass, superclass_method);
+		link_interface_method_recursive(subclass, interface_method);
 	}
 }
 
-static void link_methods(ir_type *klass, void *env)
+static void link_interface_methods(ir_type *klass, void *env)
 {
 	(void) env;
+
+	assert (is_Class_type(klass));
+	if (! oo_get_class_is_interface(klass))
+		return;
+
 
 	// don't need to iterate the class_t structure, as we are only interested in non-static methods
 	size_t n_subclasses = get_class_n_subtypes(klass);
@@ -2579,14 +2620,71 @@ static void link_methods(ir_type *klass, void *env)
 	size_t n_member = get_class_n_members(klass);
 	for (size_t m = 0; m < n_member; m++) {
 		ir_entity *member = get_class_member(klass, m);
-		if (! is_method_entity(member) || oo_get_method_exclude_from_vtable(member)	)
+		if (! is_method_entity(member) || oo_get_method_exclude_from_vtable(member))
 			continue;
 
 		for (size_t sc = 0; sc < n_subclasses; sc++) {
 			ir_type *subclass = get_class_subtype(klass, sc);
-			link_method_recursive(subclass, member);
+			link_interface_method_recursive(subclass, member);
 		}
 	}
+}
+
+static void link_normal_method_recursive(ir_type *klass, ir_entity *superclass_method)
+{
+	assert (is_Class_type(klass));
+	assert (is_method_entity(superclass_method));
+
+	ident *method_id = get_entity_ident(superclass_method);
+	ir_entity *m = get_class_member_by_name(klass, method_id);
+	if (m) {
+		if (get_entity_overwrites_index(m, superclass_method) == INVALID_MEMBER_INDEX)
+			add_entity_overwrites(m, superclass_method);
+		return;
+	}
+
+	size_t n_subclasses = get_class_n_subtypes(klass);
+	for (size_t i = 0; i < n_subclasses; i++) {
+		ir_type *subclass = get_class_subtype(klass, i);
+		link_normal_method_recursive(subclass, superclass_method);
+	}
+}
+
+static void link_normal_methods(ir_type *klass, void *env)
+{
+	(void) env;
+	assert (is_Class_type(klass));
+
+	if (oo_get_class_is_interface(klass))
+		return;
+
+	// don't need to iterate the class_t structure, as we are only interested in non-static methods
+	size_t n_subclasses = get_class_n_subtypes(klass);
+	if (n_subclasses == 0)
+		return;
+
+	size_t n_member = get_class_n_members(klass);
+	for (size_t m = 0; m < n_member; m++) {
+		ir_entity *member = get_class_member(klass, m);
+		if (! is_method_entity(member) || oo_get_method_exclude_from_vtable(member))
+			continue;
+
+		for (size_t sc = 0; sc < n_subclasses; sc++) {
+			ir_type *subclass = get_class_subtype(klass, sc);
+			if (oo_get_class_is_interface(subclass))
+				continue;
+
+			link_normal_method_recursive(subclass, member);
+		}
+	}
+}
+
+static void link_methods(void)
+{
+	 // handle the interfaces first, because it might be required to copy method entities to implementing classes.
+	 // (see example in link_interface_method_recursive)
+	class_walk_super2sub(link_interface_methods, NULL, NULL);
+	class_walk_super2sub(link_normal_methods, NULL, NULL);
 }
 
 /**
@@ -2685,22 +2783,13 @@ int main(int argc, char **argv)
 	irp_finalize_cons();
 	dump_all_ir_graphs("");
 
-	class_walk_super2sub(link_methods, NULL, NULL);
-
-	// opt_polymorphy
-	set_opt_dyn_meth_dispatch(1);
-	compute_inh_transitive_closure(); // will need is_Subclass_of(..) during opt, so precompute this info now.
+	link_methods();
 
 	int n_irgs = get_irp_n_irgs();
 	for (int p = 0; p < n_irgs; ++p) {
 		ir_graph *irg = get_irp_irg(p);
-		local_optimize_graph(irg); // Hint: opt_polymorphy is implemented as an local opt.
+		oo_devirtualize_local(irg);
 	}
-
-	//dump_ir_prog_ext(dump_typegraph, "types.vcg");
-
-	rta_init();
-	rta_report();
 
 	oo_lower();
 	lower_highlevel(0);
@@ -2727,8 +2816,6 @@ int main(int argc, char **argv)
 		optimize_graph_df(irg);
 		optimize_cf(irg);
 	}
-
-	dump_all_ir_graphs("--opt");
 
 	fprintf(stderr, "\n");
 

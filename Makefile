@@ -4,7 +4,7 @@ BUILDDIR=build
 GOAL = $(BUILDDIR)/bytecode2firm
 CPPFLAGS = -I. $(FIRM_CFLAGS) $(LIBOO_CFLAGS)
 CFLAGS = -Wall -W -Wstrict-prototypes -Wmissing-prototypes -Wunreachable-code -Wlogical-op -Werror -O0 -g3 -std=c99 -pedantic
-LFLAGS = $(FIRM_LIBS) $(LIBOO_LIBS)
+LFLAGS = $(LIBOO_LIBS) $(FIRM_LIBS)
 SOURCES = $(wildcard *.c) $(wildcard adt/*.c)
 DEPS = $(addprefix $(BUILDDIR)/, $(addsuffix .d, $(basename $(SOURCES))))
 OBJECTS = $(addprefix $(BUILDDIR)/, $(addsuffix .o, $(basename $(SOURCES))))

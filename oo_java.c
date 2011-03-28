@@ -92,7 +92,11 @@ void oo_java_deinit(void)
 
 void oo_java_setup_type_info(ir_type *classtype, class_t* javaclass)
 {
-	if (((javaclass->access_flags & ACCESS_FLAG_INTERFACE) == 0)) {
+	oo_set_class_is_final(classtype,     javaclass->access_flags & ACCESS_FLAG_FINAL);
+	oo_set_class_is_abstract(classtype,  javaclass->access_flags & ACCESS_FLAG_ABSTRACT);
+	oo_set_class_is_interface(classtype, javaclass->access_flags & ACCESS_FLAG_INTERFACE);
+
+	if (! oo_get_class_is_interface(classtype)) {
 		const char *classname  = get_class_name(classtype);
 		ident *vtable_ident    = id_mangle_dot(get_class_ident(classtype), new_id_from_str("vtable"));
 		ident *vtable_ld_ident = mangle_vtable_name(classname);
@@ -100,8 +104,6 @@ void oo_java_setup_type_info(ir_type *classtype, class_t* javaclass)
 		ir_entity *vtable = new_entity(get_glob_type(), vtable_ident, type_reference);
 		set_entity_ld_ident(vtable, vtable_ld_ident);
 		oo_set_class_vtable_entity(classtype, vtable);
-	} else {
-		oo_set_class_is_interface(classtype, true);
 	}
 
 	oo_set_class_vptr_entity(classtype, vptr_entity);
@@ -120,14 +122,17 @@ void oo_java_setup_method_info(ir_entity* method, method_t* javamethod, class_t 
 	uint16_t    accs               = javamethod->access_flags;
 	uint16_t    owner_access_flags = defining_javaclass->access_flags;
 
+	oo_set_method_is_abstract(method, accs & ACCESS_FLAG_ABSTRACT);
+	oo_set_method_is_final(method,    (accs | owner_access_flags) & ACCESS_FLAG_FINAL);
+
 	int is_constructor = strncmp(name, "<init>", 6) == 0;
 	int exclude_from_vtable =
 	   ((accs & ACCESS_FLAG_STATIC)
 	 || (accs & ACCESS_FLAG_PRIVATE)
 	 || (accs & ACCESS_FLAG_FINAL) // calls to final methods are "devirtualized" when lowering the call.
 	 || (is_constructor));
+
 	oo_set_method_exclude_from_vtable(method, exclude_from_vtable);
-	oo_set_method_is_abstract(method, accs & ACCESS_FLAG_ABSTRACT);
 
 	ddispatch_binding binding = bind_unknown;
 	if (exclude_from_vtable || (owner_access_flags & ACCESS_FLAG_FINAL))
