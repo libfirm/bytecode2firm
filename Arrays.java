@@ -120,9 +120,19 @@ public class Arrays
 		System.out.println(java.util.Arrays.toString(a));
 	}
 	
+	static void testMultiArray()
+	{
+		Object[][][] os = new Object[2][3][4];
+		byte[][][]   bs = new byte[6][7][8];
+		bs[1][2][3] = 5;
+		System.out.println(bs[1][2][3]);
+		System.out.println(bs[1][4][3]);
+	}
+	
 	public static void main(String[] args)
 	{
 		testArraysSimple();
+		testMultiArray();
 	}
 	
 	public String toString()

@@ -37,7 +37,7 @@ do_test() {
 	classpath="$dirprefix"
 	bootclasspath="$HOME/Src/gcj-classes"
 	output_file="$BASEDIR/$name"
-	cmd="reader -cp $classpath -bootclasspath $bootclasspath -o $output_file $classname"
+	cmd="bytecode2firm -cp $classpath -bootclasspath $bootclasspath -o $output_file $classname"
 	if ! execute_cmd "$cmd" ""; then
 		return 1
 	fi
