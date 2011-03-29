@@ -32,7 +32,11 @@
 #include <liboo/dmemory.h>
 #include <liboo/rtti.h>
 #include <liboo/oo_nodes.h>
+
+//#define OOO
+#ifdef OOO
 #include <liboo/ooopt.h>
+#endif
 
 #define VERBOSE
 
@@ -2781,15 +2785,18 @@ int main(int argc, char **argv)
 	}
 
 	irp_finalize_cons();
-	dump_all_ir_graphs("");
+	//dump_all_ir_graphs("");
 
 	link_methods();
 
 	int n_irgs = get_irp_n_irgs();
+
+#ifdef OOO
 	for (int p = 0; p < n_irgs; ++p) {
 		ir_graph *irg = get_irp_irg(p);
 		oo_devirtualize_local(irg);
 	}
+#endif
 
 	oo_lower();
 	lower_highlevel(0);

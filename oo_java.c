@@ -95,6 +95,7 @@ void oo_java_setup_type_info(ir_type *classtype, class_t* javaclass)
 	oo_set_class_is_final(classtype,     javaclass->access_flags & ACCESS_FLAG_FINAL);
 	oo_set_class_is_abstract(classtype,  javaclass->access_flags & ACCESS_FLAG_ABSTRACT);
 	oo_set_class_is_interface(classtype, javaclass->access_flags & ACCESS_FLAG_INTERFACE);
+	oo_set_class_is_extern(classtype,    gcji_is_api_class(classtype));
 
 	if (! oo_get_class_is_interface(classtype)) {
 		const char *classname  = get_class_name(classtype);
