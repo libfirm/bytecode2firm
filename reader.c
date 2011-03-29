@@ -2190,6 +2190,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			uint16_t index        = get_16bit_arg(&i);
 			ir_type *element_type = get_classref_type(index);
 			ir_type *type         = new_type_array(1, element_type);
+			set_array_lower_bound_int(type, 0, 0);
 			ir_node *count        = symbolic_pop(mode_int);
 			construct_new_array(type, count);
 			continue;
