@@ -745,7 +745,7 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	ir_entity *mt_ent = emit_method_table(classtype);
 	EMIT_PRIM("methods", type_reference, create_ccode_symconst(mt_ent)); // union, alternative would be the element type in case classtype is an array. However, class$ for arrays are generated at runtime.
 	EMIT_PRIM("method_count", type_short, new_r_Const_long(ccode, mode_short, linked_class->n_methods));
-	EMIT_PRIM("vtable_method_count", type_short, new_r_Const_long(ccode, mode_short, get_class_vtable_size(classtype)-2)); // w/o slots 0=class$ and 1=gc_stuff. see lower_oo.c
+	EMIT_PRIM("vtable_method_count", type_short, new_r_Const_long(ccode, mode_short, oo_get_class_vtable_size(classtype)-2)); // w/o slots 0=class$ and 1=gc_stuff. see lower_oo.c
 
 	ir_entity *fields = emit_field_table(classtype);
 	EMIT_PRIM("fields", type_reference, create_ccode_symconst(fields));
