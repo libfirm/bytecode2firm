@@ -32,7 +32,7 @@
 #include <liboo/dmemory.h>
 #include <liboo/rtti.h>
 #include <liboo/oo_nodes.h>
-#include <liboo/oo_eh.h>
+#include <liboo/eh.h>
 
 //#define OOO
 #ifdef OOO
@@ -1635,7 +1635,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	set_cur_block(NULL);
 	basic_block_t *next_target = &basic_blocks[0];
 
-	oo_eh_start_method();
+	eh_start_method();
 
 	for (uint32_t i = 0; i < code->code_length; /* nothing */) {
 		if (i == next_target->pc) {
@@ -1664,7 +1664,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 		// construct exception handling
 		if (rbitset_is_set(catch_begins, i))
-			symbolic_push(oo_eh_get_exception_object());
+			symbolic_push(eh_get_exception_object());
 
 		if (rbitset_is_set(try_begins, i)) {
 			int last_endpc = -1;
@@ -1672,13 +1672,13 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				exception_t *e = &excptns[j];
 				if (e->start_pc == i) {
 					if (e->end_pc != last_endpc) // exceptions are sorted
-						oo_eh_new_lpad();
+						eh_new_lpad();
 					last_endpc = e->end_pc;
 
 					ir_type *catch_type = get_classref_type(e->catch_type);
 					assert (catch_type);
 					ir_node *handler = get_target_block_remember_stackpointer(e->handler_pc);
-					oo_eh_add_handler(catch_type, handler);
+					eh_add_handler(catch_type, handler);
 				} else if (e->start_pc > i) {
 					break;
 				}
@@ -1686,7 +1686,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		}
 
 		if (rbitset_is_set(try_ends, i))
-			oo_eh_pop_lpad();
+			eh_pop_lpad();
 
 		opcode_kind_t opcode = code->code[i++];
 		switch (opcode) {
@@ -2090,7 +2090,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 			ir_node *mem      = get_store();
 			ir_node *callee   = new_Sel(new_NoMem(), args[0], 0, NULL, entity);
-			ir_node *call     = oo_eh_new_Call(mem, callee, n_args, args, type);
+			ir_node *call     = eh_new_Call(mem, callee, n_args, args, type);
 			ir_node *new_mem  = new_Proj(call, mode_M, pn_Call_M);
 			set_store(new_mem);
 
@@ -2130,7 +2130,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node *block = get_r_cur_block(irg);
 			gcji_class_init(owner, irg, block, &cur_mem);
 
-			ir_node *call    = oo_eh_new_Call(cur_mem, callee, n_args, args, type);
+			ir_node *call    = eh_new_Call(cur_mem, callee, n_args, args, type);
 			         cur_mem = new_Proj(call, mode_M, pn_Call_M);
 			set_store(cur_mem);
 
@@ -2165,7 +2165,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				args[i]           = val;
 			}
 			ir_node   *mem     = get_store();
-			ir_node   *call    = oo_eh_new_Call(mem, callee, n_args, args, type);
+			ir_node   *call    = eh_new_Call(mem, callee, n_args, args, type);
 			ir_node   *new_mem = new_Proj(call, mode_M, pn_Call_M);
 			set_store(new_mem);
 
@@ -2205,7 +2205,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			}
 			ir_node *mem     = get_store();
 			ir_node *callee  = new_Sel(new_NoMem(), args[0], 0, NULL, entity);
-			ir_node *call    = oo_eh_new_Call(mem, callee, n_args, args, type);
+			ir_node *call    = eh_new_Call(mem, callee, n_args, args, type);
 			ir_node *new_mem = new_Proj(call, mode_M, pn_Call_M);
 			set_store(new_mem);
 
@@ -2463,7 +2463,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	xfree(try_ends);
 	xfree(excptns);
 
-	oo_eh_end_method();
+	eh_end_method();
 
 	for (size_t t = 0; t < n_basic_blocks; ++t) {
 		basic_block_t *basic_block = &basic_blocks[t];
