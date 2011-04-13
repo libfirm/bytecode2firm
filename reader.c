@@ -32,6 +32,7 @@
 #include <liboo/dmemory.h>
 #include <liboo/rtti.h>
 #include <liboo/oo_nodes.h>
+#include <liboo/oo_eh.h>
 
 //#define OOO
 #ifdef OOO
@@ -1124,6 +1125,39 @@ static uint32_t get_32bit_arg(uint32_t *pos)
 	return value;
 }
 
+static void sort_exceptions(exception_t *excptns, size_t n)
+{
+	bool swapped;
+	do {
+		swapped = false;
+		for (size_t i = 1; i < n; i++) {
+			exception_t *ex1, *ex2;
+			ex1 = &excptns[i-1];
+			ex2 = &excptns[i];
+			if (ex1->start_pc >  ex2->start_pc
+			|| (ex1->start_pc == ex2->start_pc && ex1->end_pc < ex2->end_pc)) {
+				exception_t tmp;
+				tmp = *ex2;
+				*ex2 = *ex1;
+				*ex1 = tmp;
+				swapped = true;
+				continue;
+			}
+		}
+	} while (swapped);
+	// Note: must preserve the order of catch clauses for the same try.
+	// Example: B extends A, try { ... } catch (B b) {} catch (A a) {}
+}
+
+#if 0
+static void print_exception(exception_t *excptns, size_t n)
+{
+	for (size_t i = 0; i < n; i++) {
+		fprintf(stderr, "%d: (%d : %d) -> %d [%s]\n", i, excptns[i].start_pc, excptns[i].end_pc, excptns[i].handler_pc, get_class_name(get_classref_type(excptns[i].catch_type)));
+	}
+}
+#endif
+
 static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 {
 	code = new_code;
@@ -1156,22 +1190,35 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	unsigned *targets = rbitset_malloc(code->code_length);
 	basic_blocks = NEW_ARR_F(basic_block_t, 0);
 
-	unsigned *ehs = rbitset_malloc(code->code_length);
-	rbitset_clear_all(ehs, code->code_length);
+	unsigned *catch_begins = rbitset_malloc(code->code_length);
+	rbitset_clear_all(catch_begins, code->code_length);
 
-	for (unsigned i = 0; i < new_code->n_exceptions; i++) {
-		exception_t e = new_code->exceptions[i];
+	unsigned *try_begins = rbitset_malloc(code->code_length);
+	rbitset_clear_all(try_begins, code->code_length);
 
-		if (! rbitset_is_set(targets, e.handler_pc)) {
-			rbitset_set(targets, e.handler_pc);
+	unsigned *try_ends = rbitset_malloc(code->code_length);
+	rbitset_clear_all(try_ends, code->code_length);
+
+	size_t       n_excptns = new_code->n_exceptions;
+	exception_t *excptns   = XMALLOCN(exception_t, n_excptns);
+	memcpy(excptns, new_code->exceptions, n_excptns * sizeof(exception_t));
+	sort_exceptions(excptns, n_excptns);
+
+	for (unsigned i = 0; i < n_excptns; i++) {
+		exception_t *e = &excptns[i];
+
+		if (! rbitset_is_set(targets, e->handler_pc)) {
+			rbitset_set(targets, e->handler_pc);
 			basic_block_t exception_handler;
-			exception_handler.pc            = e.handler_pc;
+			exception_handler.pc            = e->handler_pc;
 			exception_handler.block         = new_immBlock();
 			exception_handler.stack_pointer = -1;
 			ARR_APP1(basic_block_t, basic_blocks, exception_handler);
 		}
 
-		rbitset_set(ehs, e.handler_pc);
+		rbitset_set(catch_begins, e->handler_pc);
+		rbitset_set(try_begins,   e->start_pc);
+		rbitset_set(try_ends,     e->end_pc);
 	}
 
 	basic_block_t start;
@@ -1588,13 +1635,14 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	set_cur_block(NULL);
 	basic_block_t *next_target = &basic_blocks[0];
 
-	int no_fallthrough = 0;
+	oo_eh_start_method();
 
 	for (uint32_t i = 0; i < code->code_length; /* nothing */) {
 		if (i == next_target->pc) {
 			if (next_target->stack_pointer < 0) {
-				if (! no_fallthrough)
+				if (get_cur_block() != NULL) {
 					next_target->stack_pointer = stack_pointer;
+				}
 			} else {
 				if (get_cur_block() != NULL
 						&& next_target->stack_pointer != stack_pointer) {
@@ -1614,12 +1662,31 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			assert(i < next_target->pc);
 		}
 
-		no_fallthrough = 0;
+		// construct exception handling
+		if (rbitset_is_set(catch_begins, i))
+			symbolic_push(oo_eh_get_exception_object());
 
-		// simulate that an exception object is pushed onto the stack
-		// if we enter an execption handler
-		if (rbitset_is_set(ehs, i))
-			symbolic_push(new_Const_long(mode_reference, 0));
+		if (rbitset_is_set(try_begins, i)) {
+			int last_endpc = -1;
+			for (unsigned j = 0; j < n_excptns; j++) {
+				exception_t *e = &excptns[j];
+				if (e->start_pc == i) {
+					if (e->end_pc != last_endpc) // exceptions are sorted
+						oo_eh_new_lpad();
+					last_endpc = e->end_pc;
+
+					ir_type *catch_type = get_classref_type(e->catch_type);
+					assert (catch_type);
+					ir_node *handler = get_target_block_remember_stackpointer(e->handler_pc);
+					oo_eh_add_handler(catch_type, handler);
+				} else if (e->start_pc > i) {
+					break;
+				}
+			}
+		}
+
+		if (rbitset_is_set(try_ends, i))
+			oo_eh_pop_lpad();
 
 		opcode_kind_t opcode = code->code[i++];
 		switch (opcode) {
@@ -1946,16 +2013,15 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			keep_alive(target_block);
 			set_cur_block(NULL);
 
-			no_fallthrough = 1;
 			continue;
 		}
 
-		case OPC_IRETURN: construct_vreturn(method_type, mode_int);       no_fallthrough = 1; continue;
-		case OPC_LRETURN: construct_vreturn(method_type, mode_long);      no_fallthrough = 1; continue;
-		case OPC_FRETURN: construct_vreturn(method_type, mode_float);     no_fallthrough = 1; continue;
-		case OPC_DRETURN: construct_vreturn(method_type, mode_double);    no_fallthrough = 1; continue;
-		case OPC_ARETURN: construct_vreturn(method_type, mode_reference); no_fallthrough = 1; continue;
-		case OPC_RETURN:  construct_vreturn(method_type, NULL);           no_fallthrough = 1; continue;
+		case OPC_IRETURN: construct_vreturn(method_type, mode_int);       continue;
+		case OPC_LRETURN: construct_vreturn(method_type, mode_long);      continue;
+		case OPC_FRETURN: construct_vreturn(method_type, mode_float);     continue;
+		case OPC_DRETURN: construct_vreturn(method_type, mode_double);    continue;
+		case OPC_ARETURN: construct_vreturn(method_type, mode_reference); continue;
+		case OPC_RETURN:  construct_vreturn(method_type, NULL);           continue;
 
 		case OPC_GETSTATIC:
 		case OPC_PUTSTATIC:
@@ -2024,7 +2090,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 			ir_node *mem      = get_store();
 			ir_node *callee   = new_Sel(new_NoMem(), args[0], 0, NULL, entity);
-			ir_node *call     = new_Call(mem, callee, n_args, args, type);
+			ir_node *call     = oo_eh_new_Call(mem, callee, n_args, args, type);
 			ir_node *new_mem  = new_Proj(call, mode_M, pn_Call_M);
 			set_store(new_mem);
 
@@ -2064,7 +2130,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node *block = get_r_cur_block(irg);
 			gcji_class_init(owner, irg, block, &cur_mem);
 
-			ir_node *call    = new_Call(cur_mem, callee, n_args, args, type);
+			ir_node *call    = oo_eh_new_Call(cur_mem, callee, n_args, args, type);
 			         cur_mem = new_Proj(call, mode_M, pn_Call_M);
 			set_store(cur_mem);
 
@@ -2099,7 +2165,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				args[i]           = val;
 			}
 			ir_node   *mem     = get_store();
-			ir_node   *call    = new_Call(mem, callee, n_args, args, type);
+			ir_node   *call    = oo_eh_new_Call(mem, callee, n_args, args, type);
 			ir_node   *new_mem = new_Proj(call, mode_M, pn_Call_M);
 			set_store(new_mem);
 
@@ -2139,7 +2205,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			}
 			ir_node *mem     = get_store();
 			ir_node *callee  = new_Sel(new_NoMem(), args[0], 0, NULL, entity);
-			ir_node *call    = new_Call(mem, callee, n_args, args, type);
+			ir_node *call    = oo_eh_new_Call(mem, callee, n_args, args, type);
 			ir_node *new_mem = new_Proj(call, mode_M, pn_Call_M);
 			set_store(new_mem);
 
@@ -2264,7 +2330,6 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			add_immBlock_pred(end_block, ret);
 			set_cur_block(NULL);
 
-			no_fallthrough = 1;
 			continue;
 		}
 		case OPC_MONITORENTER:
@@ -2393,7 +2458,10 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		panic("unknown/unimplemented opcode 0x%X found\n", opcode);
 	}
 
-	xfree(ehs);
+	xfree(catch_begins);
+	xfree(try_begins);
+	xfree(try_ends);
+	xfree(excptns);
 
 	for (size_t t = 0; t < n_basic_blocks; ++t) {
 		basic_block_t *basic_block = &basic_blocks[t];
@@ -2401,6 +2469,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	}
 	ir_node *end_block = get_irg_end_block(irg);
 	mature_immBlock(end_block);
+
+	oo_eh_end_method();
 
 	DEL_ARR_F(basic_blocks);
 
@@ -2806,23 +2876,23 @@ int main(int argc, char **argv)
 		ir_graph *irg = get_irp_irg(p);
 
 		fprintf(stderr, "\x0d===> Optimizing irg\t%d/%d                  ", p+1, n_irgs);
-
-		optimize_reassociation(irg);
+		// XXX: this is a mess.
+//		optimize_reassociation(irg);
 //		optimize_load_store(irg);
-		optimize_graph_df(irg);
+//		optimize_graph_df(irg);
 		place_code(irg);
 		optimize_cf(irg);
-		opt_if_conv(irg);
-		optimize_cf(irg);
-		optimize_reassociation(irg);
-		optimize_graph_df(irg);
-		opt_jumpthreading(irg);
-		conv_opt(irg);
+//		opt_if_conv(irg);
+//		optimize_cf(irg);
+//		optimize_reassociation(irg);
+//		optimize_graph_df(irg);
+//		opt_jumpthreading(irg);
+//		conv_opt(irg);
 		dead_node_elimination(irg);
-		fixpoint_vrp(irg);
+//		fixpoint_vrp(irg);
 //		optimize_load_store(irg);
-		optimize_graph_df(irg);
-		optimize_cf(irg);
+//		optimize_graph_df(irg);
+//		optimize_cf(irg);
 	}
 
 	fprintf(stderr, "\n");
