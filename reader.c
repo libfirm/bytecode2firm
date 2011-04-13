@@ -2463,14 +2463,14 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	xfree(try_ends);
 	xfree(excptns);
 
+	oo_eh_end_method();
+
 	for (size_t t = 0; t < n_basic_blocks; ++t) {
 		basic_block_t *basic_block = &basic_blocks[t];
 		mature_immBlock(basic_block->block);
 	}
 	ir_node *end_block = get_irg_end_block(irg);
 	mature_immBlock(end_block);
-
-	oo_eh_end_method();
 
 	DEL_ARR_F(basic_blocks);
 
