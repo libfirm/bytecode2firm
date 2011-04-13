@@ -2762,6 +2762,13 @@ static void link_methods(void)
 	class_walk_super2sub(link_normal_methods, NULL, NULL);
 }
 
+static void layout_types(ir_type *type, void *env)
+{
+	(void) env;
+	if (get_type_state(type) != layout_fixed)
+		default_layout_compound_type(type);
+}
+
 /**
  * Return the path to ourself (if possible)
  */
@@ -2870,6 +2877,7 @@ int main(int argc, char **argv)
 #endif
 
 	oo_lower();
+	class_walk_super2sub(layout_types, NULL, NULL);
 	lower_highlevel(0);
 
 	for (int p = 0; p < n_irgs; ++p) {
