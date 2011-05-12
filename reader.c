@@ -2309,25 +2309,11 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			// FIXME: The reference popped here must be topstack when entering the exception handler.
 			// Currently a null-reference is pushed onto the stack when entering an exception handler
 
-			(void) addr;
-
-			ir_node *ret;
-
-			ir_type *type = get_entity_type(entity);
-			int n_ress    = get_method_n_ress(type);
-			if (n_ress > 0) {
-				assert (n_ress == 1);
-				ir_type *res = get_method_res_type(type, 0);
-				ir_mode *res_mode = get_type_mode(res);
-				ir_node *fake_res = new_Const_long(res_mode, 0);
-				ir_node *fake_res_arr[] = {fake_res};
-				ret = new_Return(get_store(), 1, fake_res_arr);
-			} else {
-				ret = new_Return(get_store(), 0, NULL);
-			}
-
+			ir_node *cur_mem = get_store();
+			ir_node *raise = new_Raise(cur_mem, addr);
+			ir_node *proj_X  = new_Proj(raise, mode_X, pn_Raise_X);
 			ir_node *end_block = get_irg_end_block(current_ir_graph);
-			add_immBlock_pred(end_block, ret);
+			add_immBlock_pred(end_block, proj_X);
 			set_cur_block(NULL);
 
 			continue;
