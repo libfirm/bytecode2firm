@@ -2296,11 +2296,13 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 			ir_node *cur_mem    = get_store();
 			ir_node *instanceof = new_InstanceOf(cur_mem, addr, classtype);
-			ir_node *res        = new_Proj(instanceof, mode_int, pn_InstanceOf_res);
+			ir_node *res_b      = new_Proj(instanceof, mode_b, pn_InstanceOf_res);
 			         cur_mem    = new_Proj(instanceof, mode_M, pn_InstanceOf_M);
 			set_store(cur_mem);
 
-			symbolic_push(res);
+			ir_node *conv       = new_Conv(res_b, mode_Is);
+
+			symbolic_push(conv);
 			continue;
 		}
 		case OPC_ATHROW: {
