@@ -345,7 +345,7 @@ static void symbolic_push(ir_node *node)
 
 	/* double and long need 2 stackslots */
 	if (needs_two_slots(mode))
-		set_value(stack_pointer++, new_Bad());
+		set_value(stack_pointer++, new_Bad(mode));
 
 	set_value(stack_pointer++, node);
 }
@@ -381,7 +381,7 @@ static void set_local(uint16_t n, ir_node *node)
 
 	if (needs_two_slots(mode)) {
 		assert (n+1 < max_locals);
-		set_value(code->max_stack + n+1, new_Bad());
+		set_value(code->max_stack + n+1, new_Bad(mode));
 	}
 }
 
