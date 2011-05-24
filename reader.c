@@ -2088,11 +2088,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				args[i]           = val;
 			}
 
-			ir_node *mem      = get_store();
 			ir_node *callee   = new_Sel(new_NoMem(), args[0], 0, NULL, entity);
-			ir_node *call     = eh_new_Call(mem, callee, n_args, args, type);
-			ir_node *new_mem  = new_Proj(call, mode_M, pn_Call_M);
-			set_store(new_mem);
+			ir_node *call     = eh_new_Call(callee, n_args, args, type);
 
 			int n_res = get_method_n_ress(type);
 			if (n_res > 0) {
@@ -2129,10 +2126,9 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node *cur_mem = get_store();
 			ir_node *block = get_r_cur_block(irg);
 			gcji_class_init(owner, irg, block, &cur_mem);
-
-			ir_node *call    = eh_new_Call(cur_mem, callee, n_args, args, type);
-			         cur_mem = new_Proj(call, mode_M, pn_Call_M);
 			set_store(cur_mem);
+
+			ir_node *call    = eh_new_Call(callee, n_args, args, type);
 
 			int n_res = get_method_n_ress(type);
 			if (n_res > 0) {
@@ -2164,10 +2160,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 					val = new_Conv(val, mode);
 				args[i]           = val;
 			}
-			ir_node   *mem     = get_store();
-			ir_node   *call    = eh_new_Call(mem, callee, n_args, args, type);
-			ir_node   *new_mem = new_Proj(call, mode_M, pn_Call_M);
-			set_store(new_mem);
+			ir_node   *call    = eh_new_Call(callee, n_args, args, type);
 
 			int n_res = get_method_n_ress(type);
 			if (n_res > 0) {
@@ -2203,11 +2196,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 					val = new_Conv(val, mode);
 				args[i]           = val;
 			}
-			ir_node *mem     = get_store();
 			ir_node *callee  = new_Sel(new_NoMem(), args[0], 0, NULL, entity);
-			ir_node *call    = eh_new_Call(mem, callee, n_args, args, type);
-			ir_node *new_mem = new_Proj(call, mode_M, pn_Call_M);
-			set_store(new_mem);
+			ir_node *call    = eh_new_Call(callee, n_args, args, type);
 
 			int n_res = get_method_n_ress(type);
 			if (n_res > 0) {
