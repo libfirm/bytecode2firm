@@ -1675,9 +1675,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 						eh_new_lpad();
 					last_endpc = e->end_pc;
 
-					ir_type *catch_type = get_classref_type(e->catch_type);
-					assert (catch_type);
-					ir_node *handler = get_target_block_remember_stackpointer(e->handler_pc);
+					ir_type *catch_type = e->catch_type ? get_classref_type(e->catch_type) : NULL;
+					ir_node *handler = get_basic_block(e->handler_pc)->block;
 					eh_add_handler(catch_type, handler);
 				} else if (e->start_pc > i) {
 					break;
