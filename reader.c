@@ -21,6 +21,8 @@
 #include "adt/cpmap.h"
 #include "adt/hashptr.h"
 #include "adt/xmalloc.h"
+#include "driver/firm_opt.h"
+#include "driver/firm_cmdline.h"
 
 #include "class_registry.h"
 #include "gcj_interface.h"
@@ -32,14 +34,17 @@
 #include <liboo/dmemory.h>
 #include <liboo/rtti.h>
 #include <liboo/oo_nodes.h>
-#include <liboo/eh.h>
 
 //#define OOO
+//#define EXCEPTIONS
+
 #ifdef OOO
 #include <liboo/ooopt.h>
 #endif
 
-#define VERBOSE
+#ifdef EXCEPTIONS
+#include <liboo/eh.h>
+#endif
 
 extern FILE *fdopen (int __fd, __const char *__modes);
 extern int mkstemp (char *__template);
@@ -48,6 +53,7 @@ static pdeq    *worklist;
 static class_t *class_file;
 static const char *main_class_name;
 static const char *main_class_name_short;
+static bool     verbose;
 
 static constant_t *get_constant(uint16_t index)
 {
@@ -297,9 +303,8 @@ static void create_field_entity(field_t *field, ir_type *owner)
 	if (gcji_is_api_class(owner))
 		set_entity_visibility(entity, ir_visibility_external);
 
-#ifdef VERBOSE
-	fprintf(stderr, "Field %s\n", name);
-#endif
+	if (verbose)
+		fprintf(stderr, "Field %s\n", name);
 }
 
 static const attribute_code_t *code;
@@ -1125,6 +1130,7 @@ static uint32_t get_32bit_arg(uint32_t *pos)
 	return value;
 }
 
+#ifdef EXCEPTIONS
 static void sort_exceptions(exception_t *excptns, size_t n)
 {
 	bool swapped;
@@ -1148,6 +1154,7 @@ static void sort_exceptions(exception_t *excptns, size_t n)
 	// Note: must preserve the order of catch clauses for the same try.
 	// Example: B extends A, try { ... } catch (B b) {} catch (A a) {}
 }
+#endif
 
 #if 0
 static void print_exception(exception_t *excptns, size_t n)
@@ -1190,6 +1197,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	unsigned *targets = rbitset_malloc(code->code_length);
 	basic_blocks = NEW_ARR_F(basic_block_t, 0);
 
+#ifdef EXCEPTIONS
 	unsigned *catch_begins = rbitset_malloc(code->code_length);
 	rbitset_clear_all(catch_begins, code->code_length);
 
@@ -1220,6 +1228,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		rbitset_set(try_begins,   e->start_pc);
 		rbitset_set(try_ends,     e->end_pc);
 	}
+#endif
 
 	basic_block_t start;
 	start.pc            = 0;
@@ -1451,13 +1460,16 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 
+		case OPC_ATHROW:
+#ifndef EXCEPTIONS
+			assert (0 && "Encountered ATHROW, but exception handling is deactivated");
+#endif
 		case OPC_IRETURN:
 		case OPC_LRETURN:
 		case OPC_FRETURN:
 		case OPC_DRETURN:
 		case OPC_ARETURN:
-		case OPC_RETURN:
-		case OPC_ATHROW: {
+		case OPC_RETURN: {
 			if (i < code->code_length) {
 				if (!rbitset_is_set(targets, i)) {
 					rbitset_set(targets, i);
@@ -1635,7 +1647,9 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	set_cur_block(NULL);
 	basic_block_t *next_target = &basic_blocks[0];
 
-	eh_start_method();
+#ifdef EXCEPTIONS
+		eh_start_method();
+#endif
 
 	for (uint32_t i = 0; i < code->code_length; /* nothing */) {
 		if (i == next_target->pc) {
@@ -1662,6 +1676,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			assert(i < next_target->pc);
 		}
 
+#ifdef EXCEPTIONS
 		// construct exception handling
 		if (rbitset_is_set(catch_begins, i))
 			symbolic_push(eh_get_exception_object());
@@ -1686,6 +1701,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 		if (rbitset_is_set(try_ends, i))
 			eh_pop_lpad();
+#endif
 
 		opcode_kind_t opcode = code->code[i++];
 		switch (opcode) {
@@ -2088,7 +2104,15 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			}
 
 			ir_node *callee   = new_Sel(new_NoMem(), args[0], 0, NULL, entity);
+
+#ifdef EXCEPTIONS
 			ir_node *call     = eh_new_Call(callee, n_args, args, type);
+#else
+			ir_node *cur_mem  = get_store();
+			ir_node *call     = new_Call(cur_mem, callee, n_args, args, type);
+			cur_mem = new_Proj(call, mode_M, pn_Call_M);
+			set_store(cur_mem);
+#endif
 
 			int n_res = get_method_n_ress(type);
 			if (n_res > 0) {
@@ -2127,7 +2151,14 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			gcji_class_init(owner, irg, block, &cur_mem);
 			set_store(cur_mem);
 
-			ir_node *call    = eh_new_Call(callee, n_args, args, type);
+#ifdef EXCEPTIONS
+			ir_node *call     = eh_new_Call(callee, n_args, args, type);
+#else
+			cur_mem  = get_store();
+			ir_node *call     = new_Call(cur_mem, callee, n_args, args, type);
+			cur_mem = new_Proj(call, mode_M, pn_Call_M);
+			set_store(cur_mem);
+#endif
 
 			int n_res = get_method_n_ress(type);
 			if (n_res > 0) {
@@ -2159,7 +2190,15 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 					val = new_Conv(val, mode);
 				args[i]           = val;
 			}
-			ir_node   *call    = eh_new_Call(callee, n_args, args, type);
+
+#ifdef EXCEPTIONS
+			ir_node *call     = eh_new_Call(callee, n_args, args, type);
+#else
+			ir_node *cur_mem  = get_store();
+			ir_node *call     = new_Call(cur_mem, callee, n_args, args, type);
+			cur_mem = new_Proj(call, mode_M, pn_Call_M);
+			set_store(cur_mem);
+#endif
 
 			int n_res = get_method_n_ress(type);
 			if (n_res > 0) {
@@ -2196,7 +2235,15 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				args[i]           = val;
 			}
 			ir_node *callee  = new_Sel(new_NoMem(), args[0], 0, NULL, entity);
-			ir_node *call    = eh_new_Call(callee, n_args, args, type);
+
+#ifdef EXCEPTIONS
+			ir_node *call     = eh_new_Call(callee, n_args, args, type);
+#else
+			ir_node *cur_mem  = get_store();
+			ir_node *call     = new_Call(cur_mem, callee, n_args, args, type);
+			cur_mem = new_Proj(call, mode_M, pn_Call_M);
+			set_store(cur_mem);
+#endif
 
 			int n_res = get_method_n_ress(type);
 			if (n_res > 0) {
@@ -2435,12 +2482,14 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		panic("unknown/unimplemented opcode 0x%X found\n", opcode);
 	}
 
+#ifdef EXCEPTIONS
 	xfree(catch_begins);
 	xfree(try_begins);
 	xfree(try_ends);
 	xfree(excptns);
 
 	eh_end_method();
+#endif
 
 	for (size_t t = 0; t < n_basic_blocks; ++t) {
 		basic_block_t *basic_block = &basic_blocks[t];
@@ -2487,9 +2536,8 @@ static void create_method_entity(method_t *method, ir_type *owner)
 static void create_method_code(ir_entity *entity)
 {
 	assert(is_Method_type(get_entity_type(entity)));
-#ifdef VERBOSE
-	fprintf(stderr, "...%s\n", get_entity_name(entity));
-#endif
+	if (verbose)
+		fprintf(stderr, "...%s\n", get_entity_name(entity));
 
 	/* transform code to firm graph */
 	const method_t *method = (method_t*) oo_get_entity_link(entity);
@@ -2507,9 +2555,8 @@ static ir_type *get_class_type(const char *name)
 	if (oo_get_type_link(type) != NULL)
 		return type;
 
-#ifdef VERBOSE
-	fprintf(stderr, "==> reading class %s\n", name);
-#endif
+	if (verbose)
+		fprintf(stderr, "==> reading class %s\n", name);
 
 	class_t *cls = read_class(name);
 
@@ -2575,9 +2622,8 @@ static ir_type *get_classref_type(uint16_t index)
 
 static ir_type *construct_class_methods(ir_type *type)
 {
-#ifdef VERBOSE
-	fprintf(stderr, "==> Construct methods of %s\n", get_class_name(type));
-#endif
+	if (verbose)
+		fprintf(stderr, "==> Construct methods of %s\n", get_class_name(type));
 
 	class_t *old_class    = class_file;
 	class_t *linked_class = (class_t*) oo_get_type_link(type);
@@ -2776,36 +2822,52 @@ static char *guess_rt_path(void)
 
 int main(int argc, char **argv)
 {
-	be_opt_register();
-
-	ir_init(NULL);
+	firm_early_init();
+	gen_firm_init();
 	init_types();
 	class_registry_init();
 	oo_java_init();
 	gcji_init();
 
-	if (argc < 2 || argc > 8) {
-		fprintf(stderr, "Syntax: %s [-cp <classpath>] [-bootclasspath <bootclasspath>] [-o <output file name>] class_file\n", argv[0]);
+	if (argc < 2) {
+		fprintf(stderr, "Syntax: %s [-cp <classpath>] [-bootclasspath <bootclasspath>] [-o <output file name>] [-f <firm option>]* class_file\n", argv[0]);
 		return 0;
 	}
 
 	const char *classpath     = "./classes";
 	const char *bootclasspath = NULL;
 	const char *output_name   = NULL;
+	bool        save_temps    = false;
+	            verbose       = false;
 
 	int curarg = 1;
+#define EQUALS(x)             (strcmp(x, argv[curarg]) == 0)
+#define EQUALS_AND_HAS_ARG(x) ((strcmp(x, argv[curarg]) == 0 && (curarg+1) < argc))
+#define ARG_PARAM             (argv[++curarg])
 	while (curarg < argc) {
-		if (strcmp("-cp", argv[curarg]) == 0 && (curarg+1) < argc) {
-			classpath = argv[++curarg];
-		} else if (strcmp("-bootclasspath", argv[curarg]) == 0 && (curarg+1) < argc) {
-			bootclasspath = argv[++curarg];
-		} else if (strcmp("-o", argv[curarg]) == 0 && (curarg+1) < argc) {
-					output_name = argv[++curarg];
+		if (EQUALS_AND_HAS_ARG("-cp")) {
+			classpath = ARG_PARAM;
+		} else if (EQUALS_AND_HAS_ARG("-bootclasspath")) {
+			bootclasspath = ARG_PARAM;
+		} else if (EQUALS_AND_HAS_ARG("-o")) {
+			output_name = ARG_PARAM;
+		} else if (EQUALS_AND_HAS_ARG("-f")) {
+			const char *param = ARG_PARAM;
+			if (! firm_option(param))
+				fprintf(stderr, "Warning: '%s' is not a valid Firm option - ignoring.\n", param);
+		} else if (EQUALS("-save-temps")) {
+			save_temps = true;
+		} else if (EQUALS("-v")) {
+			verbose = true;
 		} else {
 			main_class_name = argv[curarg];
 		}
 		curarg++;
 	}
+#undef ARG_PARAM
+#undef EQUALS_AND_HAS_ARG
+#undef EQUALS
+#undef SINGLE_OPTION
 
 	assert (main_class_name);
 	size_t arg_len        = strlen(main_class_name);
@@ -2839,71 +2901,27 @@ int main(int argc, char **argv)
 			construct_class_methods(classtype);
 	}
 
-	irp_finalize_cons();
-	//dump_all_ir_graphs("");
-
 	link_methods();
 
-	int n_irgs = get_irp_n_irgs();
-
 #ifdef OOO
+	if (verbose)
+		fprintf(stderr, "===> Performing EXPERIMENTAL object-orientated optimizations\n");
+	int n_irgs = get_irp_n_irgs();
 	for (int p = 0; p < n_irgs; ++p) {
 		ir_graph *irg = get_irp_irg(p);
 		oo_devirtualize_local(irg);
 	}
 #endif
 
+	irp_finalize_cons();
 	oo_lower();
 	class_walk_super2sub(layout_types, NULL, NULL);
-	lower_highlevel(0);
 
-	for (int p = 0; p < n_irgs; ++p) {
-		ir_graph *irg = get_irp_irg(p);
-
-		fprintf(stderr, "\x0d===> Optimizing irg\t%d/%d                  ", p+1, n_irgs);
-		// XXX: this is a mess.
-//		optimize_reassociation(irg);
-//		optimize_load_store(irg);
-//		optimize_graph_df(irg);
-		place_code(irg);
-		optimize_cf(irg);
-//		opt_if_conv(irg);
-//		optimize_cf(irg);
-//		optimize_reassociation(irg);
-//		optimize_graph_df(irg);
-//		opt_jumpthreading(irg);
-//		conv_opt(irg);
-		dead_node_elimination(irg);
-//		fixpoint_vrp(irg);
-//		optimize_load_store(irg);
-//		optimize_graph_df(irg);
-//		optimize_cf(irg);
-	}
-
-	fprintf(stderr, "\n");
-
-	be_lower_for_target();
-
-	for (int p = 0; p < n_irgs; ++p) {
-		ir_graph *irg = get_irp_irg(p);
-		/* TODO: This shouldn't be needed but the backend sometimes finds
-			     dead Phi nodes if we don't do this */
-		edges_deactivate(irg);
-	}
-
-	char asm_file[] = "bc2firm_asm_XXXXXX";
-	int asm_fd = mkstemp(asm_file);
-	FILE *asm_out = fdopen(asm_fd, "w");
-
-	fprintf(stderr, "===> Running backend\n");
-
-	//be_parse_arg("omitfp"); // stack unwinding becomes easier with the frame pointer.
-	be_main(asm_out, "bytecode");
-
-	fclose(asm_out);
+	if (verbose)
+		fprintf(stderr, "===> Optimization & backend\n");
 
 	// we had to get the class$ above, because calling gcji_get_class_dollar_field after the class has been lowered (e.g. now) would create a new entity.
-	assert (main_cdf);
+	assert (main_cdf && is_entity(main_cdf));
 	const char *main_cdf_ldident = get_entity_ld_name(main_cdf);
 
 	char startup_file[] = "bc2firm_startup_XXXXXX";
@@ -2914,18 +2932,34 @@ int main(int argc, char **argv)
 	fprintf(startup_out, "int main(int argc, const char **argv) { JvRunMain(&%s, argc, argv); return 0; }\n", main_cdf_ldident);
 	fclose(startup_out);
 
+	char asm_file[] = "bc2firm_asm_XXXXXX";
+	int asm_fd = mkstemp(asm_file);
+	FILE *asm_out = fdopen(asm_fd, "w");
+
+	gen_firm_finish(asm_out, main_class_name);
+
+	fclose(asm_out);
+
 	class_file_exit();
 	gcji_deinit();
 	oo_java_deinit();
+	ir_finish();
 
 	char cmd_buffer[1024];
 	sprintf(cmd_buffer, "gcc -g -x assembler %s -x c %s -x none -lgcj -lstdc++ -L. -Wl,-R. -loo_rt -o %s", asm_file, startup_file, output_name);
 
-	fprintf(stderr, "===> Assembling & linking (%s)\n", cmd_buffer);
+	if (verbose)
+		fprintf(stderr, "===> Assembling & linking (%s)\n", cmd_buffer);
 
 	int retval = system(cmd_buffer);
 
-	fprintf(stderr, "===> Done!\n");
+	if (! save_temps) {
+		remove(startup_file);
+		remove(asm_file);
+	}
+
+	if (verbose)
+		fprintf(stderr, "===> Done!\n");
 
 	return retval;
 }

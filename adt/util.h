@@ -1,56 +1,44 @@
 /*
- * Copyright (C) 1995-2008 University of Karlsruhe.  All right reserved.
+ * This file is part of cparser.
+ * Copyright (C) 2007-2009 Matthias Braun <matze@braunis.de>
  *
- * This file is part of libFirm.
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
  *
- * This file may be distributed and/or modified under the terms of the
- * GNU General Public License version 2 as published by the Free Software
- * Foundation and appearing in the file LICENSE.GPL included in the
- * packaging of this file.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * Licensees holding valid libFirm Professional Edition licenses may use
- * this file in accordance with the libFirm Commercial License.
- * Agreement provided with the Software.
- *
- * This file is provided AS IS with NO WARRANTY OF ANY KIND, INCLUDING THE
- * WARRANTY OF DESIGN, MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE.
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+ * 02111-1307, USA.
  */
 
 /**
  * @file
- * @date   31.05.2005
- * @author Sebastian Hack
- * @brief  Some utility macros.
+ * @date    16.03.2007
+ * @brief   Various utility functions that wrap compiler specific extensions
+ * @author  Matthias Braun
+ * @version $Id$
  */
-#ifndef FIRM_ADT_UTIL_H
-#define FIRM_ADT_UTIL_H
+#ifndef _FIRM_UTIL_H_
+#define _FIRM_UTIL_H_
 
 /**
- * Get the offset of a member of a struct.
- * @param type   The type of the struct member is in.
- * @param member The name of the member.
- * @return       The offset of member in type in bytes.
+ * Indicates to the compiler that the value of x is very likely 1
+ * @note Only use this in speed critical code and when you are sure x is often 1
  */
-#define offset_of(type, member) \
-  ((char *) &(((type *) 0)->member) - (char *) 0)
-
+#define LIKELY(x)   __builtin_expect((x), 1)
 /**
- * Make pointer to the struct from a pointer to a member of that struct.
- * @param ptr     The pointer to the member.
- * @param type    The type of the struct.
- * @param member  The name of the member.
- * @return        A pointer to the struct member is in.
+ * Indicates to the compiler that it's very likely that x is 0
+ * @note Only use this in speed critical code and when you are sure x is often 0
  */
-#define container_of(ptr, type, member) \
-	((type *) ((char *) (ptr) - offset_of(type, member)))
+#define UNLIKELY(x) __builtin_expect((x), 0)
 
-/**
- * Get the number of elements of a static array.
- * @param arr The static array.
- * @return The number of elements in that array.
- */
-#define array_size(arr) \
-  (sizeof(arr) / sizeof((arr)[0]))
+#define lengthof(x) (sizeof(x) / sizeof(*(x)))
 
 #endif
