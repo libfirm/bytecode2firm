@@ -2855,6 +2855,10 @@ int main(int argc, char **argv)
 			const char *param = ARG_PARAM;
 			if (! firm_option(param))
 				fprintf(stderr, "Warning: '%s' is not a valid Firm option - ignoring.\n", param);
+		} else if (EQUALS_AND_HAS_ARG("-b")) {
+			const char *param = ARG_PARAM;
+			if (! be_parse_arg(param))
+				fprintf(stderr, "Warning: '%s' is not a valid backend option - ignoring.\n", param);
 		} else if (EQUALS("-save-temps")) {
 			save_temps = true;
 		} else if (EQUALS("-v")) {
@@ -2935,6 +2939,11 @@ int main(int argc, char **argv)
 	char asm_file[] = "bc2firm_asm_XXXXXX";
 	int asm_fd = mkstemp(asm_file);
 	FILE *asm_out = fdopen(asm_fd, "w");
+
+#ifdef EXCEPTIONS
+	be_parse_arg("omitfp");
+	be_parse_arg("ia32-emit_cfi_directives");
+#endif
 
 	gen_firm_finish(asm_out, main_class_name);
 
