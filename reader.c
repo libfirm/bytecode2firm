@@ -2342,19 +2342,13 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 		case OPC_ATHROW: {
-			// FIXME: need real implementation.
-			ir_node *addr         = symbolic_pop(mode_reference);
-			// FIXME: The reference popped here must be topstack when entering the exception handler.
-			// Currently a null-reference is pushed onto the stack when entering an exception handler
-
-			ir_node *cur_mem = get_store();
-			ir_node *raise = new_Raise(cur_mem, addr);
-			ir_node *proj_X  = new_Proj(raise, mode_X, pn_Raise_X);
-			ir_node *end_block = get_irg_end_block(current_ir_graph);
-			add_immBlock_pred(end_block, proj_X);
-			set_cur_block(NULL);
-
+#ifndef EXCEPTIONS
+			assert (0 && "Encountered ATHROW, but exception handling is deactivated");
+#else
+			ir_node *addr       = symbolic_pop(mode_reference);
+			eh_throw(addr);
 			continue;
+#endif
 		}
 		case OPC_MONITORENTER:
 		case OPC_MONITOREXIT: {
@@ -2941,7 +2935,7 @@ int main(int argc, char **argv)
 	FILE *asm_out = fdopen(asm_fd, "w");
 
 #ifdef EXCEPTIONS
-	be_parse_arg("omitfp");
+	be_parse_arg("omitfp=false");
 	be_parse_arg("ia32-emit_cfi_directives");
 #endif
 
