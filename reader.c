@@ -2330,15 +2330,11 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_type *classtype  = get_classref_type(index);
 			assert(classtype);
 
-			ir_node *cur_mem    = get_store();
-			ir_node *instanceof = new_InstanceOf(cur_mem, addr, classtype);
-			ir_node *res_b      = new_Proj(instanceof, mode_b, pn_InstanceOf_res);
-			         cur_mem    = new_Proj(instanceof, mode_M, pn_InstanceOf_M);
-			set_store(cur_mem);
+			ir_node *instanceof = rtti_construct_instanceof_with_null_check(addr, classtype);
 
-			ir_node *conv       = new_Conv(res_b, mode_Is);
-
+			ir_node *conv       = new_Conv(instanceof, mode_Is);
 			symbolic_push(conv);
+
 			continue;
 		}
 		case OPC_ATHROW: {
