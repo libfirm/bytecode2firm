@@ -9,7 +9,7 @@
 #include <liboo/dmemory.h>
 
 #include <liboo/rtti.h>
-#include <liboo/oo_nodes.h>
+#include <liboo/nodes.h>
 
 #include <assert.h>
 #include <string.h>
@@ -67,8 +67,13 @@ static void java_init_vtable_slots(ir_type *klass, ir_initializer_t *vtable_init
 static void java_construct_runtime_typeinfo(ir_type *klass)
 {
 	rtti_default_construct_runtime_typeinfo(klass);
-	if (! gcji_is_api_class(klass))
+	if (! gcji_is_api_class(klass)
+	    && klass != get_segment_type(IR_SEGMENT_THREAD_LOCAL)
+	    && klass != get_segment_type(IR_SEGMENT_CONSTRUCTORS)
+	    && klass != get_segment_type(IR_SEGMENT_DESTRUCTORS)) {
+
 		gcji_construct_class_dollar_field(klass);
+	}
 }
 
 void oo_java_init(void)
@@ -79,7 +84,7 @@ void oo_java_init(void)
 	ddispatch_set_vtable_layout(GCJI_VTABLE_OFFSET, GCJI_VTABLE_OFFSET+2, GCJI_VTABLE_OFFSET-1, java_init_vtable_slots);
 	ddispatch_set_abstract_method_ident(new_id_from_str("_Jv_ThrowAbstractMethodError"));
 
-	dmemory_set_allocation_methods(gcji_allocate_object, gcji_allocate_array, gcji_get_arraylength);
+	dmemory_set_allocation_methods(gcji_get_arraylength);
 
 	rtti_set_runtime_typeinfo_constructor(java_construct_runtime_typeinfo);
 }

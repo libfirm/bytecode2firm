@@ -1,5 +1,7 @@
-#include <config.h>
-
+/*
+ * This file is part of cparser.
+ * Copyright (C) 2012 Matthias Braun <matze@braunis.de>
+ */
 #include <assert.h>
 #include <stdbool.h>
 #include "firm_machine.h"
@@ -14,21 +16,55 @@ static void set_be_option(const char *arg)
 	assert(res);
 }
 
+static ident *compilerlib_name_mangle_default(ident *id, ir_type *mt)
+{
+	(void)mt;
+	return id;
+}
+
+static ident *compilerlib_name_mangle_underscore(ident *id, ir_type *mt)
+{
+	(void)mt;
+	return id_mangle3("_", id, "");
+}
+
+bool firm_is_unixish_os(const machine_triple_t *machine)
+{
+	const char *os = machine->operating_system;
+	return strstr(os, "linux") != NULL || strstr(os, "bsd") != NULL
+		|| strstart(os, "solaris");
+}
+
+bool firm_is_darwin_os(const machine_triple_t *machine)
+{
+	const char *os = machine->operating_system;
+	return strstart(os, "darwin");
+}
+
+bool firm_is_windows_os(const machine_triple_t *machine)
+{
+	const char *os = machine->operating_system;
+	return strstart(os, "mingw") || streq(os, "win32");
+}
+
 /**
  * Initialize firm codegeneration for a specific operating system.
  * The argument is the operating system part of a target-triple
  */
-static bool setup_os_support(const char *os)
+static bool setup_os_support(const machine_triple_t *machine)
 {
-	if (strstr(os, "linux") != NULL || strstr(os, "bsd") != NULL
-			|| streq(os, "solaris")) {
+	if (firm_is_unixish_os(machine)
+	    || streq(machine->operating_system, "elf")) {
 		set_be_option("ia32-gasmode=elf");
-	} else if (streq(os, "darwin")) {
+		set_compilerlib_name_mangle(compilerlib_name_mangle_default);
+	} else if (firm_is_darwin_os(machine)) {
 		set_be_option("ia32-gasmode=macho");
 		set_be_option("ia32-stackalign=4");
 		set_be_option("pic=true");
-	} else if (strstr(os, "mingw") != NULL || streq(os, "win32")) {
+		set_compilerlib_name_mangle(compilerlib_name_mangle_underscore);
+	} else if (firm_is_windows_os(machine)) {
 		set_be_option("ia32-gasmode=mingw");
+		set_compilerlib_name_mangle(compilerlib_name_mangle_underscore);
 	} else {
 		return false;
 	}
@@ -59,6 +95,9 @@ bool setup_firm_for_machine(const machine_triple_t *machine)
 		set_be_option("isa=amd64");
 	} else if (streq(cpu, "sparc")) {
 		set_be_option("isa=sparc");
+		const char *manufacturer = machine->manufacturer;
+		if (streq(manufacturer, "leon") || streq(manufacturer, "invasic"))
+			set_be_option("sparc-cpu=leon");
 	} else if (streq(cpu, "arm")) {
 		set_be_option("isa=arm");
 	} else {
@@ -67,7 +106,7 @@ bool setup_firm_for_machine(const machine_triple_t *machine)
 	}
 
 	/* process operating system */
-	if (!setup_os_support(machine->operating_system)) {
+	if (!setup_os_support(machine)) {
 		fprintf(stderr, "Unknown operating system '%s' in target-triple\n", machine->operating_system);
 		return false;
 	}
@@ -106,10 +145,9 @@ machine_triple_t *firm_parse_machine_triple(const char *triple_string)
 	manufacturer += 1;
 
 	const char *os = strchr(manufacturer, '-');
-	if (os == NULL) {
-		return false;
+	if (os != NULL) {
+		os += 1;
 	}
-	os += 1;
 
 	/* Note: Triples are more or less defined by what the config.guess and
 	 * config.sub scripts from GNU autoconf emit. We have to lookup there what
@@ -126,9 +164,10 @@ machine_triple_t *firm_parse_machine_triple(const char *triple_string)
 
 	/* process manufacturer, alot of people incorrectly leave out the
 	 * manufacturer instead of using unknown- */
-	if (strstart(manufacturer, "linux")) {
+	if (strstart(manufacturer, "linux") || streq(manufacturer, "elf")
+	    || os == NULL) {
 		triple->manufacturer = xstrdup("unknown");
-		os = manufacturer;
+		os                   = manufacturer;
 	} else {
 		size_t manufacturer_len = os-manufacturer;
 		triple->manufacturer = XMALLOCN(char, manufacturer_len);

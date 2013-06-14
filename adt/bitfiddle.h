@@ -1,20 +1,6 @@
 /*
- * Copyright (C) 1995-2008 University of Karlsruhe.  All right reserved.
- *
- * This file is part of libFirm.
- *
- * This file may be distributed and/or modified under the terms of the
- * GNU General Public License version 2 as published by the Free Software
- * Foundation and appearing in the file LICENSE.GPL included in the
- * packaging of this file.
- *
- * Licensees holding valid libFirm Professional Edition licenses may use
- * this file in accordance with the libFirm Commercial License.
- * Agreement provided with the Software.
- *
- * This file is provided AS IS with NO WARRANTY OF ANY KIND, INCLUDING THE
- * WARRANTY OF DESIGN, MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE.
+ * This file is part of cparser.
+ * Copyright (C) 2012 Matthias Braun <matze@braunis.de>
  */
 
 /**
@@ -22,15 +8,14 @@
  * @date    28.9.2004
  * @brief   Functions from hackers delight.
  * @author  Sebastian Hack, Matthias Braun
- * @version $Id: bitfiddle.h 27155 2010-02-14 14:38:55Z mallon $
  */
-#ifndef FIRM_ADT_BITFIDDLE_H
-#define FIRM_ADT_BITFIDDLE_H
+#ifndef _FIRM_BITFIDDLE_H_
+#define _FIRM_BITFIDDLE_H_
 
-#include "compiler.h"
-
-#include <limits.h>
 #include <assert.h>
+#include <limits.h>
+
+#include "util.h"
 
 /* some functions here assume ints are 32 bit wide */
 #define HACKDEL_WORDSIZE 32
@@ -45,7 +30,8 @@ COMPILETIME_ASSERT(UINT_MAX == 4294967295U, uintmax)
  *
  * @note See hacker's delight, page 27.
  */
-static inline int add_saturated(int x, int y)
+static inline __attribute__((const))
+int add_saturated(int x, int y)
 {
 	int sum      = x + y;
 	/*
@@ -73,8 +59,8 @@ static inline int add_saturated(int x, int y)
  * @param x A 32-bit word.
  * @return The number of bits set in x.
  */
-static inline unsigned popcnt(unsigned x)
-{
+static inline __attribute__((const))
+unsigned popcnt(unsigned x) {
 	x -= ((x >> 1) & 0x55555555);
 	x = (x & 0x33333333) + ((x >> 2) & 0x33333333);
 	x = (x + (x >> 4)) & 0x0f0f0f0f;
@@ -88,8 +74,8 @@ static inline unsigned popcnt(unsigned x)
  * @param x The word.
  * @return The number of leading (from the most significant bit) zeros.
  */
-static inline unsigned nlz(unsigned x)
-{
+static inline __attribute__((const))
+unsigned nlz(unsigned x) {
 #ifdef USE_X86_ASSEMBLY
 	unsigned res;
 	if(x == 0)
@@ -100,15 +86,12 @@ static inline unsigned nlz(unsigned x)
 			: "r" (x));
 	return 31 - res;
 #else
-   unsigned y;
-   int n = 32;
-
-   y = x >>16;  if (y != 0) { n -= 16;  x = y; }
-   y = x >> 8;  if (y != 0) { n -=  8;  x = y; }
-   y = x >> 4;  if (y != 0) { n -=  4;  x = y; }
-   y = x >> 2;  if (y != 0) { n -=  2;  x = y; }
-   y = x >> 1;  if (y != 0) return n - 2;
-   return n - x;
+	x |= x >> 1;
+	x |= x >> 2;
+	x |= x >> 4;
+	x |= x >> 8;
+	x |= x >> 16;
+	return popcnt(~x);
 #endif
 }
 
@@ -117,8 +100,8 @@ static inline unsigned nlz(unsigned x)
  * @param x The word.
  * @return The number of trailing zeros.
  */
-static inline unsigned ntz(unsigned x)
-{
+static inline __attribute__((const))
+unsigned ntz(unsigned x) {
 #ifdef USE_X86_ASSEMBLY
 	unsigned res;
 	if(x == 0)
@@ -161,7 +144,8 @@ static inline unsigned ntz(unsigned x)
  * Returns the biggest power of 2 that is equal or smaller than @p x
  * (see hackers delight power-of-2 boundaries, page 48)
  */
-static inline unsigned floor_po2(unsigned x)
+static inline __attribute__((const))
+unsigned floor_po2(unsigned x)
 {
 #ifdef USE_X86_ASSEMBLY // in this case nlz is fast
 	if(x == 0)
@@ -183,7 +167,8 @@ static inline unsigned floor_po2(unsigned x)
  * @remark x has to be <= 0x8000000 of course
  * @note see hackers delight power-of-2 boundaries, page 48
  */
-static inline unsigned ceil_po2(unsigned x)
+static inline __attribute__((const))
+unsigned ceil_po2(unsigned x)
 {
 	if(x == 0)
 		return 0;
@@ -206,7 +191,8 @@ static inline unsigned ceil_po2(unsigned x)
 /**
  * Tests whether @p x is a power of 2
  */
-static inline int is_po2(unsigned x)
+static inline __attribute__((const))
+int is_po2(unsigned x)
 {
 	return (x & (x-1)) == 0;
 }

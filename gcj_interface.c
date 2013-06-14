@@ -220,7 +220,7 @@ void gcji_init()
 	gcj_compiled_execution_engine_entity = new_entity(glob, new_id_from_str("_Jv_soleCompiledEngine"), type_reference);
 	set_entity_visibility(gcj_compiled_execution_engine_entity, ir_visibility_external);
 
-	mode_ushort = new_ir_mode("US", irms_int_number, 16, 0, irma_twos_complement, 16);
+	mode_ushort = new_int_mode("US", irma_twos_complement, 16, 0, 16);
 	type_ushort = new_type_primitive(mode_ushort);
 
 	cpset_init(&scp, scp_hash, scp_cmp);
@@ -339,16 +339,16 @@ ir_node *gcji_new_string(ir_entity *bytes, ir_graph *irg, ir_node *block, ir_nod
 	return res;
 }
 
-ir_node *gcji_get_arraylength(ir_node *arrayref, ir_graph *irg, ir_node *block, ir_node **mem)
+ir_node *gcji_get_arraylength(dbg_info *dbgi, ir_node *block, ir_node *arrayref, ir_node **mem)
 {
-	(void) irg;
-	ir_node *cur_mem = *mem;
+	ir_graph *irg     = get_irn_irg(block);
+	ir_node  *cur_mem = *mem;
 
-	ir_node *length_offset = new_r_Const_long(irg, mode_reference, GCJI_LENGTH_OFFSET); // in gcj, arrays are subclasses of java/lang/Object. "length" is the second field.
-	ir_node *length_addr   = new_r_Add(block, arrayref, length_offset, mode_reference);
-	ir_node *length_load   = new_r_Load(block, cur_mem, length_addr, mode_int, cons_none);
-	         cur_mem       = new_r_Proj(length_load, mode_M, pn_Load_M);
-	ir_node *res           = new_r_Proj(length_load, mode_int, pn_Load_res);
+	ir_node  *length_offset = new_r_Const_long(irg, mode_reference, GCJI_LENGTH_OFFSET); // in gcj, arrays are subclasses of java/lang/Object. "length" is the second field.
+	ir_node  *length_addr   = new_rd_Add(dbgi, block, arrayref, length_offset, mode_reference);
+	ir_node  *length_load   = new_rd_Load(dbgi, block, cur_mem, length_addr, mode_int, cons_none);
+	          cur_mem       = new_r_Proj(length_load, mode_M, pn_Load_M);
+	ir_node  *res           = new_r_Proj(length_load, mode_int, pn_Load_res);
 
 	*mem = cur_mem;
 	return res;
@@ -700,6 +700,16 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 	return if_ent;
 }
 
+static ir_node *create_vtable_ref(ir_entity *vtable)
+{
+	ir_graph *ccode         = get_const_code_irg();
+	ir_node  *vtable_ref    = create_ccode_symconst(vtable);
+	ir_node  *block         = get_r_cur_block(ccode);
+	ir_node  *vtable_offset = new_r_Const_long(ccode, mode_reference, get_type_size_bytes(type_reference) * GCJI_VTABLE_OFFSET);
+	vtable_ref = new_r_Add(block, vtable_ref, vtable_offset, mode_reference);
+	return vtable_ref;
+}
+
 #define NUM_FIELDS 39
 #define EMIT_PRIM(name, tp, val) do { \
 	  ir_entity *ent = emit_primitive_member(cur_cdtype, name, tp, val); \
@@ -710,10 +720,10 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 
 ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 {
-	ir_graph *ccode = get_const_code_irg();
-	ir_node *nullref = new_r_Const_long(ccode, mode_reference, 0);
+	ir_graph *ccode   = get_const_code_irg();
+	ir_node  *nullref = new_r_Const_long(ccode, mode_reference, 0);
 
-	ir_type *cur_cdtype = new_type_class(id_mangle_dot(get_class_ident(classtype), class_dollar_ident));
+	ir_type  *cur_cdtype = new_type_class(id_mangle_dot(get_class_ident(classtype), class_dollar_ident));
 	ir_initializer_t *cur_init = create_initializer_compound(NUM_FIELDS);
 	unsigned cur_init_slot = 0;
 	unsigned cur_type_size = 0;
@@ -721,8 +731,12 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	class_t *linked_class = (class_t*) oo_get_type_link(classtype);
 	assert (linked_class);
 
-	EMIT_PRIM("next_or_version", type_reference, nullref);
-	EMIT_PRIM("unknown", type_int, new_r_Const_long(ccode, mode_int, 404000));
+	ident     *class_vt_name = mangle_vtable_name("java/lang/Class");
+	ir_entity *class_vtable  = new_entity(get_glob_type(), class_vt_name, type_reference);
+	ir_node   *class_vt_ref  = create_vtable_ref(class_vtable);
+	EMIT_PRIM("next_or_version", type_reference, class_vt_ref);
+
+	EMIT_PRIM("unknown", type_int, new_r_Const_long(ccode, mode_int, 407000));
 
 	ir_entity *name_ent = gcji_emit_utf8_const(
 			linked_class->constants[linked_class->constants[linked_class->this_class]->classref.name_index], 1);
@@ -763,11 +777,8 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	ir_node *vtable_ref = NULL;
 	if ((linked_class->access_flags & ACCESS_FLAG_INTERFACE) == 0) {
 		ir_entity *vtable = oo_get_class_vtable_entity(classtype);
-		assert (vtable);
-		vtable_ref = create_ccode_symconst(vtable);
-		ir_node *block = get_r_cur_block(ccode);
-		ir_node *vtable_offset = new_r_Const_long(ccode, mode_reference, get_type_size_bytes(type_reference)*GCJI_VTABLE_OFFSET);
-		vtable_ref = new_r_Add(block, vtable_ref, vtable_offset, mode_reference);
+		assert(vtable != NULL);
+		vtable_ref = create_vtable_ref(vtable);
 	} else {
 		vtable_ref = nullref;
 	}
@@ -817,7 +828,7 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	assert (class_dollar_field);
 	set_entity_type(class_dollar_field, cur_cdtype);
 	set_entity_initializer(class_dollar_field, cur_init);
-	set_entity_visibility(class_dollar_field, ir_visibility_default);
+	set_entity_visibility(class_dollar_field, ir_visibility_external);
 	set_entity_alignment(class_dollar_field, 32);
 
 	return class_dollar_field;
@@ -1036,8 +1047,11 @@ static ir_node *alloc_dims_array(unsigned dims, ir_node **sizes, ir_graph *irg, 
 {
 	ir_node *cur_mem = *mem;
 
-	ir_node *dims_const = new_r_Const_long(irg, mode_ushort, dims);
-	ir_node *alloc = new_r_Alloc(block, cur_mem, dims_const, type_int, stack_alloc);
+	ir_mode        *dim_mode = mode_ushort;
+	const unsigned  bytes    = dims * (get_mode_size_bits(dim_mode) / 8);
+
+	ir_node *dims_const = new_r_Const_long(irg, dim_mode, bytes);
+	ir_node *alloc = new_r_Alloc(block, cur_mem, dims_const, 1);
 	ir_node *arr   = new_r_Proj(alloc, mode_reference, pn_Alloc_res);
 	cur_mem = new_r_Proj(alloc, mode_M, pn_Alloc_M);
 

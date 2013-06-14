@@ -6,6 +6,7 @@
 #include "types.h"
 
 #include <stdint.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
@@ -22,18 +23,18 @@
 #include "adt/hashptr.h"
 #include "adt/xmalloc.h"
 #include "driver/firm_opt.h"
-#include "driver/firm_cmdline.h"
 
 #include "class_registry.h"
 #include "gcj_interface.h"
 #include "oo_java.h"
 #include "mangle.h"
 
+#include <libfirm/be.h>
 #include <libfirm/firm.h>
 #include <liboo/oo.h>
 #include <liboo/dmemory.h>
 #include <liboo/rtti.h>
-#include <liboo/oo_nodes.h>
+#include <liboo/nodes.h>
 
 //#define OOO
 //#define EXCEPTIONS
@@ -81,6 +82,7 @@ ir_mode *mode_long;
 ir_mode *mode_float;
 ir_mode *mode_double;
 ir_mode *mode_reference;
+ir_mode *mode_size_t;
 
 ir_type *type_byte;
 ir_type *type_char;
@@ -105,27 +107,48 @@ static ident *vptr_ident;
 static ident *subobject_ident;
 
 ir_entity *vptr_entity; // there's exactly one vptr entity, member of java.lang.Object.
+static ir_entity *calloc_entity;
+
+static ir_mode *mode_float_arithmetic;
+
+/* Get arithmetic mode for a mode. */
+static ir_mode *get_ir_mode_arithmetic(ir_mode *mode)
+{
+	if (mode_is_float(mode) && mode_float_arithmetic != NULL) {
+		return mode_float_arithmetic;
+	}
+
+	return mode;
+}
+
+static ir_node *get_value_as(ir_node *node, ir_mode *mode)
+{
+	if (get_irn_mode(node) == mode)
+		return node;
+
+	return new_Conv(node, mode);
+}
 
 static void init_types(void)
 {
 	mode_byte
-		= new_ir_mode("B", irms_int_number, 8, 1, irma_twos_complement, 8);
+		= new_int_mode("B", irma_twos_complement, 8, 1, 8);
 	type_byte = new_type_primitive(mode_byte);
 
 	mode_char
-		= new_ir_mode("C", irms_int_number, 16, 0, irma_twos_complement, 16);
+		= new_int_mode("C", irma_twos_complement, 16, 0, 16);
 	type_char = new_type_primitive(mode_char);
 
 	mode_short
-		= new_ir_mode("S", irms_int_number, 16, 1, irma_twos_complement, 16);
+		= new_int_mode("S", irma_twos_complement, 16, 1, 16);
 	type_short = new_type_primitive(mode_short);
 
 	mode_int
-		= new_ir_mode("I", irms_int_number, 32, 1, irma_twos_complement, 32);
+		= new_int_mode("I", irma_twos_complement, 32, 1, 32);
 	type_int = new_type_primitive(mode_int);
 
 	mode_long
-		= new_ir_mode("J", irms_int_number, 64, 1, irma_twos_complement, 64);
+		= new_int_mode("J", irma_twos_complement, 64, 1, 64);
 	type_long = new_type_primitive(mode_long);
 //	set_type_alignment_bytes(type_long, 4); // Setting this creates an object layout equivalent to gcj. (but breaks other things)
 
@@ -133,15 +156,18 @@ static void init_types(void)
 	type_boolean = new_type_primitive(mode_boolean);
 
 	mode_float
-		= new_ir_mode("F", irms_float_number, 32, 1, irma_ieee754, 0);
+		= new_float_mode("F", irma_ieee754, 8, 23);
 	type_float = new_type_primitive(mode_float);
 
 	mode_double
-		= new_ir_mode("D", irms_float_number, 64, 1, irma_ieee754, 0);
+		= new_float_mode("D", irma_ieee754, 11, 52);
 	type_double = new_type_primitive(mode_double);
 //	set_type_alignment_bytes(type_double, 4); // Setting this creates an object layout equivalent to gcj. (but breaks other things)
 
 	mode_reference = mode_P;
+
+	const backend_params *params = be_get_backend_param();
+	mode_float_arithmetic = params->mode_float_arithmetic;
 
 	type_array_byte_boolean = new_type_array(1, type_byte);
 	set_type_state(type_array_byte_boolean, layout_fixed);
@@ -172,6 +198,17 @@ static void init_types(void)
 
 	vptr_ident              = new_id_from_str("@vptr");
 	subobject_ident         = new_id_from_str("@base");
+
+	const size_t size_bits    = get_mode_size_bits(mode_P);
+	const size_t modulo_shift = get_mode_modulo_shift(mode_P);
+	mode_size_t = new_int_mode("size_t", irma_twos_complement, size_bits, 0, modulo_shift);
+	ir_type *size_t_type = get_type_for_mode(mode_size_t);
+	ir_type *calloc_type = new_type_method(2, 1);
+	set_method_param_type(calloc_type, 0, size_t_type);
+	set_method_param_type(calloc_type, 1, size_t_type);
+	set_method_res_type(calloc_type, 0, get_type_for_mode(mode_P));
+	ident *calloc_id = new_id_from_str("calloc");
+	calloc_entity = create_compilerlib_entity(calloc_id, calloc_type);
 }
 
 static ir_type *descriptor_to_type(const char **descriptor);
@@ -289,9 +326,10 @@ static void create_field_entity(field_t *field, ir_type *owner)
 	ident      *id         = new_id_from_str(name);
 	ir_entity  *entity     = NULL;
 
-	if (field->access_flags & ACCESS_FLAG_STATIC)
+	if (field->access_flags & ACCESS_FLAG_STATIC) {
 		entity = new_entity(get_glob_type(), id, type);
-	else
+		set_entity_initializer(entity, get_initializer_null());
+	} else
 		entity = new_entity(owner, id, type);
 
 	const char *classname    = get_class_name(owner);
@@ -409,6 +447,31 @@ static ir_node *create_symconst(ir_entity *entity)
 	union symconst_symbol sym;
 	sym.entity_p = entity;
 	return new_SymConst(mode_reference, sym, symconst_addr_ent);
+}
+
+static ir_node *gen_calloc_call(ir_node *size, ir_node *count, ir_node **mem)
+{
+	ir_node *calloc    = create_symconst(calloc_entity);
+	ir_node *args[2]   = { count, size };
+	ir_type *call_type = get_entity_type(calloc_entity);
+	ir_node *call      = new_Call(*mem, calloc, 2, args, call_type);
+	ir_node *call_res  = new_r_Proj(call, mode_T, pn_Call_T_result);
+	ir_node *result    = new_r_Proj(call_res, mode_P, 0);
+	*mem = new_r_Proj(call, mode_M, pn_Call_M);
+	return result;
+}
+
+static ir_node *gen_alloc(ir_type *type, ir_node *count, ir_node **mem)
+{
+	if (get_irn_mode(count) != mode_size_t) {
+		count = new_Conv(count, mode_size_t);
+	}
+
+	symconst_symbol type_sym;
+	type_sym.type_p = type;
+	ir_node *size = new_SymConst(mode_size_t, type_sym, symconst_type_size);
+
+	return gen_calloc_call(size, count, mem);
 }
 
 static ir_entity *find_entity(ir_type *classtype, const char *name, const char *desc)
@@ -739,19 +802,27 @@ static void construct_cond(uint16_t pc_true, uint16_t pc_false,
 static ir_node *simple_new_Div(ir_node *left, ir_node *right, ir_mode *mode)
 {
 	ir_node *mem     = get_store();
-	ir_node *div     = new_Div(mem, left, right, mode, op_pin_state_pinned);
+	ir_mode *amode   = get_ir_mode_arithmetic(mode);
+	left             = get_value_as(left, amode);
+	right            = get_value_as(right, amode);
+	ir_node *div     = new_Div(mem, left, right, amode, op_pin_state_pinned);
 	ir_node *new_mem = new_Proj(div, mode_M, pn_Div_M);
 	set_store(new_mem);
-	return new_Proj(div, mode, pn_Div_res);
+	ir_node *proj    = new_Proj(div, amode, pn_Div_res);
+	return get_value_as(proj, mode);
 }
 
 static ir_node *simple_new_Mod(ir_node *left, ir_node *right, ir_mode *mode)
 {
 	ir_node *mem     = get_store();
-	ir_node *div     = new_Mod(mem, left, right, mode, op_pin_state_pinned);
+	ir_mode *amode   = get_ir_mode_arithmetic(mode);
+	left             = get_value_as(left, amode);
+	right            = get_value_as(right, amode);
+	ir_node *div     = new_Mod(mem, left, right, amode, op_pin_state_pinned);
 	ir_node *new_mem = new_Proj(div, mode_M, pn_Div_M);
 	set_store(new_mem);
-	return new_Proj(div, mode, pn_Div_res);
+	ir_node *proj    = new_Proj(div, amode, pn_Div_res);
+	return get_value_as(proj, mode);
 }
 
 static void construct_arith(ir_mode *mode,
@@ -759,17 +830,25 @@ static void construct_arith(ir_mode *mode,
 {
 	ir_node *right  = symbolic_pop(mode);
 	ir_node *left   = symbolic_pop(mode);
-	ir_node *result = construct_func(left, right, mode);
+	ir_mode *amode  = get_ir_mode_arithmetic(mode);
+	left            = get_value_as(left, amode);
+	right           = get_value_as(right, amode);
+	ir_node *result = construct_func(left, right, amode);
+	result          = get_value_as(result, mode);
 	symbolic_push(result);
 }
 
 static void construct_shift_arith(ir_mode *mode,
 		ir_node *(*construct_func)(ir_node *, ir_node *, ir_mode *))
 {
-	ir_node *right  = symbolic_pop(mode_int);
-	ir_node *left   = symbolic_pop(mode);
+	ir_node *right   = symbolic_pop(mode_int);
+	ir_node *left    = symbolic_pop(mode);
+	ir_mode *amode   = get_ir_mode_arithmetic(mode);
+	left             = get_value_as(left, amode);
+	right            = get_value_as(right, amode);
 	ir_node *right_u = new_Conv(right, mode_Iu);
-	ir_node *result = construct_func(left, right_u, mode);
+	ir_node *result  = construct_func(left, right_u, amode);
+	result           = get_value_as(result, mode);
 	symbolic_push(result);
 }
 
@@ -777,7 +856,10 @@ static void construct_arith_unop(ir_mode *mode,
 		ir_node *(*construct_func)(ir_node *, ir_mode *))
 {
 	ir_node *value  = symbolic_pop(mode);
-	ir_node *result = construct_func(value, mode);
+	ir_mode *amode  = get_ir_mode_arithmetic(mode);
+	value           = get_value_as(value, amode);
+	ir_node *result = construct_func(value, amode);
+	result          = get_value_as(result, mode);
 	symbolic_push(result);
 }
 
@@ -821,7 +903,7 @@ static void push_load_const(uint16_t index)
 	case CONSTANT_LONG: {
 		char buf[128];
 		uint64_t val = ((uint64_t)constant->longc.high_bytes << 32) | constant->longc.low_bytes;
-		snprintf(buf, sizeof(buf), "%lld", (int64_t) val);
+		snprintf(buf, sizeof(buf), "%"PRId64, (int64_t) val);
 		ir_tarval *tv = new_tarval_from_str(buf, strlen(buf), mode_long);
 		push_const_tarval(tv);
 		break;
@@ -1027,15 +1109,48 @@ static void construct_dup2_x2(void)
 	assert ((sp+2) == stack_pointer);
 }
 
+static ir_node *create_conv_for_mode_b(ir_node *value, ir_mode *dest_mode)
+{
+	if (is_Const(value)) {
+		if (is_Const_null(value)) {
+			return new_Const(get_mode_null(dest_mode));
+		} else {
+			return new_Const(get_mode_one(dest_mode));
+		}
+	}
+
+	ir_node *cond       = new_Cond(value);
+	ir_node *proj_true  = new_Proj(cond, mode_X, pn_Cond_true);
+	ir_node *proj_false = new_Proj(cond, mode_X, pn_Cond_false);
+	ir_node *tblock     = new_Block(1, &proj_true);
+	ir_node *fblock     = new_Block(1, &proj_false);
+	set_cur_block(tblock);
+	ir_node *const1 = new_Const(get_mode_one(dest_mode));
+	ir_node *tjump  = new_Jmp();
+	set_cur_block(fblock);
+	ir_node *const0 = new_Const(get_mode_null(dest_mode));
+	ir_node *fjump  = new_Jmp();
+
+	ir_node *in[2]      = { tjump, fjump };
+	ir_node *mergeblock = new_Block(2, in);
+	set_cur_block(mergeblock);
+	ir_node *phi_in[2]  = { const1, const0 };
+	ir_node *phi        = new_Phi(2, phi_in, dest_mode);
+	return phi;
+}
+
 static void construct_xcmp(ir_mode *mode, ir_relation rel_1, ir_relation rel_2)
 {
 	ir_node *val2 = symbolic_pop(mode);
 	ir_node *val1 = symbolic_pop(mode);
 
+	ir_mode *amode   = get_ir_mode_arithmetic(mode);
+	val1             = get_value_as(val1, amode);
+	val2             = get_value_as(val2, amode);
 	ir_node *cmp_lt  = new_Cmp(val1, val2, rel_1);
 	ir_node *cmp_gt  = new_Cmp(val1, val2, rel_2);
-	ir_node *conv_lt = new_Conv(cmp_lt, mode_int);
-	ir_node *conv_gt = new_Conv(cmp_gt, mode_int);
+	ir_node *conv_lt = create_conv_for_mode_b(cmp_lt, mode_int);
+	ir_node *conv_gt = create_conv_for_mode_b(cmp_gt, mode_int);
 	ir_node *res     = new_Sub(conv_gt, conv_lt, mode_int);
 
 	symbolic_push(res);
@@ -1087,12 +1202,13 @@ static void construct_array_store(ir_type *array_type)
 
 static void construct_new_array(ir_type *array_type, ir_node *count)
 {
-	ir_node *mem     = get_store();
-	count            = new_Conv(count, mode_Iu);
-	ir_node *alloc   = new_Alloc(mem, count, array_type, heap_alloc);
-	ir_node *new_mem = new_Proj(alloc, mode_M, pn_Alloc_M);
-	ir_node *res     = new_Proj(alloc, mode_reference, pn_Alloc_res);
-	set_store(new_mem);
+	ir_node  *mem       = get_store();
+	ir_type  *elem_type = get_array_element_type(array_type);
+	ir_node  *block     = get_cur_block();
+	ir_graph *irg       = get_irn_irg(block);
+	ir_node  *count_u   = new_Conv(count, mode_Iu);
+	ir_node  *res       = gcji_allocate_array(elem_type, count_u, irg, block, &mem);
+	set_store(mem);
 	symbolic_push(res);
 }
 
@@ -2262,11 +2378,11 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			uint16_t  index     = get_16bit_arg(&i);
 			ir_type  *classtype = get_classref_type(index);
 			ir_node  *mem       = get_store();
-			ir_node  *count     = new_Const_long(mode_Iu, 1);
-			ir_node  *alloc     = new_Alloc(mem, count, classtype, heap_alloc);
-			ir_node  *new_mem   = new_Proj(alloc, mode_M, pn_Alloc_M);
-			ir_node  *result    = new_Proj(alloc, mode_reference, pn_Alloc_res);
-			set_store(new_mem);
+			ir_node  *count     = new_Const_long(mode_size_t, 1);
+			ir_node  *result    = gen_alloc(classtype, count, &mem);
+			ir_node  *block     = get_nodes_block(result);
+			ddispatch_prepare_new_instance(NULL, block, result, &mem, classtype);
+			set_store(mem);
 			symbolic_push(result);
 			continue;
 		}
@@ -2292,6 +2408,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			uint16_t index        = get_16bit_arg(&i);
 			ir_type *element_type = get_classref_type(index);
 			ir_type *type         = new_type_array(1, element_type);
+			set_type_state(type, layout_fixed);
 			set_array_lower_bound_int(type, 0, 0);
 			ir_node *count        = symbolic_pop(mode_int);
 			construct_new_array(type, count);
@@ -2330,9 +2447,12 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_type *classtype  = get_classref_type(index);
 			assert(classtype);
 
-			ir_node *instanceof = rtti_construct_instanceof_with_null_check(addr, classtype);
-
-			ir_node *conv       = new_Conv(instanceof, mode_Is);
+			ir_node *cur_mem    = get_store();
+			ir_node *instanceof = new_InstanceOf(cur_mem, addr, classtype);
+			ir_node *res        = new_Proj(instanceof, mode_b, pn_InstanceOf_res);
+			ir_node *conv       = create_conv_for_mode_b(res, mode_Is);
+			cur_mem             = new_Proj(instanceof, mode_M, pn_InstanceOf_M);
+			set_store(cur_mem);
 			symbolic_push(conv);
 
 			continue;
@@ -2380,8 +2500,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 		case OPC_TABLESWITCH: {
 			// i points to the instruction after the opcode. That instruction should be on a index that is a multiple of 4.
-			uint32_t tswitch_index = i-1;
-			uint8_t  padding = (4 - (i % 4)) % 4;
+			const uint32_t tswitch_index = i - 1;
+			const uint8_t  padding       = (4 - (i % 4)) % 4;
 			switch (padding) {
 			case 3: assert (code->code[i++] == 0); // FALL THROUGH
 			case 2: assert (code->code[i++] == 0); // FALL THROUGH
@@ -2389,32 +2509,37 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			default: break;
 			}
 
-			int32_t  offset_default = get_32bit_arg(&i);
-			uint32_t index_default  = ((int32_t)tswitch_index) + offset_default;
+			const int32_t  offset_default = get_32bit_arg(&i);
+			const uint32_t index_default  = ((int32_t)tswitch_index) + offset_default;
 			assert (index_default < code->code_length);
 
-			int32_t  low            = get_32bit_arg(&i);
-			int32_t  high           = get_32bit_arg(&i);
+			const int32_t  low  = get_32bit_arg(&i);
+			const int32_t  high = get_32bit_arg(&i);
 			assert (low <= high);
 
-			ir_node *op             = symbolic_pop(mode_int);
-			ir_node *switch_cond    = new_Cond(op);
+			const size_t     ncases      = (high - low + 1);
+			ir_switch_table *table       = ir_new_switch_table(current_ir_graph, ncases);
+			ir_node         *op          = symbolic_pop(mode_int);
+			ir_node         *switch_node = new_Switch(op, ncases + 1, table);
+			size_t           case_index  = 0;
 
-			for (int32_t entry = low; entry <= high; entry++) {
-				int32_t offset = get_32bit_arg(&i);
-				uint32_t index = ((int32_t)tswitch_index) + offset;
+			for (int32_t entry = low; entry <= high; entry++, case_index++) {
+				const int32_t  offset = get_32bit_arg(&i);
+				const uint32_t index  = ((int32_t)tswitch_index) + offset;
 				assert(index < code->code_length);
 
-				ir_node *block = get_target_block_remember_stackpointer(index);
-				ir_node *proj  = new_Proj(switch_cond, mode_X, entry);
+				const long  pn       = pn_Switch_max + 1 + (long)case_index;
+				ir_tarval  *case_num = new_tarval_from_long(entry, mode_Is);
+				ir_switch_table_set(table, case_index, case_num, case_num, pn);
 
+				ir_node *proj  = new_Proj(switch_node, mode_X, pn);
+				ir_node *block = get_target_block_remember_stackpointer(index);
 				add_immBlock_pred(block, proj);
 			}
 
-			ir_node *def_proj       = new_Proj(switch_cond, mode_X, high+1); //FIXME: breaks when lo = Integer.MIN_VALUE && high = Integer.MAX_VALUE.
-			ir_node *def_block      = get_target_block_remember_stackpointer(index_default);
+			ir_node *def_proj  = new_Proj(switch_node, mode_X, pn_Switch_default);
+			ir_node *def_block = get_target_block_remember_stackpointer(index_default);
 			add_immBlock_pred(def_block, def_proj);
-			set_Cond_default_proj(switch_cond, high+1);
 
 			set_cur_block(NULL);
 			continue;
@@ -2422,8 +2547,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 		case OPC_LOOKUPSWITCH: {
 			// i points to the instruction after the opcode. That instruction should be on a index that is a multiple of 4.
-			uint32_t lswitch_index = i-1;
-			uint8_t  padding = (4 - (i % 4)) % 4;
+			const uint32_t lswitch_index = i - 1;
+			const uint8_t  padding       = (4 - (i % 4)) % 4;
 			switch (padding) {
 			case 3: assert (code->code[i++] == 0); // FALL THROUGH
 			case 2: assert (code->code[i++] == 0); // FALL THROUGH
@@ -2431,40 +2556,37 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			default: break;
 			}
 
-			int32_t  offset_default = get_32bit_arg(&i);
-			uint32_t index_default  = ((int32_t)lswitch_index) + offset_default;
+			const int32_t  offset_default = get_32bit_arg(&i);
+			const uint32_t index_default  = ((int32_t)lswitch_index) + offset_default;
 
 			assert (index_default < code->code_length);
 
-			int32_t n_pairs         = get_32bit_arg(&i);
+			const int32_t    n_pairs     = get_32bit_arg(&i);
+			ir_switch_table *table       = ir_new_switch_table(current_ir_graph, n_pairs);
+			ir_node         *op          = symbolic_pop(mode_int);
+			ir_node         *switch_node = new_Switch(op, n_pairs + 1, table);
+			size_t           case_index  = 0;
 
-			ir_node *op             = symbolic_pop(mode_int);
-			ir_node *switch_cond    = new_Cond(op);
-
-			int32_t  max_match      = 0;
-			for (int pair = 0; pair < n_pairs; pair++) {
-				int32_t match  = get_32bit_arg(&i);
-				int32_t offset = get_32bit_arg(&i);
-
-				max_match      = match; // pairs are in ascending order.
-
-				uint32_t index = ((int32_t)lswitch_index) + offset;
+			for (int pair = 0; pair < n_pairs; pair++, case_index++) {
+				const int32_t  match  = get_32bit_arg(&i);
+				const int32_t  offset = get_32bit_arg(&i);
+				const uint32_t index  = ((int32_t)lswitch_index) + offset;
 				assert (index < code->code_length);
 
+				const long  pn       = pn_Switch_max + 1 + (long)pair;
+				ir_tarval  *case_num = new_tarval_from_long(match, mode_Is);
+				ir_switch_table_set(table, case_index, case_num, case_num, pn);
+
+				ir_node *proj  = new_Proj(switch_node, mode_X, pn);
 				ir_node *block = get_target_block_remember_stackpointer(index);
-				ir_node *proj  = new_Proj(switch_cond, mode_X, match);
-
 				add_immBlock_pred(block, proj);
-
 			}
 
-			ir_node *def_proj        = new_Proj(switch_cond, mode_X, max_match+1); //FIXME: breaks when match = Integer.MAX_VALUE and Integer.MIN_VALUE is used.
-			ir_node *def_block       = get_target_block_remember_stackpointer(index_default);
+			ir_node *def_proj  = new_Proj(switch_node, mode_X, pn_Switch_default);
+			ir_node *def_block = get_target_block_remember_stackpointer(index_default);
 			add_immBlock_pred(def_block, def_proj);
-			set_Cond_default_proj(switch_cond, max_match+1);
 
 			set_cur_block(NULL);
-
 			continue;
 		}
 		}
@@ -2794,6 +2916,7 @@ static char *get_exe_path(void)
 	ssize_t s = readlink("/proc/self/exe", buf, 2048);
 	if (s < 0 || s == 2048)
 		return NULL;
+	buf[s] = '\0';
 	return buf;
 }
 
@@ -2812,7 +2935,6 @@ static char *guess_rt_path(void)
 
 int main(int argc, char **argv)
 {
-	firm_early_init();
 	gen_firm_init();
 	init_types();
 	class_registry_init();
@@ -2935,17 +3057,18 @@ int main(int argc, char **argv)
 	be_parse_arg("ia32-emit_cfi_directives");
 #endif
 
-	gen_firm_finish(asm_out, main_class_name);
+	generate_code(asm_out, main_class_name);
+
+	gen_firm_finish();
 
 	fclose(asm_out);
 
 	class_file_exit();
 	gcji_deinit();
 	oo_java_deinit();
-	ir_finish();
 
 	char cmd_buffer[1024];
-	sprintf(cmd_buffer, "gcc -g -x assembler %s -x c %s -x none -lgcj -lstdc++ -L. -Wl,-R. -loo_rt -o %s", asm_file, startup_file, output_name);
+	sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -lgcj -lstdc++ -L. -Wl,-R. -loo_rt -o %s", asm_file, startup_file, output_name);
 
 	if (verbose)
 		fprintf(stderr, "===> Assembling & linking (%s)\n", cmd_buffer);

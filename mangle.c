@@ -432,11 +432,11 @@ void mangle_init(void)
 
 	mangle_add_name_substitution("<init>", "C1");
 	mangle_add_name_substitution("<clinit>", "18__U3c_clinit__U3e_");
-	mangle_add_name_substitution("and", "3and$");
-	mangle_add_name_substitution("or", "2or$");
-	mangle_add_name_substitution("not", "3not$");
-	mangle_add_name_substitution("xor", "3xor$");
-	mangle_add_name_substitution("delete", "6delete$");
+	mangle_add_name_substitution("and", "4and$");
+	mangle_add_name_substitution("or", "3or$");
+	mangle_add_name_substitution("not", "4not$");
+	mangle_add_name_substitution("xor", "4xor$");
+	mangle_add_name_substitution("delete", "7delete$");
 }
 
 void mangle_deinit(void)
