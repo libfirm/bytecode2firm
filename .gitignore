@@ -3,4 +3,4 @@
 !README
 !*.java
 !*.ref
-!test.sh
+!testsuite.py
