@@ -1,22 +1,38 @@
 -include config.mak
 
-BUILDDIR=build
-GOAL = $(BUILDDIR)/bytecode2firm
-CPPFLAGS = -I. $(FIRM_CFLAGS) $(LIBOO_CFLAGS)
-CFLAGS = -Wall -W -Wstrict-prototypes -Wmissing-prototypes -Wunreachable-code -Wlogical-op -Werror -O0 -g3 -std=c99 -pedantic
-LFLAGS = $(LIBOO_LIBS) $(FIRM_LIBS)
-SOURCES = $(wildcard *.c) $(wildcard adt/*.c) $(wildcard driver/*.c)
-DEPS = $(addprefix $(BUILDDIR)/, $(addsuffix .d, $(basename $(SOURCES))))
-OBJECTS = $(addprefix $(BUILDDIR)/, $(addsuffix .o, $(basename $(SOURCES))))
+FIRM_HOME    ?= libfirm
+FIRM_BUILD   ?= $(FIRM_HOME)/build/debug
+FIRM_CFLAGS  ?= -I$(FIRM_HOME)/include
+FIRM_LIBS    ?= -L$(FIRM_BUILD) -lfirm -lm
 
-Q ?= @
+LIBOO_HOME   ?= liboo
+LIBOO_BUILD  ?= $(LIBOO_HOME)/build
+LIBOO_CFLAGS ?= -I$(LIBOO_HOME)/include/
+LIBOO_LIBS   ?= -L$(LIBOO_BUILD) -loo -Wl,-R$(LIBOO_BUILD)
 
-.phony: liboo
+INSTALL      ?= /usr/bin/install
+
+BUILDDIR      = build
+GOAL          = $(BUILDDIR)/bytecode2firm
+CPPFLAGS      = -I. $(FIRM_CFLAGS) $(LIBOO_CFLAGS)
+CFLAGS        = -Wall -Wextra -Wstrict-prototypes -Wmissing-prototypes -Wunreachable-code -Wlogical-op -Werror -O0 -g3 -std=c99 -pedantic
+LFLAGS        = $(LIBOO_LIBS) $(FIRM_LIBS) -lm
+SOURCES       = $(wildcard *.c) $(wildcard adt/*.c) $(wildcard driver/*.c)
+DEPS          = $(addprefix $(BUILDDIR)/, $(addsuffix .d, $(basename $(SOURCES))))
+OBJECTS       = $(addprefix $(BUILDDIR)/, $(addsuffix .o, $(basename $(SOURCES))))
+
+Q            ?= @
+
+.PHONY: all libfirm liboo clean
+
+all: libfirm liboo $(GOAL)
+
+libfirm:
+	$(Q)$(MAKE) -C $(FIRM_HOME)
+
 liboo:
-	$(MAKE) -C $(LIBOO_HOME)
-	$(MAKE) $(GOAL)
+	$(Q)$(MAKE) -C $(LIBOO_HOME)
 
-all: liboo 
 
 -include $(DEPS)
 
@@ -26,7 +42,6 @@ $(GOAL): $(OBJECTS)
 
 $(BUILDDIR)/%.o: %.c $(BUILDDIR)
 	@echo '===> CC $<'
-	$(Q)#cparser $(CPPFLAGS) $(CFLAGS) -fsyntax-only $<
 	$(Q)$(CC) $(CPPFLAGS) $(CFLAGS) -MD -MF $(addprefix $(BUILDDIR)/, $(addsuffix .d, $(basename $<))) -c -o $@ $<
 
 $(BUILDDIR):

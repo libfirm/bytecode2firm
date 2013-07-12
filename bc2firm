@@ -1,0 +1,16 @@
+#!/bin/bash
+
+ME="$0"
+if [ -L "${ME}" ]; then
+	ME="`readlink -f "${ME}"`"
+fi
+BC2FIRM_TOP=$(cd "$(dirname "$ME")" && pwd)
+
+GDB=""
+if [ "$1" = "--debug" ]; then
+	GDB="gdb --args "
+	shift
+fi
+
+export LD_LIBRARY_PATH="$BC2FIRM_TOP/libfirm/build/debug:$BC2FIRM_TOP/liboo/build"
+$GDB $BC2FIRM_TOP/build/bytecode2firm -bootclasspath "$BC2FIRM_TOP/rt" "$@"
