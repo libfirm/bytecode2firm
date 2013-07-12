@@ -1,0 +1,6 @@
+[submodule "liboo"]
+	path = liboo
+	url = http://pp.info.uni-karlsruhe.de/git/liboo.git
+[submodule "libfirm"]
+	path = libfirm
+	url = http://pp.info.uni-karlsruhe.de/git/libfirm.git
