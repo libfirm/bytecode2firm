@@ -1,5 +1,5 @@
 int arith: 9223372034707324798
-float arith: 1.1754943508222875E-38
+float arith: 1.401298464324817E-45
 int/float comb.: 9.223372034707325E18
 int eq: true
 int neq: false

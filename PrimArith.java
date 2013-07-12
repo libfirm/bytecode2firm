@@ -6,7 +6,7 @@ public class PrimArith {
 		short  s = Short.MAX_VALUE;
 		int    i = Integer.MIN_VALUE;
 		long   l = Long.MAX_VALUE;
-		float  f = Float.MIN_NORMAL;
+		float  f = Float.MIN_VALUE;
 		double d = Double.MIN_VALUE;
 		
 		long   res1 = b + s + i + l;
