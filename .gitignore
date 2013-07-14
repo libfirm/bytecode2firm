@@ -4,3 +4,4 @@
 !*.java
 !*.ref
 !testsuite.py
+!fail_expectations

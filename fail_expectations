@@ -1,0 +1,15 @@
+AccessStaticVariable.java                ok
+Arrays.java                              ok
+Classes.java                             ok
+ControlFlow.java                         ok
+CreateObject.java                        ok
+Exceptions.java                          compile_class: SIGABRT
+HelloWorld42.java                        ok
+InstanceOf.java                          ok
+InstanceVars.java                        ok
+InvokeX.java                             ok
+OOO.java                                 ok
+PrimArith.java                           execute: output mismatch
+SimpleArrayTest.java                     ok
+SimpleCall.java                          ok
+Strings.java                             ok
