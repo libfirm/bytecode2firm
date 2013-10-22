@@ -3,22 +3,36 @@ bytecode2firm - a Java bytecode front end for libFirm.
 Setup
 ------
 
-1) Get, setup and build libFirm from https://github.com/MatzeB/libfirm_jambuild.
-2) Get, setup and build liboo   from https://github.com/MatzeB/liboo.
-3) Copy config.mak.example to config.mak and edit the variables FIRM_HOME and LIBOO_HOME to point to the repositories you just cloned.
-4) Install gcj. bytecode2firm needs libgcj.so, and the precompiled runtime classes from gcj's rt.jar.
-   In Ubuntu, install "libgcj-10 gcj-4.4-jre-lib". (Hint: you might want to make sure that gcj is not your default Java VM afterwards. See "update-alternatives --config X", where X = {java, javac, javah, ...})
-   Locate the rt.jar and unzip it to an directory named "rt" in the source
-   directory (or specify -bootclasspath when invoking bytecode2firm).
+First you need liboo and libfirm. In git available as submodules.
+
+  git submodule update --init
+
+Then liboo requires a correct config.mak
+
+  cd liboo
+  cp config.mak.example config.mak
+  cd ..
+
+You need libgcj on your system.  Install gcj. bytecode2firm needs
+libgcj.so, and the precompiled runtime classes from gcj's rt.jar.
+In Ubuntu, install "libgcj-10 gcj-4.4-jre-lib". (Hint: you might want
+to make sure that gcj is not your default Java VM afterwards. See
+"update-alternatives --config X", where X = {java, javac, javah, ...})
+Locate the rt.jar and unzip it to an directory named "rt" in the source
+directory (or specify -bootclasspath when invoking bytecode2firm).
+
+Now building bytecode2firm should succeed.
+
+  make
 
 Running
 --------
 
-$ ./bytecode2firm -cp <class path> <Main class name>
+$ ./bc2firm -cp <class path> <Main class name>
 
 for example,
 
-$ ./bytecode2firm -cp $HOME/Src/bytecode2firm-testsuite InvokeX
+$ ./bc2firm -cp $HOME/Src/bytecode2firm-testsuite InvokeX
 
 The resulting linked executable needs liboo_rt.so. It is compiled to look in the current directory.
 
