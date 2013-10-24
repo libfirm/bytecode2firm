@@ -338,7 +338,7 @@ static void create_field_entity(field_t *field, ir_type *owner)
 
 	oo_java_setup_field_info(entity, field);
 
-	if (gcji_is_api_class(owner))
+	if (oo_get_class_is_extern(owner))
 		set_entity_visibility(entity, ir_visibility_external);
 
 	if (verbose)
@@ -2640,7 +2640,8 @@ static void create_method_entity(method_t *method, ir_type *owner)
 
 	oo_java_setup_method_info(entity, method, class_file);
 
-	if (method->access_flags & ACCESS_FLAG_NATIVE || gcji_is_api_class(owner)) {
+	if (method->access_flags & ACCESS_FLAG_NATIVE
+	 || oo_get_class_is_extern(owner)) {
 		set_entity_visibility(entity, ir_visibility_external);
 	}
 }
@@ -3013,7 +3014,7 @@ int main(int argc, char **argv)
 	while (!pdeq_empty(worklist)) {
 		ir_type *classtype = pdeq_getl(worklist);
 
-		if (! gcji_is_api_class(classtype))
+		if (!oo_get_class_is_extern(classtype))
 			construct_class_methods(classtype);
 	}
 

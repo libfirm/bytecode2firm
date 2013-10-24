@@ -339,6 +339,7 @@ class_t *read_class(const char *classname)
 	obstack_printf(&obst, "%s/%s.class", bootclasspath, classname);
 	obstack_1grow(&obst, '\0');
 	char *classfilename = obstack_finish(&obst);
+	bool  from_bootclasspath = true;
 
 	in = fopen(classfilename, "r");
 	if (in == NULL) {
@@ -346,6 +347,7 @@ class_t *read_class(const char *classname)
 		obstack_1grow(&obst, '\0');
 		classfilename = obstack_finish(&obst);
 		in = fopen(classfilename, "r");
+		from_bootclasspath = false;
 
 		if (in == NULL)
 		  panic("Couldn't find class '%s' (%s)\n", classname, classfilename);
@@ -354,6 +356,7 @@ class_t *read_class(const char *classname)
 	class_file = read_class_file();
 	fclose(in);
 
+	class_file->is_extern = from_bootclasspath;
 	return class_file;
 }
 

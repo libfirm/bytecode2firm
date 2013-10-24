@@ -86,16 +86,6 @@ static void free_scpe(scp_entry *scpe)
 	free(scpe);
 }
 
-int gcji_is_api_class(ir_type *type)
-{
-	assert (is_Class_type(type));
-	const char *classname = get_class_name(type);
-	return strncmp("java/", classname, 5)  == 0
-		|| strncmp("javax/", classname, 6) == 0
-		|| strncmp("gnu/", classname, 4)   == 0
-		|| strncmp("sun/", classname, 4)   == 0;
-}
-
 void gcji_init()
 {
 	class_dollar_ident = new_id_from_str("class$");

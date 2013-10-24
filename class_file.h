@@ -204,6 +204,7 @@ typedef struct {
 	attribute_t **attributes;
 
 	ir_type      *link;
+	bool          is_extern;
 } class_t;
 
 void class_file_init(const char *classpath, const char *bootclasspath);

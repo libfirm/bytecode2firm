@@ -11,7 +11,6 @@
 
 void       gcji_init(void);
 void       gcji_deinit(void);
-int        gcji_is_api_class(ir_type *type);
 void       gcji_class_init(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem);
 ir_node   *gcji_allocate_object(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem);
 ir_node   *gcji_allocate_array(ir_type *eltype, ir_node *count, ir_graph *irg, ir_node *block, ir_node **mem);

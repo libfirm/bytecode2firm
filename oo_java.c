@@ -67,7 +67,7 @@ static void java_init_vtable_slots(ir_type *klass, ir_initializer_t *vtable_init
 static void java_construct_runtime_typeinfo(ir_type *klass)
 {
 	rtti_default_construct_runtime_typeinfo(klass);
-	if (! gcji_is_api_class(klass)
+	if (!oo_get_class_is_extern(klass)
 	    && klass != get_segment_type(IR_SEGMENT_THREAD_LOCAL)
 	    && klass != get_segment_type(IR_SEGMENT_CONSTRUCTORS)
 	    && klass != get_segment_type(IR_SEGMENT_DESTRUCTORS)) {
@@ -100,7 +100,7 @@ void oo_java_setup_type_info(ir_type *classtype, class_t* javaclass)
 	oo_set_class_is_final(classtype,     javaclass->access_flags & ACCESS_FLAG_FINAL);
 	oo_set_class_is_abstract(classtype,  javaclass->access_flags & ACCESS_FLAG_ABSTRACT);
 	oo_set_class_is_interface(classtype, javaclass->access_flags & ACCESS_FLAG_INTERFACE);
-	oo_set_class_is_extern(classtype,    gcji_is_api_class(classtype));
+	oo_set_class_is_extern(classtype,    javaclass->is_extern);
 
 	if (! oo_get_class_is_interface(classtype)) {
 		const char *classname  = get_class_name(classtype);
