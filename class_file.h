@@ -2,6 +2,7 @@
 #define CLASS_FILE_H
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <libfirm/firm.h>
 
 typedef enum {
