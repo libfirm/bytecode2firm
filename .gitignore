@@ -1,10 +1,7 @@
-build
-classes
-config.mak
-reader
+/build
+/classes
+/config.mak
+/rt
 *.vcg
 *.s
 *.S
-a.out
-librts.o
-
