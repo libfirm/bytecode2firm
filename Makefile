@@ -30,17 +30,17 @@ all: libfirm liboo $(GOAL)
 libfirm:
 	$(Q)$(MAKE) -C $(FIRM_HOME)
 
-liboo:
+liboo: libfirm
 	$(Q)$(MAKE) -C $(LIBOO_HOME)
 
 
 -include $(DEPS)
 
-$(GOAL): $(OBJECTS)
+$(GOAL): $(OBJECTS) libfirm liboo
 	@echo '===> LD $@'
-	$(Q)$(CC) -o $@ $^ $(LFLAGS)
+	$(Q)$(CC) -o $@ $(OBJECTS) $(LFLAGS)
 
-$(BUILDDIR)/%.o: %.c $(BUILDDIR)
+$(BUILDDIR)/%.o: %.c $(BUILDDIR) libfirm liboo
 	@echo '===> CC $<'
 	$(Q)$(CC) $(CPPFLAGS) $(CFLAGS) -MD -MF $(addprefix $(BUILDDIR)/, $(addsuffix .d, $(basename $<))) -c -o $@ $<
 
