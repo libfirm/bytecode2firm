@@ -10,10 +10,10 @@ typedef _Bool   jboolean;
 typedef float   jfloat;
 typedef double  jdouble;
 
-typedef struct jobject_data jobject_data;
-typedef struct jclass_data  jclass_data;
-typedef jobject_data *jobject;
-typedef jclass_data  *jclass;
+typedef struct java_lang_Object java_lang_Object;
+typedef struct java_lang_Class java_lang_Class;
+typedef java_lang_Object *jobject;
+typedef java_lang_Class *jclass;
 
 typedef struct utf8_const {
 	uint16_t hash;
@@ -21,7 +21,7 @@ typedef struct utf8_const {
 	char     data[];
 } utf8_const;
 
-struct jobject_data {
+struct java_lang_Object {
 	jclass vptr;
 };
 
@@ -40,15 +40,30 @@ typedef struct jv_method {
 	utf8_const **throws;
 } jv_method;
 
-struct jclass_data {
-	jobject_data super;
-	jclass       next_or_version;
-	utf8_const  *name;
-	uint16_t     accflags;
-	jclass       superclass;
-	jv_constants constants;
-	jv_method   *methods;
-	uint16_t     method_count;
+typedef struct jv_field {
+	utf8_const *name;
+	jclass      type;
+	uint16_t    flags;
+	uint16_t    bsize;
+	union {
+		int   offset;
+		char *addr;
+	} u;
+} jv_field;
+
+struct java_lang_Class {
+	java_lang_Object super;
+	jclass           next_or_version;
+	utf8_const      *name;
+	uint16_t         accflags;
+	jclass           superclass;
+	jv_constants     constants;
+	jv_method       *methods;
+	int16_t          method_count;
+	int16_t          vtable_method_count;
+	jv_field        *fields;
+	int              size_in_bytes;
+	int16_t          field_count;
 	// ...
 };
 
