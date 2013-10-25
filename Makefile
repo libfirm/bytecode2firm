@@ -3,12 +3,12 @@
 FIRM_HOME    ?= libfirm
 FIRM_BUILD   ?= $(FIRM_HOME)/build/debug
 FIRM_CFLAGS  ?= -I$(FIRM_HOME)/include
-FIRM_LIBS    ?= -L$(FIRM_BUILD) -lfirm -lm
+FIRM_LIBS    ?= -L$(FIRM_BUILD) -Wl,-R$(shell pwd)/$(FIRM_BUILD) -lfirm -lm
 
 LIBOO_HOME   ?= liboo
 LIBOO_BUILD  ?= $(LIBOO_HOME)/build
 LIBOO_CFLAGS ?= -I$(LIBOO_HOME)/include/
-LIBOO_LIBS   ?= -L$(LIBOO_BUILD) -loo -Wl,-R$(LIBOO_BUILD)
+LIBOO_LIBS   ?= -L$(LIBOO_BUILD) -Wl,-R$(shell pwd)/$(LIBOO_BUILD) -loo
 
 INSTALL      ?= /usr/bin/install
 
