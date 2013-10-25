@@ -21,7 +21,10 @@ SOURCES       = $(wildcard *.c) $(wildcard adt/*.c) $(wildcard driver/*.c)
 DEPS          = $(addprefix $(BUILDDIR)/, $(addsuffix .d, $(basename $(SOURCES))))
 OBJECTS       = $(addprefix $(BUILDDIR)/, $(addsuffix .o, $(basename $(SOURCES))))
 
-Q            ?= @
+# This hides the noisy commandline outputs. Show them with "make V=1"
+ifneq ($(V),1)
+Q ?= @
+endif
 
 .PHONY: all libfirm liboo clean
 
