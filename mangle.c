@@ -249,7 +249,7 @@ static bool mangle_qualified_class_name(const char *classname, bool is_pointer, 
 
 static void mangle_array_type_for_compression_table(const char *array_desc, struct obstack *obst)
 {
-	assert (*array_desc == '[');
+	assert(*array_desc == '[');
 	obstack_1grow(obst, '<');
 	switch (array_desc[1]) { // the character after '['
 	case ALL_PRIM_TYPES:
@@ -332,7 +332,7 @@ static void mangle_types(const char *desc, struct obstack *obst, compression_tab
 			free((char*)array_desc);
 			break;
 		default:
-			assert (0 && "Invalid type signature");
+			panic("Invalid type signature");
 		}
 
 		i += cur_len;
@@ -367,7 +367,7 @@ ident *mangle_member_name(const char *defining_class, const char *member_name, c
 	if (member_signature == NULL)
 		goto name_finished;
 
-	assert (*member_signature == '(');
+	assert(*member_signature == '(');
 	const char *params_begin = member_signature + 1; // skip '('
 	const char *params_end   = params_begin;
 	while (*params_end != ')') params_end++;

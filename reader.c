@@ -384,7 +384,7 @@ static void symbolic_push(ir_node *node)
 	if (stack_pointer >= code->max_stack)
 		panic("code exceeds stack limit");
 	ir_mode *mode = get_irn_mode(node);
-	assert (mode == NULL || (mode == get_arith_mode(mode)));
+	assert(mode == NULL || (mode == get_arith_mode(mode)));
 
 	/* double and long need 2 stackslots */
 	if (needs_two_slots(mode))
@@ -395,14 +395,14 @@ static void symbolic_push(ir_node *node)
 
 static ir_node *symbolic_pop(ir_mode *mode)
 {
-	assert (mode == NULL || (mode == get_arith_mode(mode)));
+	assert(mode == NULL || (mode == get_arith_mode(mode)));
 
 	if (stack_pointer == 0)
 		panic("code produces stack underflow");
 
 	if (mode == NULL) {
 		mode = ir_guess_mode(stack_pointer-1);
-		assert (mode != NULL);
+		assert(mode != NULL);
 	}
 
 	ir_node *result = get_value(--stack_pointer, mode);
@@ -417,13 +417,13 @@ static ir_node *symbolic_pop(ir_mode *mode)
 
 static void set_local(uint16_t n, ir_node *node)
 {
-	assert (n < max_locals);
+	assert(n < max_locals);
 	set_value(code->max_stack + n, node);
 	ir_mode *mode = get_irn_mode(node);
-	assert (mode == NULL || mode == get_arith_mode(mode));
+	assert(mode == NULL || mode == get_arith_mode(mode));
 
 	if (needs_two_slots(mode)) {
-		assert (n+1 < max_locals);
+		assert(n+1 < max_locals);
 		set_value(code->max_stack + n+1, new_Bad(mode));
 	}
 }
@@ -437,8 +437,8 @@ static ir_node *get_local(uint16_t n, ir_mode *mode)
 //		(void) dummy;
 //		assert(is_Bad(dummy));
 //	}
-	assert (n < max_locals);
-	assert (mode == NULL || mode == get_arith_mode(mode));
+	assert(n < max_locals);
+	assert(mode == NULL || mode == get_arith_mode(mode));
 	return get_value(code->max_stack + n, mode);
 }
 
@@ -476,7 +476,7 @@ static ir_node *gen_alloc(ir_type *type, ir_node *count, ir_node **mem)
 
 static ir_entity *find_entity(ir_type *classtype, const char *name, const char *desc)
 {
-	assert (is_Class_type(classtype));
+	assert(is_Class_type(classtype));
 
 	ir_entity *entity     = NULL;
 
@@ -508,7 +508,7 @@ static ir_entity *find_entity(ir_type *classtype, const char *name, const char *
 	// 2. is the entity defined in the superclass?
 	if (entity == NULL && class_file->super_class > 0) {
 		ir_type *supertype = get_classref_type(class_file->super_class);
-		assert (supertype);
+		assert(supertype);
 		entity = find_entity(supertype, name, desc);
 	}
 
@@ -517,12 +517,12 @@ static ir_entity *find_entity(ir_type *classtype, const char *name, const char *
 		for (uint16_t i = 0; i < class_file->n_interfaces && entity == NULL; i++) {
 			uint16_t interface_ref = class_file->interfaces[i];
 			ir_type *interface     = get_classref_type(interface_ref);
-			assert (interface);
+			assert(interface);
 			entity = find_entity(interface, name, desc);
 		}
 	}
 
-	assert (class_file == linked_class);
+	assert(class_file == linked_class);
 	class_file = old_class;
 
 	return entity;
@@ -530,7 +530,7 @@ static ir_entity *find_entity(ir_type *classtype, const char *name, const char *
 
 static ir_type *find_entity_defining_class(ir_type *classtype, const char *name, const char *desc)
 {
-	assert (is_Class_type(classtype));
+	assert(is_Class_type(classtype));
 
 	ir_type *defining_class = NULL;
 
@@ -562,7 +562,7 @@ static ir_type *find_entity_defining_class(ir_type *classtype, const char *name,
 	// 2. is the entity defined in the superclass?
 	if (defining_class == NULL && class_file->super_class > 0) {
 		ir_type *supertype = get_classref_type(class_file->super_class);
-		assert (supertype);
+		assert(supertype);
 		defining_class = find_entity_defining_class(supertype, name, desc);
 	}
 
@@ -571,12 +571,12 @@ static ir_type *find_entity_defining_class(ir_type *classtype, const char *name,
 		for (uint16_t i = 0; i < class_file->n_interfaces && defining_class == NULL; i++) {
 			uint16_t interface_ref = class_file->interfaces[i];
 			ir_type *interface     = get_classref_type(interface_ref);
-			assert (interface);
+			assert(interface);
 			defining_class = find_entity_defining_class(interface, name, desc);
 		}
 	}
 
-	assert (class_file == linked_class);
+	assert(class_file == linked_class);
 	class_file = old_class;
 
 	return defining_class;
@@ -598,7 +598,7 @@ static ir_entity *get_method_entity(uint16_t index)
 		ir_type *classtype
 			= get_classref_type(methodref->methodref.class_index);
 
-		if (! is_Class_type(classtype)) {
+		if (!is_Class_type(classtype)) {
 			// semantically, this is correct (array types support the methods of j.l.Object.
 			// We might need real array types for type info stuff later.
 			classtype = get_class_type("java/lang/Object");
@@ -610,7 +610,7 @@ static ir_entity *get_method_entity(uint16_t index)
 			= get_constant_string(name_and_type->name_and_type.descriptor_index);
 
 		entity = find_entity(classtype, methodname, descriptor);
-		assert (entity && is_method_entity(entity));
+		assert(entity && is_method_entity(entity));
 		methodref->base.link = entity;
 	}
 
@@ -632,7 +632,7 @@ static ir_type *get_method_defining_class(uint16_t index)
 	ir_type *classtype
 	  = get_classref_type(methodref->methodref.class_index);
 
-	if (! is_Class_type(classtype)) {
+	if (!is_Class_type(classtype)) {
 		// semantically, this is correct (array types support the methods of j.l.Object.
 		// We might need real array types for type info stuff later.
 		classtype = get_class_type("java/lang/Object");
@@ -669,7 +669,7 @@ static ir_entity *get_interface_entity(uint16_t index)
 			= get_constant_string(name_and_type->name_and_type.descriptor_index);
 
 		entity = find_entity(classtype, methodname, descriptor);
-		assert (entity && is_method_entity(entity));
+		assert(entity && is_method_entity(entity));
 		interfacemethodref->base.link = entity;
 	}
 
@@ -698,7 +698,7 @@ static ir_entity *get_field_entity(uint16_t index)
 			= get_constant_string(name_and_type->name_and_type.descriptor_index);
 
 		entity = find_entity(classtype, fieldname, descriptor);
-		assert (entity && !is_method_entity(entity));
+		assert(entity && !is_method_entity(entity));
 		fieldref->base.link = entity;
 	}
 
@@ -932,9 +932,9 @@ static void push_load_const(uint16_t index)
 	case CONSTANT_CLASSREF: {
 		const char *classname = get_constant_string(constant->classref.name_index);
 		ir_type *klass = get_class_type(classname);
-		assert (klass);
+		assert(klass);
 		ir_entity *cdf = gcji_get_class_dollar_field(klass);
-		assert (cdf);
+		assert(cdf);
 		ir_node *cdf_symc = create_symconst(cdf);
 
 		symbolic_push(cdf_symc);
@@ -973,11 +973,11 @@ static void construct_dup(void)
 {
 	uint16_t sp = stack_pointer;
 	ir_node *val1 = symbolic_pop(NULL);
-	assert (! needs_two_slots(get_irn_mode(val1)));
+	assert(!needs_two_slots(get_irn_mode(val1)));
 
 	symbolic_push(val1);
 	symbolic_push(val1);
-	assert ((sp+1) == stack_pointer);
+	assert((sp+1) == stack_pointer);
 }
 
 static void construct_dup_x1(void)
@@ -985,13 +985,13 @@ static void construct_dup_x1(void)
 	uint16_t sp = stack_pointer;
 	ir_node *val1 = symbolic_pop(NULL);
 	ir_node *val2 = symbolic_pop(NULL);
-	assert (! needs_two_slots(get_irn_mode(val1)));
-	assert (! needs_two_slots(get_irn_mode(val2)));
+	assert(!needs_two_slots(get_irn_mode(val1)));
+	assert(!needs_two_slots(get_irn_mode(val2)));
 
 	symbolic_push(val1);
 	symbolic_push(val2);
 	symbolic_push(val1);
-	assert ((sp+1) == stack_pointer);
+	assert((sp+1) == stack_pointer);
 }
 
 static void construct_dup_x2(void)
@@ -1001,16 +1001,16 @@ static void construct_dup_x2(void)
 	ir_node *val2 = symbolic_pop(NULL);
 	ir_node *val3 = NULL;
 
-	assert (! needs_two_slots(get_irn_mode(val1)));
-	if (! needs_two_slots(get_irn_mode(val2))) {
+	assert(!needs_two_slots(get_irn_mode(val1)));
+	if (!needs_two_slots(get_irn_mode(val2))) {
 		val3 = symbolic_pop(NULL);
-		assert (! needs_two_slots(get_irn_mode(val3)));
+		assert(!needs_two_slots(get_irn_mode(val3)));
 	}
 	symbolic_push(val1);
 	if (val3 != NULL) symbolic_push(val3);
 	symbolic_push(val2);
 	symbolic_push(val1);
-	assert ((sp+1) == stack_pointer);
+	assert((sp+1) == stack_pointer);
 }
 
 static void construct_dup2(void)
@@ -1018,16 +1018,16 @@ static void construct_dup2(void)
 	uint16_t sp = stack_pointer;
 	ir_node *val1 = symbolic_pop(NULL);
 	ir_node *val2 = NULL;
-	if (! needs_two_slots(get_irn_mode(val1))) {
+	if (!needs_two_slots(get_irn_mode(val1))) {
 		val2 = symbolic_pop(NULL);
-		assert (! needs_two_slots(get_irn_mode(val2)));
+		assert(!needs_two_slots(get_irn_mode(val2)));
 	}
 	if (val2 != NULL) symbolic_push(val2);
 	symbolic_push(val1);
 	if (val2 != NULL) symbolic_push(val2);
 	symbolic_push(val1);
 
-	assert ((sp+2) == stack_pointer);
+	assert((sp+2) == stack_pointer);
 }
 
 static void construct_dup2_x1(void)
@@ -1037,17 +1037,17 @@ static void construct_dup2_x1(void)
 	ir_node *val2 = symbolic_pop(NULL);
 	ir_node *val3 = NULL;
 
-	assert (! needs_two_slots(get_irn_mode(val2)));
-	if (! needs_two_slots(get_irn_mode(val1))) {
+	assert(!needs_two_slots(get_irn_mode(val2)));
+	if (!needs_two_slots(get_irn_mode(val1))) {
 		val3 = symbolic_pop(NULL);
-		assert (! needs_two_slots(get_irn_mode(val3)));
+		assert(!needs_two_slots(get_irn_mode(val3)));
 	}
 	if (val3 != NULL) symbolic_push(val2);
 	symbolic_push(val1);
 	if (val3 != NULL) symbolic_push(val3);
 	symbolic_push(val2);
 	symbolic_push(val1);
-	assert ((sp+2) == stack_pointer);
+	assert((sp+2) == stack_pointer);
 }
 
 static void construct_dup2_x2(void)
@@ -1094,7 +1094,7 @@ static void construct_dup2_x2(void)
 
 	val4 = symbolic_pop(NULL);
 	m4   = get_irn_mode(val4);
-	assert (!needs_two_slots(m1)
+	assert(!needs_two_slots(m1)
 	     && !needs_two_slots(m2)
 	     && !needs_two_slots(m3)
 	     && !needs_two_slots(m4));
@@ -1106,7 +1106,7 @@ static void construct_dup2_x2(void)
 	symbolic_push(val2);
 	symbolic_push(val1);
 
-	assert ((sp+2) == stack_pointer);
+	assert((sp+2) == stack_pointer);
 }
 
 static ir_node *create_conv_for_mode_b(ir_node *value, ir_mode *dest_mode)
@@ -1331,7 +1331,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	for (unsigned i = 0; i < n_excptns; i++) {
 		exception_t *e = &excptns[i];
 
-		if (! rbitset_is_set(targets, e->handler_pc)) {
+		if (!rbitset_is_set(targets, e->handler_pc)) {
 			rbitset_set(targets, e->handler_pc);
 			basic_block_t exception_handler;
 			exception_handler.pc            = e->handler_pc;
@@ -1482,16 +1482,16 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			uint32_t tswitch_index = i-1;
 			uint8_t  padding = (4 - (i % 4)) % 4;
 			switch (padding) {
-			case 3: assert (code->code[i++] == 0); // FALL THROUGH
-			case 2: assert (code->code[i++] == 0); // FALL THROUGH
-			case 1: assert (code->code[i++] == 0); break;
+			case 3: assert(code->code[i++] == 0); // FALL THROUGH
+			case 2: assert(code->code[i++] == 0); // FALL THROUGH
+			case 1: assert(code->code[i++] == 0); break;
 			default: break;
 			}
 
 			int32_t  offset_default = get_32bit_arg(&i);
 			uint32_t index_default  = ((int32_t)tswitch_index) + offset_default;
 
-			assert (index_default < code->code_length);
+			assert(index_default < code->code_length);
 
 			if (!rbitset_is_set(targets, index_default)) {
 				rbitset_set(targets, index_default);
@@ -1505,7 +1505,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 			int32_t  low            = get_32bit_arg(&i);
 			int32_t  high           = get_32bit_arg(&i);
-			assert (low <= high);
+			assert(low <= high);
 			int32_t  n_entries      = high - low + 1;
 
 			for (int32_t entry = 0; entry < n_entries; entry++) {
@@ -1532,16 +1532,16 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			uint32_t lswitch_index = i-1;
 			uint8_t  padding = (4 - (i % 4)) % 4;
 			switch (padding) {
-			case 3: assert (code->code[i++] == 0); // FALL THROUGH
-			case 2: assert (code->code[i++] == 0); // FALL THROUGH
-			case 1: assert (code->code[i++] == 0); break;
+			case 3: assert(code->code[i++] == 0); // FALL THROUGH
+			case 2: assert(code->code[i++] == 0); // FALL THROUGH
+			case 1: assert(code->code[i++] == 0); break;
 			default: break;
 			}
 
 			int32_t  offset_default = get_32bit_arg(&i);
 			uint32_t index_default  = ((int32_t)lswitch_index) + offset_default;
 
-			assert (index_default < code->code_length);
+			assert(index_default < code->code_length);
 
 			if (!rbitset_is_set(targets, index_default)) {
 				rbitset_set(targets, index_default);
@@ -1561,7 +1561,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				(void) match;
 
 				uint32_t index = ((int32_t)lswitch_index) + offset;
-				assert (index < code->code_length);
+				assert(index < code->code_length);
 				if (!rbitset_is_set(targets, index)) {
 					rbitset_set(targets, index);
 
@@ -1578,7 +1578,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 		case OPC_ATHROW:
 #ifndef EXCEPTIONS
-			assert (0 && "Encountered ATHROW, but exception handling is deactivated");
+			panic("Encountered ATHROW, but exception handling is deactivated");
 #endif
 		case OPC_IRETURN:
 		case OPC_LRETURN:
@@ -2174,7 +2174,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 			if (opcode == OPC_GETSTATIC || opcode == OPC_PUTSTATIC) {
 				ir_type  *owner  = get_field_defining_class(index);
-				assert (owner);
+				assert(owner);
 
 				ir_graph *irg    = get_current_ir_graph();
 				ir_node  *block  = get_cur_block();
@@ -2249,7 +2249,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node   *callee = create_symconst(entity);
 			ir_type   *type   = get_entity_type(entity);
 			ir_type   *owner  = get_method_defining_class(index);
-			assert (owner);
+			assert(owner);
 			unsigned   n_args = get_method_n_params(type);
 			ir_node   *args[n_args];
 
@@ -2333,12 +2333,12 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			uint16_t   index   = get_16bit_arg(&i);
 			uint8_t    count   = code->code[i++];
 			(void) count;
-			assert (code->code[i++] == 0);
+			assert(code->code[i++] == 0);
 			ir_entity *entity = get_interface_entity(index);
 
 			ir_type   *type   = get_entity_type(entity);
 			unsigned   n_args = get_method_n_params(type);
-			//assert (n_args == count); // Wrong assertion. Count is the # of slots needed for the params, e.g. double contributes 2 to this value.
+			//assert(n_args == count); // Wrong assertion. Count is the # of slots needed for the params, e.g. double contributes 2 to this value.
 			ir_node   *args[n_args];
 
 			for (int i = n_args-1; i >= 0; --i) {
@@ -2459,7 +2459,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		}
 		case OPC_ATHROW: {
 #ifndef EXCEPTIONS
-			assert (0 && "Encountered ATHROW, but exception handling is deactivated");
+			panic("Encountered ATHROW, but exception handling is deactivated");
 #else
 			ir_node *addr       = symbolic_pop(mode_reference);
 			eh_throw(addr);
@@ -2503,19 +2503,19 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			const uint32_t tswitch_index = i - 1;
 			const uint8_t  padding       = (4 - (i % 4)) % 4;
 			switch (padding) {
-			case 3: assert (code->code[i++] == 0); // FALL THROUGH
-			case 2: assert (code->code[i++] == 0); // FALL THROUGH
-			case 1: assert (code->code[i++] == 0); break;
+			case 3: assert(code->code[i++] == 0); // FALL THROUGH
+			case 2: assert(code->code[i++] == 0); // FALL THROUGH
+			case 1: assert(code->code[i++] == 0); break;
 			default: break;
 			}
 
 			const int32_t  offset_default = get_32bit_arg(&i);
 			const uint32_t index_default  = ((int32_t)tswitch_index) + offset_default;
-			assert (index_default < code->code_length);
+			assert(index_default < code->code_length);
 
 			const int32_t  low  = get_32bit_arg(&i);
 			const int32_t  high = get_32bit_arg(&i);
-			assert (low <= high);
+			assert(low <= high);
 
 			const size_t     ncases      = (high - low + 1);
 			ir_switch_table *table       = ir_new_switch_table(current_ir_graph, ncases);
@@ -2550,16 +2550,16 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			const uint32_t lswitch_index = i - 1;
 			const uint8_t  padding       = (4 - (i % 4)) % 4;
 			switch (padding) {
-			case 3: assert (code->code[i++] == 0); // FALL THROUGH
-			case 2: assert (code->code[i++] == 0); // FALL THROUGH
-			case 1: assert (code->code[i++] == 0); break;
+			case 3: assert(code->code[i++] == 0); // FALL THROUGH
+			case 2: assert(code->code[i++] == 0); // FALL THROUGH
+			case 1: assert(code->code[i++] == 0); break;
 			default: break;
 			}
 
 			const int32_t  offset_default = get_32bit_arg(&i);
 			const uint32_t index_default  = ((int32_t)lswitch_index) + offset_default;
 
-			assert (index_default < code->code_length);
+			assert(index_default < code->code_length);
 
 			const int32_t    n_pairs     = get_32bit_arg(&i);
 			ir_switch_table *table       = ir_new_switch_table(current_ir_graph, n_pairs);
@@ -2571,7 +2571,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				const int32_t  match  = get_32bit_arg(&i);
 				const int32_t  offset = get_32bit_arg(&i);
 				const uint32_t index  = ((int32_t)lswitch_index) + offset;
-				assert (index < code->code_length);
+				assert(index < code->code_length);
 
 				const long  pn       = pn_Switch_max + 1 + (long)pair;
 				ir_tarval  *case_num = new_tarval_from_long(match, mode_Is);
@@ -2679,7 +2679,7 @@ static ir_type *get_class_type(const char *name)
 	if (class_file->super_class != 0) {
 		oo_java_setup_type_info(type, cls);
 		ir_type *supertype = get_classref_type(class_file->super_class);
-		assert (supertype != type);
+		assert(supertype != type);
 		add_class_supertype(type, supertype);
 		new_entity(type, subobject_ident, supertype);
 
@@ -2756,9 +2756,9 @@ static ir_type *construct_class_methods(ir_type *type)
 
 static void link_interface_method_recursive(ir_type *klass, ir_entity *interface_method)
 {
-	assert (is_Class_type(klass));
-	assert (is_method_entity(interface_method));
-	assert (oo_get_class_is_interface(get_entity_owner(interface_method)));
+	assert(is_Class_type(klass));
+	assert(is_method_entity(interface_method));
+	assert(oo_get_class_is_interface(get_entity_owner(interface_method)));
 
 	ident *method_id = get_entity_ident(interface_method);
 	ir_entity *m = get_class_member_by_name(klass, method_id);
@@ -2768,7 +2768,7 @@ static void link_interface_method_recursive(ir_type *klass, ir_entity *interface
 		return;
 	}
 
-	if (! (oo_get_class_is_abstract(klass) || oo_get_class_is_interface(klass))) {
+	if (!(oo_get_class_is_abstract(klass) || oo_get_class_is_interface(klass))) {
 		/*
 		 * this means there must be an implementation in a superclass
 		 *
@@ -2784,9 +2784,9 @@ static void link_interface_method_recursive(ir_type *klass, ir_entity *interface
 		ir_type   *cur_class = klass;
 
 		// find the implementation
-		while (! impl) {
+		while (!impl) {
 			cur_class = oo_get_class_superclass(cur_class);
-			assert (cur_class); // we assert that there will be superclasses as long as we haven't found an impl.
+			assert(cur_class); // we assert that there will be superclasses as long as we haven't found an impl.
 			impl = get_class_member_by_name(cur_class, method_id);
 		}
 
@@ -2818,8 +2818,8 @@ static void link_interface_methods(ir_type *klass, void *env)
 {
 	(void) env;
 
-	assert (is_Class_type(klass));
-	if (! oo_get_class_is_interface(klass))
+	assert(is_Class_type(klass));
+	if (!oo_get_class_is_interface(klass))
 		return;
 
 
@@ -2831,7 +2831,7 @@ static void link_interface_methods(ir_type *klass, void *env)
 	size_t n_member = get_class_n_members(klass);
 	for (size_t m = 0; m < n_member; m++) {
 		ir_entity *member = get_class_member(klass, m);
-		if (! is_method_entity(member) || oo_get_method_exclude_from_vtable(member))
+		if (!is_method_entity(member) || oo_get_method_exclude_from_vtable(member))
 			continue;
 
 		for (size_t sc = 0; sc < n_subclasses; sc++) {
@@ -2843,8 +2843,8 @@ static void link_interface_methods(ir_type *klass, void *env)
 
 static void link_normal_method_recursive(ir_type *klass, ir_entity *superclass_method)
 {
-	assert (is_Class_type(klass));
-	assert (is_method_entity(superclass_method));
+	assert(is_Class_type(klass));
+	assert(is_method_entity(superclass_method));
 
 	ident *method_id = get_entity_ident(superclass_method);
 	ir_entity *m = get_class_member_by_name(klass, method_id);
@@ -2864,7 +2864,7 @@ static void link_normal_method_recursive(ir_type *klass, ir_entity *superclass_m
 static void link_normal_methods(ir_type *klass, void *env)
 {
 	(void) env;
-	assert (is_Class_type(klass));
+	assert(is_Class_type(klass));
 
 	if (oo_get_class_is_interface(klass))
 		return;
@@ -2877,7 +2877,7 @@ static void link_normal_methods(ir_type *klass, void *env)
 	size_t n_member = get_class_n_members(klass);
 	for (size_t m = 0; m < n_member; m++) {
 		ir_entity *member = get_class_member(klass, m);
-		if (! is_method_entity(member) || oo_get_method_exclude_from_vtable(member))
+		if (!is_method_entity(member) || oo_get_method_exclude_from_vtable(member))
 			continue;
 
 		for (size_t sc = 0; sc < n_subclasses; sc++) {
@@ -2966,11 +2966,11 @@ int main(int argc, char **argv)
 			output_name = ARG_PARAM;
 		} else if (EQUALS_AND_HAS_ARG("-f")) {
 			const char *param = ARG_PARAM;
-			if (! firm_option(param))
+			if (!firm_option(param))
 				fprintf(stderr, "Warning: '%s' is not a valid Firm option - ignoring.\n", param);
 		} else if (EQUALS_AND_HAS_ARG("-b")) {
 			const char *param = ARG_PARAM;
-			if (! be_parse_arg(param))
+			if (!be_parse_arg(param))
 				fprintf(stderr, "Warning: '%s' is not a valid backend option - ignoring.\n", param);
 		} else if (EQUALS("-save-temps")) {
 			save_temps = true;
@@ -2986,7 +2986,7 @@ int main(int argc, char **argv)
 #undef EQUALS
 #undef SINGLE_OPTION
 
-	assert (main_class_name);
+	assert(main_class_name);
 	size_t arg_len        = strlen(main_class_name);
 	main_class_name_short = main_class_name + arg_len - 1;
 	while (main_class_name_short > main_class_name && *(main_class_name_short-1) != '/') main_class_name_short--;
@@ -2999,7 +2999,7 @@ int main(int argc, char **argv)
 		free(guess);
 	}
 
-	if (! output_name)
+	if (!output_name)
 		output_name = main_class_name_short;
 
 	worklist = new_pdeq();
@@ -3039,7 +3039,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "===> Optimization & backend\n");
 
 	// we had to get the class$ above, because calling gcji_get_class_dollar_field after the class has been lowered (e.g. now) would create a new entity.
-	assert (main_cdf && is_entity(main_cdf));
+	assert(main_cdf && is_entity(main_cdf));
 	const char *main_cdf_ldident = get_entity_ld_name(main_cdf);
 
 	char startup_file[] = "bc2firm_startup_XXXXXX";
@@ -3086,7 +3086,7 @@ int main(int argc, char **argv)
 
 	int retval = system(cmd_buffer);
 
-	if (! save_temps) {
+	if (!save_temps) {
 		remove(startup_file);
 		remove(asm_file);
 	}

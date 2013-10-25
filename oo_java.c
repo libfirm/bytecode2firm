@@ -32,7 +32,7 @@ static const char *class_info_name = "CI$";
 
 static void java_init_vtable_slots(ir_type *klass, ir_initializer_t *vtable_init, unsigned vtable_size)
 {
-	assert (vtable_size > 3); // setting initializers for slots 0..3 here.
+	assert(vtable_size > 3); // setting initializers for slots 0..3 here.
 
 	ir_graph *const_code = get_const_code_irg();
 	ir_node *const_0 = new_r_Const_long(const_code, mode_reference, 0);
@@ -40,7 +40,7 @@ static void java_init_vtable_slots(ir_type *klass, ir_initializer_t *vtable_init
 	set_initializer_compound_value (vtable_init, 0, init_0);
 
 	ir_entity *oo_ci = oo_get_class_rtti_entity(klass);
-	assert (oo_ci);
+	assert(oo_ci);
 	symconst_symbol oo_ci_sym;
 	oo_ci_sym.entity_p = oo_ci;
 	ir_node *oo_ci_symc = new_r_SymConst(const_code, mode_reference, oo_ci_sym, symconst_addr_ent);
@@ -48,7 +48,7 @@ static void java_init_vtable_slots(ir_type *klass, ir_initializer_t *vtable_init
 	set_initializer_compound_value(vtable_init, 1, oo_ci_init);
 
 	ir_entity *class_dollar_field = gcji_get_class_dollar_field(klass);
-	assert (class_dollar_field);
+	assert(class_dollar_field);
 	symconst_symbol cdf_sym;
 	cdf_sym.entity_p = class_dollar_field;
 	ir_node *cdf_symc = new_r_SymConst(const_code, mode_reference, cdf_sym, symconst_addr_ent);
@@ -102,7 +102,7 @@ void oo_java_setup_type_info(ir_type *classtype, class_t* javaclass)
 	oo_set_class_is_interface(classtype, javaclass->access_flags & ACCESS_FLAG_INTERFACE);
 	oo_set_class_is_extern(classtype,    javaclass->is_extern);
 
-	if (! oo_get_class_is_interface(classtype)) {
+	if (!oo_get_class_is_interface(classtype)) {
 		const char *classname  = get_class_name(classtype);
 		ident *vtable_ident    = id_mangle_dot(get_class_ident(classtype), new_id_from_str("vtable"));
 		ident *vtable_ld_ident = mangle_vtable_name(classname);

@@ -231,7 +231,7 @@ void gcji_deinit()
 
 void gcji_class_init(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem)
 {
-	assert (is_Class_type(type));
+	assert(is_Class_type(type));
 
 	symconst_symbol init_sym;
 	init_sym.entity_p = gcj_init_entity;
@@ -249,7 +249,7 @@ void gcji_class_init(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem
 
 ir_node *gcji_allocate_object(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem)
 {
-	assert (is_Class_type(type));
+	assert(is_Class_type(type));
 
 	ir_node *cur_mem = *mem;
 	gcji_class_init(type, irg, block, &cur_mem);
@@ -380,7 +380,7 @@ static ir_node *create_ccode_symconst(ir_entity *ent)
 
 static ir_entity *emit_primitive_member(ir_type *owner, const char *name, ir_type *type, ir_node *value)
 {
-	assert (is_Primitive_type(type));
+	assert(is_Primitive_type(type));
 	ident            *id   = new_id_from_str(name);
 	ir_entity        *ent  = new_entity(owner, id, type);
 	ir_initializer_t *init = create_initializer_const(value);
@@ -390,7 +390,7 @@ static ir_entity *emit_primitive_member(ir_type *owner, const char *name, ir_typ
 
 ir_entity *gcji_emit_utf8_const(constant_t *constant, int mangle_slash)
 {
-	assert (constant->base.kind == CONSTANT_UTF8_STRING);
+	assert(constant->base.kind == CONSTANT_UTF8_STRING);
 	constant_utf8_string_t *string_const = (constant_utf8_string_t*) constant;
 
 	char *bytes = mangle_slash ? strdup(string_const->bytes) : string_const->bytes;
@@ -420,7 +420,7 @@ static ir_entity *do_emit_utf8_const(const char *bytes, size_t len)
 	scp_entry *found_scpe = cpset_find(&scp, &test_scpe);
 	if (found_scpe != NULL) {
 		ir_entity *utf8const = found_scpe->utf8c;
-		assert (is_entity(utf8const));
+		assert(is_entity(utf8const));
 		return utf8const;
 	}
 
@@ -495,7 +495,7 @@ static ir_entity *emit_method_desc(ir_type *owner, ir_type *classtype, ir_entity
 
 	class_t          *linked_class  = (class_t*)  oo_get_type_link(classtype);
 	method_t         *linked_method = (method_t*) oo_get_entity_link(ent);
-	assert (linked_class && linked_method);
+	assert(linked_class && linked_method);
 
 	constant_t       *name_const    = linked_class->constants[linked_method->name_index];
 	ir_entity        *name_const_ent= gcji_emit_utf8_const(name_const, 1);
@@ -545,7 +545,7 @@ static ir_entity *emit_method_table(ir_type *classtype)
 	ir_type          *mt_type       = new_type_struct(id_mangle(id, new_id_from_str("type")));
 
 	class_t          *linked_class  = (class_t*) oo_get_type_link(classtype);
-	assert (linked_class);
+	assert(linked_class);
 
 	uint16_t          n_methods     = linked_class->n_methods;
 	ir_initializer_t *cinit         = create_initializer_compound(n_methods);
@@ -579,7 +579,7 @@ static ir_entity *emit_field_desc(ir_type *owner, ir_type *classtype, ir_entity 
 
 	class_t          *linked_class  = (class_t*) oo_get_type_link(classtype);
 	field_t          *linked_field  = (field_t*) oo_get_entity_link(ent);
-	assert (linked_class && linked_field);
+	assert(linked_class && linked_field);
 
 	constant_t       *name_const    = linked_class->constants[linked_field->name_index];
 	ir_entity        *name_const_ent= gcji_emit_utf8_const(name_const, 1);
@@ -633,7 +633,7 @@ static ir_entity *emit_field_table(ir_type *classtype)
 	ir_type          *ft_type       = new_type_struct(id_mangle(id, new_id_from_str("type")));
 
 	class_t          *linked_class  = (class_t*) oo_get_type_link(classtype);
-	assert (linked_class);
+	assert(linked_class);
 
 	uint16_t          n_fields      = linked_class->n_fields;
 	ir_initializer_t *cinit         = create_initializer_compound(n_fields);
@@ -661,7 +661,7 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 	ir_type          *if_type       = new_type_struct(id_mangle(id, new_id_from_str("type")));
 
 	class_t          *linked_class  = (class_t*) oo_get_type_link(classtype);
-	assert (linked_class);
+	assert(linked_class);
 	uint16_t          n_interfaces  = linked_class->n_interfaces;
 	if (n_interfaces == 0)
 		return NULL;
@@ -673,9 +673,9 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 		constant_utf8_string_t *clsname   = (constant_utf8_string_t*) linked_class->constants[clsref->name_index];
 
 		ir_type    *type = class_registry_get(clsname->bytes);
-		assert (type);
+		assert(type);
 		ir_entity  *cdf  = gcji_get_class_dollar_field(type);
-		assert (cdf);
+		assert(cdf);
 		ir_entity  *entry_ent = emit_primitive_member(if_type, "entry", type_reference, create_ccode_symconst(cdf));
 		set_initializer_compound_value(cinit, i, get_entity_initializer(entry_ent));
 	}
@@ -719,7 +719,7 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	unsigned cur_type_size = 0;
 
 	class_t *linked_class = (class_t*) oo_get_type_link(classtype);
-	assert (linked_class);
+	assert(linked_class);
 
 	ident     *class_vt_name = mangle_vtable_name("java/lang/Class");
 	ir_entity *class_vtable  = new_entity(get_glob_type(), class_vt_name, type_reference);
@@ -743,7 +743,7 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	}
 	if (superclass != NULL) {
 		ir_entity *sccdf = gcji_get_class_dollar_field(superclass);
-		assert (sccdf);
+		assert(sccdf);
 		EMIT_PRIM("superclass", type_reference, create_ccode_symconst(sccdf));
 	} else {
 		EMIT_PRIM("superclass", type_reference, nullref);
@@ -817,13 +817,13 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	EMIT_PRIM("engine", type_reference, create_ccode_symconst(gcj_compiled_execution_engine_entity));
 	EMIT_PRIM("reflection_data", type_reference, nullref);
 
-	assert (cur_init_slot == NUM_FIELDS);
+	assert(cur_init_slot == NUM_FIELDS);
 
 	set_type_size_bytes(cur_cdtype, cur_type_size);
 	default_layout_compound_type(cur_cdtype);
 
 	ir_entity *class_dollar_field = gcji_get_class_dollar_field(classtype);
-	assert (class_dollar_field);
+	assert(class_dollar_field);
 	set_entity_type(class_dollar_field, cur_cdtype);
 	set_entity_initializer(class_dollar_field, cur_init);
 	set_entity_visibility(class_dollar_field, ir_visibility_external);
@@ -871,7 +871,7 @@ static ir_entity *emit_type_signature(ir_type *type)
 		MUX_PRIM_TYPES(curtype, c='Z', c='B', c='C', c='S', c='I', c='J', c='F', c='D');
 		obstack_1grow(&obst, c);
 	} else {
-		assert (is_Class_type(curtype));
+		assert(is_Class_type(curtype));
 		obstack_1grow(&obst, 'L');
 		obstack_printf(&obst, "%s", get_class_name(curtype));
 		obstack_1grow(&obst, ';');
@@ -887,7 +887,7 @@ static ir_entity *emit_type_signature(ir_type *type)
 
 ir_entity *gcji_get_class_dollar_field(ir_type *type)
 {
-	assert (type != get_glob_type());
+	assert(type != get_glob_type());
 
 	ir_entity *cdf = NULL;
 	if (is_Class_type(type)) {
@@ -938,7 +938,7 @@ ir_node *gcji_get_runtime_classinfo(ir_type *type, ir_graph *irg, ir_node *block
 	 * reference to the appropriate class object.
 	 */
 
-	assert (is_Pointer_type(type));
+	assert(is_Pointer_type(type));
 
 	unsigned n_pointer_levels = 0;
 	ir_type *eltype = type;
@@ -947,10 +947,10 @@ ir_node *gcji_get_runtime_classinfo(ir_type *type, ir_graph *irg, ir_node *block
 		eltype = get_pointer_points_to_type(eltype);
 	}
 
-	if (! is_Primitive_type(eltype)) n_pointer_levels--;
+	if (!is_Primitive_type(eltype)) n_pointer_levels--;
 
 	ir_entity *elem_cdf = gcji_get_class_dollar_field(eltype);
-	assert (elem_cdf);
+	assert(elem_cdf);
 	ir_node *array_class_ref = create_symconst(irg, elem_cdf);
 
 	ir_node *cur_mem = *mem;
@@ -982,7 +982,7 @@ ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface, ir_entity *metho
 
 	class_t   *linked_class  = (class_t*)  oo_get_type_link(iface);
 	method_t  *linked_method = (method_t*) oo_get_entity_link(method);
-	assert (linked_class && linked_method);
+	assert(linked_class && linked_method);
 
 	constant_t *name_const   = linked_class->constants[linked_method->name_index];
 	ir_entity *name_const_ent= gcji_emit_utf8_const(name_const, 1);
