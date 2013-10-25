@@ -20,7 +20,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
-#include "config.h"
 
 static inline __attribute__((noreturn, format(printf, 1, 2)))
 void panic(const char *fmt, ...)

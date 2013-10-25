@@ -26,8 +26,6 @@
  * This implements a set of pointers which allows to specify custom callbacks
  * for comparing and hashing it's elements.
  */
-#include "config.h"
-
 #include "cpset.h"
 
 #define HashSet                   cpset_t

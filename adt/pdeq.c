@@ -24,8 +24,6 @@
  * @date        1999 by getting from fiasco
  * @version     $Id: pdeq.c 24125 2008-11-28 16:00:39Z mallon $
  */
-#include "config.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

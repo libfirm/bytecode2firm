@@ -1,5 +1,3 @@
-#include "config.h"
-
 #include "mangle.h"
 
 #include <string.h>

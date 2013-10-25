@@ -45,7 +45,7 @@ $(GOAL): $(OBJECTS) libfirm liboo
 
 $(BUILDDIR)/%.o: %.c $(BUILDDIR) libfirm liboo
 	@echo '===> CC $<'
-	$(Q)$(CC) $(CPPFLAGS) $(CFLAGS) -MD -MF $(addprefix $(BUILDDIR)/, $(addsuffix .d, $(basename $<))) -c -o $@ $<
+	$(Q)$(CC) $(CPPFLAGS) $(CFLAGS) -MP -MMD -c -o $@ $<
 
 $(BUILDDIR):
 	$(INSTALL) -d $(BUILDDIR) $(BUILDDIR)/adt $(BUILDDIR)/driver
