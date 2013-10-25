@@ -734,12 +734,20 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 
 	EMIT_PRIM("acc_flags", type_ushort, new_r_Const_long(ccode, mode_ushort, linked_class->access_flags));
 
-	assert (get_class_n_supertypes(classtype) > 0);
-	ir_type *superclass = get_class_supertype(classtype, 0);
-	assert (! oo_get_class_is_interface(superclass));
-	ir_entity *sccdf = gcji_get_class_dollar_field(superclass);
-	assert (sccdf);
-	EMIT_PRIM("superclass", type_reference, create_ccode_symconst(sccdf));
+	ir_type *superclass = NULL;
+	if (get_class_n_supertypes(classtype) > 0) {
+		ir_type *superclass = get_class_supertype(classtype, 0);
+		/* TODO: search for first non-interface instead of taking the
+		 * first one and hoping it is a non-interface */
+		assert(!oo_get_class_is_interface(superclass));
+	}
+	if (superclass != NULL) {
+		ir_entity *sccdf = gcji_get_class_dollar_field(superclass);
+		assert (sccdf);
+		EMIT_PRIM("superclass", type_reference, create_ccode_symconst(sccdf));
+	} else {
+		EMIT_PRIM("superclass", type_reference, nullref);
+	}
 
 	// _Jv_Constants inlined. not sure if this is needed for compiled code.
 	EMIT_PRIM("constants.size", type_int, new_r_Const_long(ccode, mode_int, 0));
