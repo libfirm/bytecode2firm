@@ -3004,8 +3004,9 @@ int main(int argc, char **argv)
 
 	worklist = new_pdeq();
 
-	/* read java.lang.Object first (makes vptr entity available) */
+	/* read java.lang.Object/Class first (makes vptr entity available) */
 	get_class_type("java/lang/Object");
+	get_class_type("java/lang/Class");
 
 	/* trigger loading of the class specified on commandline */
 	ir_type *main_class_type = get_class_type(main_class_name);
