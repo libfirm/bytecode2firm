@@ -39,6 +39,10 @@ static ir_entity *gcj_compiled_execution_engine_entity;
 
 static ir_mode   *mode_ushort;
 static ir_type   *type_ushort;
+static ir_type   *type_method_desc;
+static ir_type   *type_field_desc;
+static ir_type   *type_utf8_const;
+static ir_type   *type_java_lang_class;
 
 extern ir_entity *vptr_entity;
 
@@ -51,7 +55,8 @@ static unsigned java_style_hash(const char* s)
 	unsigned hash = 0;
 	size_t len = strlen(s);
 	for (size_t i = 0; i < len; i++) {
-		hash = (31 * hash) + s[i]; // FIXME: this doesn't work for codepoints that are not ASCII.
+		// FIXME: this doesn't work for codepoints that are not ASCII.
+		hash = (31 * hash) + s[i];
 	}
 	return hash;
 }
@@ -59,8 +64,8 @@ static unsigned java_style_hash(const char* s)
 static cpset_t scp; // static constant pool
 
 typedef struct {
-	char* s;
-	ir_entity* utf8c;
+	char      *s;
+	ir_entity *utf8c;
 } scp_entry;
 
 static int scp_cmp(const void *p1, const void *p2)
@@ -84,6 +89,107 @@ static void free_scpe(scp_entry *scpe)
 
 	free(scpe->s);
 	free(scpe);
+}
+
+static void add_compound_member(ir_type *compound, const char *name,
+                                ir_type *type)
+{
+	ident *id = new_id_from_str(name);
+	new_entity(compound, id, type);
+}
+
+static ir_type *create_method_desc_type(void)
+{
+	ir_type *type = new_type_struct(new_id_from_str("method_desc"));
+	add_compound_member(type, "name", type_reference);
+	add_compound_member(type, "sig", type_reference);
+	add_compound_member(type, "accflags", type_ushort);
+	add_compound_member(type, "index", type_ushort);
+	add_compound_member(type, "ncode", type_reference);
+	add_compound_member(type, "throws", type_reference);
+	default_layout_compound_type(type);
+	return type;
+}
+
+static ir_type *create_field_desc_type(void)
+{
+	ir_type *type_offs_addr = new_type_union(new_id_from_str("offset/address"));
+	add_compound_member(type_offs_addr, "boffset", type_int);
+	add_compound_member(type_offs_addr, "addr", type_reference);
+	default_layout_compound_type(type_offs_addr);
+
+	ir_type *type = new_type_struct(new_id_from_str("field_desc"));
+	add_compound_member(type, "name", type_reference);
+	add_compound_member(type, "type", type_reference);
+	add_compound_member(type, "accflags", type_ushort);
+	add_compound_member(type, "bsize", type_ushort);
+	add_compound_member(type, "boffset/address", type_offs_addr);
+	default_layout_compound_type(type);
+	return type;
+}
+
+static ir_type *create_utf8_const_type(void)
+{
+	ir_type *type_byte = get_type_for_mode(mode_Bu);
+	ir_type *type_var_char_array = new_type_array(1, type_byte);
+	set_array_lower_bound_int(type_var_char_array, 0, 0);
+	set_array_variable_size(type_var_char_array, 1);
+
+	ident *id = new_id_from_str("utf8_const");
+	ir_type *type = new_type_struct(id);
+	add_compound_member(type, "hash", type_ushort);
+	add_compound_member(type, "len", type_ushort);
+	add_compound_member(type, "data", type_var_char_array);
+	set_compound_variable_size(type, 1);
+	default_layout_compound_type(type);
+	return type;
+}
+
+static ir_type *create_java_lang_class_type(void)
+{
+	/* TODO: we could make some of the type_references more specific */
+	ir_type *type = new_type_struct(new_id_from_str("java.lang.Class"));
+	add_compound_member(type, "vptr", type_reference);
+	add_compound_member(type, "next_or_version", type_int);
+	add_compound_member(type, "name", type_reference);
+	add_compound_member(type, "accflags", type_ushort);
+	add_compound_member(type, "superclass", type_reference);
+	add_compound_member(type, "constants.size", type_int);
+	add_compound_member(type, "constants.tags", type_reference);
+	add_compound_member(type, "constants.data", type_reference);
+	add_compound_member(type, "methods", type_reference);
+	add_compound_member(type, "method_count", type_short);
+	add_compound_member(type, "vtable_method_count", type_short);
+	add_compound_member(type, "fields", type_reference);
+	add_compound_member(type, "size_in_bytes", type_int);
+	add_compound_member(type, "field_count", type_short);
+	add_compound_member(type, "static_field_count", type_short);
+	add_compound_member(type, "vtable", type_reference);
+	add_compound_member(type, "otable", type_reference);
+	add_compound_member(type, "otable_syms", type_reference);
+	add_compound_member(type, "atable", type_reference);
+	add_compound_member(type, "atable_syms", type_reference);
+	add_compound_member(type, "itable", type_reference);
+	add_compound_member(type, "itable_syms", type_reference);
+	add_compound_member(type, "catch_classes", type_reference);
+	add_compound_member(type, "interfaces", type_reference);
+	add_compound_member(type, "loader", type_reference);
+	add_compound_member(type, "interface_count", type_short);
+	add_compound_member(type, "state", type_byte);
+	add_compound_member(type, "thread", type_reference);
+	add_compound_member(type, "depth", type_short);
+	add_compound_member(type, "ancestors", type_reference);
+	add_compound_member(type, "idt", type_reference);
+	add_compound_member(type, "arrayclass", type_reference);
+	add_compound_member(type, "protectionDomain", type_reference);
+	add_compound_member(type, "assertion_table", type_reference);
+	add_compound_member(type, "hack_signers", type_reference);
+	add_compound_member(type, "chain", type_reference);
+	add_compound_member(type, "aux_info", type_reference);
+	add_compound_member(type, "engine", type_reference);
+	add_compound_member(type, "reflection_data", type_reference);
+	default_layout_compound_type(type);
+	return type;
 }
 
 void gcji_init()
@@ -214,6 +320,11 @@ void gcji_init()
 	type_ushort = new_type_primitive(mode_ushort);
 
 	cpset_init(&scp, scp_hash, scp_cmp);
+
+	type_method_desc     = create_method_desc_type();
+	type_field_desc      = create_field_desc_type();
+	type_utf8_const      = create_utf8_const_type();
+	type_java_lang_class = create_java_lang_class_type();
 }
 
 void gcji_deinit()
@@ -378,16 +489,6 @@ static ir_node *create_ccode_symconst(ir_entity *ent)
 	return create_symconst(ccode, ent);
 }
 
-static ir_entity *emit_primitive_member(ir_type *owner, const char *name, ir_type *type, ir_node *value)
-{
-	assert(is_Primitive_type(type));
-	ident            *id   = new_id_from_str(name);
-	ir_entity        *ent  = new_entity(owner, id, type);
-	ir_initializer_t *init = create_initializer_const(value);
-	set_entity_initializer(ent, init);
-	return ent;
-}
-
 ir_entity *gcji_emit_utf8_const(constant_t *constant, int mangle_slash)
 {
 	assert(constant->base.kind == CONSTANT_UTF8_STRING);
@@ -407,11 +508,50 @@ ir_entity *gcji_emit_utf8_const(constant_t *constant, int mangle_slash)
 	return res;
 }
 
+static void set_compound_init_null(ir_initializer_t *init, size_t idx)
+{
+	ir_initializer_t *null_init = get_initializer_null();
+	set_initializer_compound_value(init, idx, null_init);
+}
+
+static void set_compound_init_node(ir_initializer_t *init, size_t idx,
+								   ir_node *value)
+{
+	if (value == NULL) {
+		set_compound_init_null(init, idx);
+		return;
+	}
+	ir_initializer_t *value_init = create_initializer_const(value);
+	set_initializer_compound_value(init, idx, value_init);
+}
+
+static ir_initializer_t *new_initializer_long(ir_mode *mode, long val)
+{
+	ir_tarval *tv = new_tarval_from_long(val, mode);
+	return create_initializer_tarval(tv);
+}
+
+static void set_compound_init_num(ir_initializer_t *init, size_t idx,
+                                  ir_mode *mode, long val)
+{
+	ir_initializer_t *value_init = new_initializer_long(mode, val);
+	set_initializer_compound_value(init, idx, value_init);
+}
+
+static void set_compound_init_entref(ir_initializer_t *init, size_t idx,
+                                     ir_entity *entity)
+{
+	if (entity == NULL) {
+		set_compound_init_null(init, idx);
+		return;
+	}
+	ir_node *node = create_ccode_symconst(entity);
+	set_compound_init_node(init, idx, node);
+}
 
 static ir_entity *do_emit_utf8_const(const char *bytes, size_t len)
 {
 	size_t len0 = len + 1; // incl. the '\0' byte
-
 	int hash = java_style_hash(bytes) & 0xFFFF;
 
 	scp_entry test_scpe;
@@ -424,249 +564,170 @@ static ir_entity *do_emit_utf8_const(const char *bytes, size_t len)
 		return utf8const;
 	}
 
-	ir_graph         *ccode      = get_const_code_irg();
-
-	ident            *id         = id_unique("_Utf8_%u_");
-	ir_type          *utf8c_type = new_type_struct(id_mangle(id, new_id_from_str("type")));
-	ir_initializer_t *cinit      = create_initializer_compound(3);
-
-	// hash
-	ir_entity        *hash_ent   = new_entity(utf8c_type, new_id_from_str("hash"), type_ushort);
-	ir_initializer_t *hash_init  = create_initializer_const(new_r_Const_long(ccode, mode_ushort, hash));
-	set_entity_initializer(hash_ent, hash_init);
-	set_initializer_compound_value(cinit, 0, hash_init);
-
-	// length
-	ir_entity        *length_ent = new_entity(utf8c_type, new_id_from_str("length"), type_ushort);
-	ir_initializer_t *length_init= create_initializer_const(new_r_Const_long(ccode, mode_ushort, len));
-	set_entity_initializer(length_ent, length_init);
-	set_initializer_compound_value(cinit, 1, length_init);
-
-	// data
-	ir_mode          *el_mode    = mode_Bu;
-	ir_type          *el_type    = new_type_primitive(el_mode);
-	ir_type          *array_type = new_type_array(1, el_type);
-
-	set_array_lower_bound_int(array_type, 0, 0);
-	set_array_upper_bound_int(array_type, 0, len0);
-	set_type_size_bytes(array_type, len0);
-	set_type_state(array_type, layout_fixed);
-
-	ir_entity        *data_ent   = new_entity(utf8c_type, new_id_from_str("data"), array_type);
-
-	// initialize each array element to an input byte
-	ir_initializer_t *data_init  = create_initializer_compound(len0);
+	ir_initializer_t *data_init = create_initializer_compound(len0);
 	for (size_t i = 0; i < len0; ++i) {
-		ir_tarval        *tv  = new_tarval_from_long(bytes[i], el_mode);
-		ir_initializer_t *val = create_initializer_tarval(tv);
-		set_initializer_compound_value(data_init, i, val);
+		set_compound_init_num(data_init, i, mode_Bu, bytes[i]);
 	}
-	set_entity_initializer(data_ent, data_init);
+
+	ir_initializer_t *cinit = create_initializer_compound(3);
+	set_compound_init_num(cinit, 0, mode_ushort, hash);
+	set_compound_init_num(cinit, 1, mode_ushort, len);
 	set_initializer_compound_value(cinit, 2, data_init);
 
-	set_type_size_bytes(utf8c_type, get_type_size_bytes(type_ushort)*2 + get_type_size_bytes(array_type));
-	default_layout_compound_type(utf8c_type);
-
-	// finally, the entity for the utf8 constant
-	ir_entity        *utf8c   = new_entity(get_glob_type(), id, utf8c_type);
+	ident     *id    = id_unique("_Utf8_%u_");
+	ir_entity *utf8c = new_entity(get_glob_type(), id, type_utf8_const);
 	set_entity_initializer(utf8c, cinit);
 	set_entity_ld_ident(utf8c, id);
 
 	scp_entry *new_scpe = XMALLOC(scp_entry);
 	new_scpe->s = XMALLOCN(char, len0);
-	for (unsigned i = 0; i < len0; i++)
-		new_scpe->s[i] = bytes[i];
-
+	memcpy(new_scpe->s, bytes, len0);
 	new_scpe->utf8c = utf8c;
 	cpset_insert(&scp, new_scpe);
 
 	return utf8c;
 }
 
-#define MD_SIZE_BYTES (get_type_size_bytes(type_reference)*4 + get_type_size_bytes(type_ushort)*2)
-static ir_entity *emit_method_desc(ir_type *owner, ir_type *classtype, ir_entity *ent)
+static ir_initializer_t *get_method_desc(ir_type *classtype, ir_entity *ent)
 {
-	ir_graph         *ccode         = get_const_code_irg();
-
-	ident            *id            = id_unique("_MD_%u_");
-	ir_type          *md_type       = new_type_struct(id_mangle(id, new_id_from_str("type")));
-
-	ir_initializer_t *cinit         = create_initializer_compound(6);
-
-	class_t          *linked_class  = (class_t*)  oo_get_type_link(classtype);
-	method_t         *linked_method = (method_t*) oo_get_entity_link(ent);
+	class_t  *linked_class  = (class_t*)  oo_get_type_link(classtype);
+	method_t *linked_method = (method_t*) oo_get_entity_link(ent);
 	assert(linked_class && linked_method);
 
-	constant_t       *name_const    = linked_class->constants[linked_method->name_index];
-	ir_entity        *name_const_ent= gcji_emit_utf8_const(name_const, 1);
-	ir_entity        *name_ent      = emit_primitive_member(md_type, "name", type_reference, create_ccode_symconst(name_const_ent));
-	set_initializer_compound_value(cinit, 0, get_entity_initializer(name_ent));
+	constant_t *name_const     = linked_class->constants[linked_method->name_index];
+	ir_entity  *name_const_ent = gcji_emit_utf8_const(name_const, 1);
 
-	constant_t       *desc_const    = linked_class->constants[linked_method->descriptor_index];
-	ir_entity        *desc_const_ent= gcji_emit_utf8_const(desc_const, 1);
-	ir_entity        *desc_ent      = emit_primitive_member(md_type, "sig", type_reference, create_ccode_symconst(desc_const_ent));
-	set_initializer_compound_value(cinit, 1, get_entity_initializer(desc_ent));
+	constant_t *desc_const     = linked_class->constants[linked_method->descriptor_index];
+	ir_entity  *desc_const_ent = gcji_emit_utf8_const(desc_const, 1);
 
-	ir_node          *accflags      = new_r_Const_long(ccode, mode_ushort, linked_method->access_flags | 0x4000); // 0x4000 is gcj specific, meaning ACC_TRANSLATED.
-	ir_entity        *accflags_ent  = emit_primitive_member(md_type, "accflags", type_ushort, accflags);
-	set_initializer_compound_value(cinit, 2, get_entity_initializer(accflags_ent));
+	uint16_t accflags = linked_method->access_flags | 0x4000; // 0x4000 is gcj specific, meaning ACC_TRANSLATED.
+	uint16_t vtable_index = get_entity_vtable_number(ent);
 
-	ir_node          *index         = new_r_Const_long(ccode, mode_ushort, get_entity_vtable_number(ent));
-	ir_entity        *index_ent     = emit_primitive_member(md_type, "index", type_ushort, index);
-	set_initializer_compound_value(cinit, 3, get_entity_initializer(index_ent));
+	ir_entity *code
+		= ((linked_method->access_flags & ACCESS_FLAG_ABSTRACT) != 0)
+		? gcj_abstract_method_entity : ent;
 
-
-	ir_node          *funcptr       = NULL;
-	if ((linked_method->access_flags & ACCESS_FLAG_ABSTRACT) != 0)
-		funcptr = create_ccode_symconst(gcj_abstract_method_entity);
-	else
-		funcptr = create_ccode_symconst(ent);
-
-	ir_entity        *funcptr_ent   = emit_primitive_member(md_type, "ncode", type_reference, funcptr);
-	set_initializer_compound_value(cinit, 4, get_entity_initializer(funcptr_ent));
-
-	ir_node          *nullptr       = new_r_Const_long(ccode, mode_reference, 0);
-	ir_entity        *throws_ent    = emit_primitive_member(md_type, "throws", type_reference, nullptr);
-	set_initializer_compound_value(cinit, 5, get_entity_initializer(throws_ent));
-
-	set_type_size_bytes(md_type, MD_SIZE_BYTES);
-	default_layout_compound_type(md_type);
-
-	ir_entity        *md_ent        = new_entity(owner, id, md_type);
-	set_entity_initializer(md_ent, cinit);
-	set_entity_ld_ident(md_ent, id);
-
-	return md_ent;
+	ir_initializer_t *cinit = create_initializer_compound(6);
+	set_compound_init_entref(cinit, 0, name_const_ent);
+	set_compound_init_entref(cinit, 1, desc_const_ent);
+	set_compound_init_num(cinit, 2, mode_ushort, accflags);
+	set_compound_init_num(cinit, 3, mode_ushort, vtable_index);
+	set_compound_init_entref(cinit, 4, code);
+	set_compound_init_null(cinit, 5); /* throws */
+	return cinit;
 }
 
 static ir_entity *emit_method_table(ir_type *classtype)
 {
-	ident            *id            = id_unique("_MT_%u_");
-	ir_type          *mt_type       = new_type_struct(id_mangle(id, new_id_from_str("type")));
-
-	class_t          *linked_class  = (class_t*) oo_get_type_link(classtype);
+	class_t *linked_class = (class_t*) oo_get_type_link(classtype);
 	assert(linked_class);
+	uint16_t n_methods = linked_class->n_methods;
 
-	uint16_t          n_methods     = linked_class->n_methods;
-	ir_initializer_t *cinit         = create_initializer_compound(n_methods);
-	unsigned          cur_init_slot = 0;
+	ir_type *array_type = new_type_array(1, type_method_desc);
+	set_array_bounds_int(array_type, 0, 0, n_methods);
+	unsigned size = n_methods * get_type_size_bytes(type_method_desc);
+	set_type_size_bytes(array_type, size);
 
+	ir_initializer_t *cinit = create_initializer_compound(n_methods);
 	for (uint16_t i = 0; i < n_methods; i++) {
 		ir_entity *method = linked_class->methods[i]->link;
-		ir_entity *md_ent = emit_method_desc(mt_type, classtype, method);
-		set_initializer_compound_value(cinit, cur_init_slot++, get_entity_initializer(md_ent));
+		ir_initializer_t *method_desc = get_method_desc(classtype, method);
+		set_initializer_compound_value(cinit, i, method_desc);
 	}
 
-	set_type_size_bytes(mt_type, n_methods * MD_SIZE_BYTES);
-	default_layout_compound_type(mt_type);
-
-	ir_entity        *mt_ent        = new_entity(get_glob_type(), id, mt_type);
+	ident     *id     = id_unique("_MT_%u_");
+	ir_entity *mt_ent = new_entity(get_glob_type(), id, array_type);
 	set_entity_initializer(mt_ent, cinit);
 	set_entity_ld_ident(mt_ent, id);
 
 	return mt_ent;
 }
 
-#define FD_SIZE_BYTES (get_type_size_bytes(type_reference)*2 + get_type_size_bytes(type_ushort)*2 + get_type_size_bytes(type_int))
-static ir_entity *emit_field_desc(ir_type *owner, ir_type *classtype, ir_entity *ent)
+static ir_initializer_t *get_field_desc(ir_type *classtype, ir_entity *ent)
 {
-	ir_graph         *ccode         = get_const_code_irg();
-
-	ident            *id            = id_unique("_FD_%u_");
-	ir_type          *fd_type       = new_type_struct(id_mangle(id, new_id_from_str("type")));
-
-	ir_initializer_t *cinit         = create_initializer_compound(5);
-
-	class_t          *linked_class  = (class_t*) oo_get_type_link(classtype);
-	field_t          *linked_field  = (field_t*) oo_get_entity_link(ent);
+	class_t *linked_class = (class_t*) oo_get_type_link(classtype);
+	field_t *linked_field = (field_t*) oo_get_entity_link(ent);
 	assert(linked_class && linked_field);
 
-	constant_t       *name_const    = linked_class->constants[linked_field->name_index];
-	ir_entity        *name_const_ent= gcji_emit_utf8_const(name_const, 1);
-	ir_entity        *name_ent      = emit_primitive_member(fd_type, "name", type_reference, create_ccode_symconst(name_const_ent));
-	set_initializer_compound_value(cinit, 0, get_entity_initializer(name_ent));
+	constant_t *name_const = linked_class->constants[linked_field->name_index];
+	ir_entity  *name_ent   = gcji_emit_utf8_const(name_const, 1);
 
-	ir_type          *field_type    = get_entity_type(ent);
-	ir_entity        *cdf           = gcji_get_class_dollar_field(field_type);
+	ir_type   *field_type = get_entity_type(ent);
+	ir_entity *cdf        = gcji_get_class_dollar_field(field_type);
 	if (!cdf) {
 		cdf = emit_type_signature(field_type);
 	}
-	ir_node          *cdf_symc      = create_ccode_symconst(cdf);
-	ir_entity        *cdf_ent       = emit_primitive_member(fd_type, "type", type_reference, cdf_symc);
-	set_initializer_compound_value(cinit, 1, get_entity_initializer(cdf_ent));
 
-	ir_node          *accflags      = new_r_Const_long(ccode, mode_ushort, linked_field->access_flags);
-	ir_entity        *accflags_ent  = emit_primitive_member(fd_type, "accflags", type_ushort, accflags);
-	set_initializer_compound_value(cinit, 2, get_entity_initializer(accflags_ent));
-
+	ir_graph *ccode = get_const_code_irg();
 	symconst_symbol field_type_symc;
 	field_type_symc.type_p = field_type;
-	ir_node          *bsize         = new_r_SymConst(ccode, mode_ushort, field_type_symc, symconst_type_size);
-	ir_entity        *bsize_ent     = emit_primitive_member(fd_type, "bsize", type_ushort, bsize);
-	set_initializer_compound_value(cinit, 3, get_entity_initializer(bsize_ent));
+	ir_node *bsize = new_r_SymConst(ccode, mode_ushort, field_type_symc,
+	                                symconst_type_size);
 
-	symconst_symbol field_symc;
-	field_symc.entity_p = ent;
+	ir_initializer_t *offset_addr_init = create_initializer_compound(2);
+	if (linked_field->access_flags & ACCESS_FLAG_STATIC) {
+		set_compound_init_null(offset_addr_init, 0);
+		set_compound_init_entref(offset_addr_init, 1, ent);
+	} else {
+		symconst_symbol field_symc;
+		field_symc.entity_p = ent;
+		ir_node *offset
+			= new_r_SymConst(ccode, mode_int, field_symc, symconst_ofs_ent);
+		set_compound_init_node(offset_addr_init, 0, offset);
+		set_compound_init_null(offset_addr_init, 1);
+	}
 
-	ir_node          *boff_addr     = NULL;
-	if ((linked_field->access_flags & ACCESS_FLAG_STATIC) != 0)
-		boff_addr = new_r_SymConst(ccode, mode_int, field_symc, symconst_addr_ent);
-	else
-		boff_addr = new_r_SymConst(ccode, mode_int, field_symc, symconst_ofs_ent);
-
-	ir_entity        *boff_addr_ent = emit_primitive_member(fd_type, "boffset/address", type_int, boff_addr);
-	set_initializer_compound_value(cinit, 4, get_entity_initializer(boff_addr_ent));
-
-	set_type_size_bytes(fd_type, FD_SIZE_BYTES);
-	default_layout_compound_type(fd_type);
-
-	ir_entity        *fd_ent        = new_entity(owner, id, fd_type);
-	set_entity_initializer(fd_ent, cinit);
-	set_entity_ld_ident(fd_ent, id);
-
-	return fd_ent;
+	unsigned NUM_FIELDS = 5;
+	ir_initializer_t *init = create_initializer_compound(NUM_FIELDS);
+	size_t f = 0;
+	set_compound_init_entref(init, f++, name_ent);
+	set_compound_init_entref(init, f++, cdf);
+	set_compound_init_num(init, f++, mode_ushort, linked_field->access_flags);
+	set_compound_init_node(init, f++, bsize);
+	set_initializer_compound_value(init, f++, offset_addr_init);
+	assert(f == NUM_FIELDS);
+	return init;
 }
 
 static ir_entity *emit_field_table(ir_type *classtype)
 {
-	ident            *id            = id_unique("_FT_%u_");
-	ir_type          *ft_type       = new_type_struct(id_mangle(id, new_id_from_str("type")));
-
-	class_t          *linked_class  = (class_t*) oo_get_type_link(classtype);
+	class_t *linked_class = (class_t*) oo_get_type_link(classtype);
 	assert(linked_class);
+	uint16_t n_fields = linked_class->n_fields;
 
-	uint16_t          n_fields      = linked_class->n_fields;
-	ir_initializer_t *cinit         = create_initializer_compound(n_fields);
-	unsigned          cur_init_slot = 0;
+	ir_type *type_array = new_type_array(1, type_field_desc);
+	set_array_bounds_int(type_array, 0, 0, n_fields);
+	unsigned size = n_fields * get_type_size_bytes(type_field_desc);
+	set_type_size_bytes(type_array, size);
 
+	ir_initializer_t *init = create_initializer_compound(n_fields);
 	for (uint16_t i = 0; i < n_fields; i++) {
-		ir_entity *field = linked_class->fields[i]->link;
-		ir_entity *fd_ent = emit_field_desc(ft_type, classtype, field);
-		set_initializer_compound_value(cinit, cur_init_slot++, get_entity_initializer(fd_ent));
+		ir_entity        *field = linked_class->fields[i]->link;
+		ir_initializer_t *desc  = get_field_desc(classtype, field);
+		set_initializer_compound_value(init, i, desc);
 	}
 
-	set_type_size_bytes(ft_type, n_fields * FD_SIZE_BYTES);
-	default_layout_compound_type(ft_type);
-
-	ir_entity        *ft_ent        = new_entity(get_glob_type(), id, ft_type);
-	set_entity_initializer(ft_ent, cinit);
+	ident     *id     = id_unique("_FT_%u_");
+	ir_entity *ft_ent = new_entity(get_glob_type(), id, type_array);
+	set_entity_initializer(ft_ent, init);
 	set_entity_ld_ident(ft_ent, id);
-
 	return ft_ent;
 }
 
 static ir_entity *emit_interface_table(ir_type *classtype)
 {
-	ident            *id            = id_unique("_IF_%u_");
-	ir_type          *if_type       = new_type_struct(id_mangle(id, new_id_from_str("type")));
-
-	class_t          *linked_class  = (class_t*) oo_get_type_link(classtype);
+	class_t *linked_class = (class_t*) oo_get_type_link(classtype);
 	assert(linked_class);
-	uint16_t          n_interfaces  = linked_class->n_interfaces;
+	uint16_t n_interfaces = linked_class->n_interfaces;
 	if (n_interfaces == 0)
 		return NULL;
-	ir_initializer_t *cinit         = create_initializer_compound(n_interfaces);
 
+	ir_type *type_array = new_type_array(1, type_reference);
+	set_array_bounds_int(type_array, 0, 0, n_interfaces);
+	unsigned size = n_interfaces * get_type_size_bytes(type_reference);
+	set_type_size_bytes(type_array, size);
+
+	ir_initializer_t *init = create_initializer_compound(n_interfaces);
 	for (uint16_t i = 0; i < n_interfaces; i++) {
 		uint16_t                iface_ref = linked_class->interfaces[i];
 		constant_classref_t    *clsref    = (constant_classref_t*)    linked_class->constants[iface_ref];
@@ -675,18 +736,14 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 		ir_type    *type = class_registry_get(clsname->bytes);
 		assert(type);
 		ir_entity  *cdf  = gcji_get_class_dollar_field(type);
-		assert(cdf);
-		ir_entity  *entry_ent = emit_primitive_member(if_type, "entry", type_reference, create_ccode_symconst(cdf));
-		set_initializer_compound_value(cinit, i, get_entity_initializer(entry_ent));
+		assert(cdf != NULL);
+		set_compound_init_entref(init, i, cdf);
 	}
 
-	set_type_size_bytes(if_type, n_interfaces * get_type_size_bytes(type_reference));
-	default_layout_compound_type(if_type);
-
-	ir_entity        *if_ent        = new_entity(get_glob_type(), id, if_type);
-	set_entity_initializer(if_ent, cinit);
+	ident     *id     = id_unique("_IF_%u_");
+	ir_entity *if_ent = new_entity(get_glob_type(), id, type_array);
+	set_entity_initializer(if_ent, init);
 	set_entity_ld_ident(if_ent, id);
-
 	return if_ent;
 }
 
@@ -700,39 +757,34 @@ static ir_node *create_vtable_ref(ir_entity *vtable)
 	return vtable_ref;
 }
 
-#define NUM_FIELDS 39
-#define EMIT_PRIM(name, tp, val) do { \
-	  ir_entity *ent = emit_primitive_member(cur_cdtype, name, tp, val); \
-	  ir_initializer_t *init = get_entity_initializer(ent); \
-	  set_initializer_compound_value(cur_init, cur_init_slot++, init); \
-	  ir_type *tp = get_entity_type(ent); cur_type_size += get_type_size_bytes(tp); \
-	} while(0);
-
 ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 {
-	ir_graph *ccode   = get_const_code_irg();
-	ir_node  *nullref = new_r_Const_long(ccode, mode_reference, 0);
-
-	ir_type  *cur_cdtype = new_type_class(id_mangle_dot(get_class_ident(classtype), class_dollar_ident));
-	ir_initializer_t *cur_init = create_initializer_compound(NUM_FIELDS);
-	unsigned cur_init_slot = 0;
-	unsigned cur_type_size = 0;
-
 	class_t *linked_class = (class_t*) oo_get_type_link(classtype);
 	assert(linked_class);
 
 	ident     *class_vt_name = mangle_vtable_name("java/lang/Class");
 	ir_entity *class_vtable  = new_entity(get_glob_type(), class_vt_name, type_reference);
 	ir_node   *class_vt_ref  = create_vtable_ref(class_vtable);
-	EMIT_PRIM("next_or_version", type_reference, class_vt_ref);
-
-	EMIT_PRIM("unknown", type_int, new_r_Const_long(ccode, mode_int, 407000));
 
 	ir_entity *name_ent = gcji_emit_utf8_const(
 			linked_class->constants[linked_class->constants[linked_class->this_class]->classref.name_index], 1);
-	EMIT_PRIM("name", type_reference, create_ccode_symconst(name_ent));
 
-	EMIT_PRIM("acc_flags", type_ushort, new_r_Const_long(ccode, mode_ushort, linked_class->access_flags));
+	uint16_t   accflags     = linked_class->access_flags;
+	ir_entity *method_table = emit_method_table(classtype);
+	ir_entity *field_table  = emit_field_table(classtype);
+
+	symconst_symbol classtype_sym;
+	classtype_sym.type_p = classtype;
+	ir_graph *ccode = get_const_code_irg();
+	ir_node  *size_in_bytes
+		= new_r_SymConst(ccode, mode_int, classtype_sym, symconst_type_size);
+
+	int16_t field_count = linked_class->n_fields;
+	int16_t static_field_count = 0;
+	for (int16_t i = 0; i < field_count; i++) {
+		if ((linked_class->fields[i]->access_flags & ACCESS_FLAG_STATIC) != 0)
+			++static_field_count;
+	}
 
 	ir_type *superclass = NULL;
 	if (get_class_n_supertypes(classtype) > 0) {
@@ -741,91 +793,78 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 		 * first one and hoping it is a non-interface */
 		assert(!oo_get_class_is_interface(superclass));
 	}
+	ir_entity *superclass_ent = NULL;
 	if (superclass != NULL) {
-		ir_entity *sccdf = gcji_get_class_dollar_field(superclass);
-		assert(sccdf);
-		EMIT_PRIM("superclass", type_reference, create_ccode_symconst(sccdf));
-	} else {
-		EMIT_PRIM("superclass", type_reference, nullref);
+		superclass_ent = gcji_get_class_dollar_field(superclass);
 	}
-
-	// _Jv_Constants inlined. not sure if this is needed for compiled code.
-	EMIT_PRIM("constants.size", type_int, new_r_Const_long(ccode, mode_int, 0));
-	EMIT_PRIM("constants.tags", type_reference, nullref);
-	EMIT_PRIM("constants.data", type_reference, nullref);
-
-	ir_entity *mt_ent = emit_method_table(classtype);
-	EMIT_PRIM("methods", type_reference, create_ccode_symconst(mt_ent)); // union, alternative would be the element type in case classtype is an array. However, class$ for arrays are generated at runtime.
-	EMIT_PRIM("method_count", type_short, new_r_Const_long(ccode, mode_short, linked_class->n_methods));
-	EMIT_PRIM("vtable_method_count", type_short, new_r_Const_long(ccode, mode_short, oo_get_class_vtable_size(classtype)-2)); // w/o slots 0=class$ and 1=gc_stuff. see lower_oo.c
-
-	ir_entity *fields = emit_field_table(classtype);
-	EMIT_PRIM("fields", type_reference, create_ccode_symconst(fields));
-
-	symconst_symbol classtype_sym;
-	classtype_sym.type_p = classtype;
-	EMIT_PRIM("size_in_bytes", type_int, new_r_SymConst(ccode, mode_int, classtype_sym, symconst_type_size));
-	EMIT_PRIM("field_count", type_short, new_r_Const_long(ccode, mode_short, linked_class->n_fields));
-	int16_t n_static_fields = 0;
-	for (uint16_t i = 0; i < linked_class->n_fields; i++) {
-		if ((linked_class->fields[i]->access_flags & ACCESS_FLAG_STATIC) != 0) n_static_fields++;
-	}
-	EMIT_PRIM("static_field_count", type_short, new_r_Const_long(ccode, mode_short, n_static_fields));
 
 	ir_node *vtable_ref = NULL;
 	if ((linked_class->access_flags & ACCESS_FLAG_INTERFACE) == 0) {
 		ir_entity *vtable = oo_get_class_vtable_entity(classtype);
 		assert(vtable != NULL);
 		vtable_ref = create_vtable_ref(vtable);
-	} else {
-		vtable_ref = nullref;
 	}
-	EMIT_PRIM("vtable", type_reference, vtable_ref);
+
+	int16_t interface_count = linked_class->n_interfaces;
+	ir_entity *interfaces = emit_interface_table(classtype);
+
+	// w/o slots 0=class$ and 1=gc_stuff. see lower_oo.c
+	int16_t vtable_method_count = oo_get_class_vtable_size(classtype)-2;
+
+	unsigned NUM_FIELDS = 39;
+	ir_initializer_t *init = create_initializer_compound(NUM_FIELDS);
+	size_t f = 0;
+	set_compound_init_node(init, f++, class_vt_ref);
+	set_compound_init_num(init, f++, mode_int, 407000);
+	set_compound_init_entref(init, f++, name_ent);
+	set_compound_init_num(init, f++, mode_ushort, accflags);
+	set_compound_init_entref(init, f++, superclass_ent);
+	// _Jv_Constants inlined. not sure if this is needed for compiled code.
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+
+	set_compound_init_entref(init, f++, method_table);
+	set_compound_init_num(init, f++, mode_short, linked_class->n_methods);
+	set_compound_init_num(init, f++, mode_short, vtable_method_count);
+
+	set_compound_init_entref(init, f++, field_table);
+	set_compound_init_node(init, f++, size_in_bytes);
+	set_compound_init_num(init, f++, mode_short, field_count);
+	set_compound_init_num(init, f++, mode_short, static_field_count);
+	set_compound_init_node(init, f++, vtable_ref);
 
 	// most of the following fields are set at runtime during the class linking.
-	EMIT_PRIM("otable", type_reference, nullref);
-	EMIT_PRIM("otable_syms", type_reference, nullref);
-	EMIT_PRIM("atable", type_reference, nullref);
-	EMIT_PRIM("atable_syms", type_reference, nullref);
-	EMIT_PRIM("itable", type_reference, nullref);
-	EMIT_PRIM("itable_syms", type_reference, nullref);
-	EMIT_PRIM("catch_classes", type_reference, nullref);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
 
-	ir_entity *interfaces = emit_interface_table(classtype);
-	EMIT_PRIM("interfaces", type_reference, interfaces ? create_ccode_symconst(interfaces) : nullref);
-	EMIT_PRIM("loader", type_reference, nullref);
+	set_compound_init_entref(init, f++, interfaces);
+	set_compound_init_null(init, f++);
+	set_compound_init_num(init, f++, mode_short, interface_count);
 
-	EMIT_PRIM("interface_count", type_short, new_r_Const_long(ccode, mode_short, linked_class->n_interfaces));
-	EMIT_PRIM("state", type_byte, new_r_Const_long(ccode, mode_byte, 0));
-
-	EMIT_PRIM("thread", type_reference, nullref);
-
-	EMIT_PRIM("depth", type_short, new_r_Const_long(ccode, mode_short, 0));
-	EMIT_PRIM("ancestors", type_reference, nullref);
-
-	EMIT_PRIM("idt", type_reference, nullref);
-
-	EMIT_PRIM("arrayclass", type_reference, nullref);
-	EMIT_PRIM("protectionDomain", type_reference, nullref);
-
-	EMIT_PRIM("assertion_table", type_reference, nullref);
-	EMIT_PRIM("hack_signers", type_reference, nullref);
-
-	EMIT_PRIM("chain", type_reference, nullref);
-	EMIT_PRIM("aux_info", type_reference, nullref);
-
-	EMIT_PRIM("engine", type_reference, create_ccode_symconst(gcj_compiled_execution_engine_entity));
-	EMIT_PRIM("reflection_data", type_reference, nullref);
-
-	assert(cur_init_slot == NUM_FIELDS);
-
-	set_type_size_bytes(cur_cdtype, cur_type_size);
-	default_layout_compound_type(cur_cdtype);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+	set_compound_init_null(init, f++);
+	set_compound_init_entref(init, f++, gcj_compiled_execution_engine_entity);
+	set_compound_init_null(init, f++);
+	assert(f == NUM_FIELDS);
 
 	ir_entity *class_dollar_field = gcji_get_class_dollar_field(classtype);
 	assert(class_dollar_field);
-	set_entity_type(class_dollar_field, cur_cdtype);
-	set_entity_initializer(class_dollar_field, cur_init);
+	set_entity_initializer(class_dollar_field, init);
 	set_entity_visibility(class_dollar_field, ir_visibility_external);
 	set_entity_alignment(class_dollar_field, 32);
 
@@ -896,7 +935,7 @@ ir_entity *gcji_get_class_dollar_field(ir_type *type)
 		ident *mangled_id = mangle_member_name(classname, membername, NULL);
 		cdf = get_class_member_by_name(get_glob_type(), mangled_id);
 		if (!cdf) {
-			cdf = new_entity(get_glob_type(), class_dollar_ident, type_reference);
+			cdf = new_entity(get_glob_type(), class_dollar_ident, type_java_lang_class);
 			set_entity_ld_ident(cdf, mangled_id);
 			set_entity_visibility(cdf, ir_visibility_external);
 			set_entity_alignment(cdf, 32);
