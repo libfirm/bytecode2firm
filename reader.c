@@ -3070,7 +3070,16 @@ int main(int argc, char **argv)
 	oo_java_deinit();
 
 	char cmd_buffer[1024];
+	/* TODO: write a proper driver here/workout a system for switching runtime
+	 * libraries without us having to patch reader.c */
+#if 0
+	/* libgcj */
 	sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -lgcj -lstdc++ -L. -Wl,-R. -loo_rt -o %s", asm_file, startup_file, output_name);
+#else
+	/* simplert */
+	const char *my_dir = guess_rt_path();
+	sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -Lrt -lsimplert -Wl,-R%s -o %s", asm_file, startup_file, my_dir, output_name);
+#endif
 
 	if (verbose)
 		fprintf(stderr, "===> Assembling & linking (%s)\n", cmd_buffer);
