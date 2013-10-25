@@ -30,22 +30,6 @@ if test -w $DATA1DIR; then
 	ln -s "$BUILDBASE/libfirm" libfirm/build
 fi
 
-# Place a config.mak into libfirm directory, so we can get ccache benefits
-rm -f libfirm/config.mak
-rm -f liboo/config.mak
-echo "FIRM_HOME        = ../libfirm" >> liboo/config.mak
-echo "LIBFIRM_CPPFLAGS = -I\$(FIRM_HOME)/include" >> liboo/config.mak
-echo "LIBFIRM_LFLAGS   = -L\$(FIRM_HOME)/build/debug -lfirm" >> liboo/config.mak
-echo "LIBUNWIND_LFLAGS = -lunwind" >> liboo/config.mak
-# Use ccache if you have it installed...
-if which ccache > /dev/null; then
-	echo "CC = ccache gcc" >> libfirm/config.mak
-fi
-if [ "`uname -s`" = "Darwin" ]; then
-	echo "DLLEXT = .dylib" >> libfirm/config.mak
-	echo "DLLEXT = .dylib" >> liboo/config.mak
-fi
-
 make "$@"
 
 unzip "$GCJ_RT" -d rt
