@@ -47,6 +47,15 @@ bool firm_is_windows_os(const machine_triple_t *machine)
 	return strstart(os, "mingw") || streq(os, "win32");
 }
 
+bool firm_is_ia32_cpu(const char *architecture)
+{
+	return streq(architecture, "i386")
+	    || streq(architecture, "i486")
+	    || streq(architecture, "i586")
+	    || streq(architecture, "i686")
+	    || streq(architecture, "i786");
+}
+
 /**
  * Initialize firm codegeneration for a specific operating system.
  * The argument is the operating system part of a target-triple
@@ -54,7 +63,9 @@ bool firm_is_windows_os(const machine_triple_t *machine)
 static bool setup_os_support(const machine_triple_t *machine)
 {
 	if (firm_is_unixish_os(machine)
-	    || streq(machine->operating_system, "elf")) {
+	|| streq(machine->operating_system, "elf")
+	|| streq(machine->operating_system, "octopos")
+	|| streq(machine->operating_system, "irtss")) {
 		set_be_option("ia32-gasmode=elf");
 		set_compilerlib_name_mangle(compilerlib_name_mangle_default);
 	} else if (firm_is_darwin_os(machine)) {

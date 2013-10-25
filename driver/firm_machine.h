@@ -2,8 +2,8 @@
  * This file is part of cparser.
  * Copyright (C) 2012 Matthias Braun <matze@braunis.de>
  */
-#ifndef FIRM_OS_H
-#define FIRM_OS_H
+#ifndef FIRM_MACHINE_H
+#define FIRM_MACHINE_H
 
 #include <stdbool.h>
 
@@ -26,5 +26,7 @@ bool firm_is_unixish_os(const machine_triple_t *machine);
 bool firm_is_darwin_os(const machine_triple_t *machine);
 
 bool firm_is_windows_os(const machine_triple_t *machine);
+
+bool firm_is_ia32_cpu(const char *architecture);
 
 #endif

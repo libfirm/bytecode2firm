@@ -2,7 +2,7 @@
 
 FIRM_HOME    ?= libfirm
 FIRM_BUILD   ?= $(FIRM_HOME)/build/debug
-FIRM_CFLAGS  ?= -I$(FIRM_HOME)/include
+FIRM_CFLAGS  ?= -I$(FIRM_HOME)/include -I$(FIRM_HOME)/build/gen/include/libfirm
 FIRM_LIBS    ?= -L$(FIRM_BUILD) -Wl,-R$(shell pwd)/$(FIRM_BUILD) -lfirm -lm
 
 LIBOO_HOME   ?= liboo
