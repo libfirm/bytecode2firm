@@ -83,6 +83,7 @@ void oo_java_init(void)
 
 	ddispatch_set_vtable_layout(GCJI_VTABLE_OFFSET, GCJI_VTABLE_OFFSET+2, GCJI_VTABLE_OFFSET-1, java_init_vtable_slots);
 	ddispatch_set_abstract_method_ident(new_id_from_str("_Jv_ThrowAbstractMethodError"));
+	ddispatch_set_interface_lookup_constructor(gcji_lookup_interface);
 
 	dmemory_set_allocation_methods(gcji_get_arraylength);
 
