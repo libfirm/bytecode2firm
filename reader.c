@@ -340,9 +340,6 @@ static void create_field_entity(field_t *field, ir_type *owner)
 
 	if (oo_get_class_is_extern(owner))
 		set_entity_visibility(entity, ir_visibility_external);
-
-	if (verbose)
-		fprintf(stderr, "Field %s\n", name);
 }
 
 static const attribute_code_t *code;
