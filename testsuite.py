@@ -1,7 +1,7 @@
 from sisyphus import test
 import os
 from glob import glob
-from sisyphus.test.test   import Test, Environment
+from sisyphus.test.test   import Test, Environment, ensure_dir
 from sisyphus.test.steps  import execute, step_execute
 from sisyphus.test.checks import check_retcode_zero, create_check_reference_output
 
@@ -16,7 +16,8 @@ def step_compile_class(environment):
 	assert testname.endswith(".java")
 	environment.classname = testname[:-5]
 	environment.executable = "%(builddir)s/%(classname)s.exe" % environment
-	cmd = "%(bc2firm)s %(classname)s %(bc2firmflags)s -o %(executable)s" % environment
+	ensure_dir(os.path.dirname(environment.executable))
+	cmd = "%(bc2firm)s -cp . %(classname)s %(bc2firmflags)s -o %(executable)s" % environment
 	return execute(environment, cmd, timeout=240)
 
 def make_bc2firm_test(filename):
