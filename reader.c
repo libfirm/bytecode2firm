@@ -2907,33 +2907,20 @@ static void layout_types(ir_type *type, void *env)
 		default_layout_compound_type(type);
 }
 
-/**
- * Return the path to ourself (if possible)
- */
-static char *get_exe_path(void)
-{
-	/* in linux /proc/self/exe should be a symlink to us
-	 * TODO: write windows/mac/whatever specific code
-	 */
-	char *buf = malloc(4096);
-	ssize_t s = readlink("/proc/self/exe", buf, 2048);
-	if (s < 0 || s == 2048)
-		return NULL;
-	buf[s] = '\0';
-	return buf;
-}
+#ifndef DEFAULT_BOOTCLASSPATH
+#define DEFAULT_BOOTCLASSPATH "rt"
+#endif
 
-/**
- * assume the "rt" directory is in `readlink /proc/self/exe`/../rt
- */
-static char *guess_rt_path(void)
+static const char *classpath     = "./classes";
+static const char *bootclasspath = DEFAULT_BOOTCLASSPATH;
+
+static void setup_class_paths(void)
 {
-	char *my_place = get_exe_path();
-	char *my_dir   = dirname(my_place);
-	char *buf      = malloc(4096);
-	snprintf(buf, 4096, "%s/../rt", my_dir);
-	free(my_place);
-	return buf;
+	if (verbose) {
+		printf("Classpath: %s\n", classpath);
+		printf("Bootclasspath: %s\n", bootclasspath);
+	}
+	class_file_init(classpath, bootclasspath);
 }
 
 int main(int argc, char **argv)
@@ -2949,8 +2936,6 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	const char *classpath     = "./classes";
-	const char *bootclasspath = NULL;
 	const char *output_name   = NULL;
 	bool        save_temps    = false;
 	enum {
@@ -2964,7 +2949,7 @@ int main(int argc, char **argv)
 #define EQUALS_AND_HAS_ARG(x) ((strcmp(x, argv[curarg]) == 0 && (curarg+1) < argc))
 #define ARG_PARAM             (argv[++curarg])
 	while (curarg < argc) {
-		if (EQUALS_AND_HAS_ARG("-cp")) {
+		if (EQUALS_AND_HAS_ARG("-cp") || EQUALS_AND_HAS_ARG("--classpath")) {
 			classpath = ARG_PARAM;
 		} else if (EQUALS_AND_HAS_ARG("-bootclasspath")) {
 			bootclasspath = ARG_PARAM;
@@ -2996,18 +2981,15 @@ int main(int argc, char **argv)
 #undef EQUALS
 #undef SINGLE_OPTION
 
-	assert(main_class_name);
+	if (main_class_name == NULL) {
+		fprintf(stderr, "No main class specified!\n");
+		return 1;
+	}
 	size_t arg_len        = strlen(main_class_name);
 	main_class_name_short = main_class_name + arg_len - 1;
 	while (main_class_name_short > main_class_name && *(main_class_name_short-1) != '/') main_class_name_short--;
 
-	if (bootclasspath != NULL) {
-		class_file_init(classpath, bootclasspath);
-	} else {
-		char *guess = guess_rt_path();
-		class_file_init(classpath, guess);
-		free(guess);
-	}
+	setup_class_paths();
 
 	/* stupid heuristic: if we can find java/util/UUID then we assume
 	 * libgcj is present and working, otherwise we default to simplert. */
@@ -3092,8 +3074,7 @@ int main(int argc, char **argv)
 		sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -lgcj -lstdc++ -o %s", asm_file, startup_file, output_name);
 	} else {
 		/* simplert */
-		const char *my_dir = guess_rt_path();
-		sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -Lrt -lsimplert -Wl,-R%s -o %s", asm_file, startup_file, my_dir, output_name);
+		sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -Lrt -lsimplert -Wl,-R%s -o %s", asm_file, startup_file, bootclasspath, output_name);
 	}
 
 	if (verbose)

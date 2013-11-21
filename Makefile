@@ -25,6 +25,9 @@ OBJECTS       = $(addprefix $(BUILDDIR)/, $(addsuffix .o, $(basename $(SOURCES))
 
 UNUSED := $(shell mkdir -p $(BUILDDIR) $(BUILDDIR)/adt $(BUILDDIR)/driver)
 
+DEFAULT_BOOTCLASSPATH ?= -DDEFAULT_BOOTCLASSPATH=\"$(abspath .)/rt\"
+CPPFLAGS += $(DEFAULT_BOOTCLASSPATH)
+
 # This hides the noisy commandline outputs. Show them with "make V=1"
 ifneq ($(V),1)
 Q ?= @
