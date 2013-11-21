@@ -150,19 +150,22 @@ static void init_types(void)
 	mode_long
 		= new_int_mode("J", irma_twos_complement, 64, 1, 64);
 	type_long = new_type_primitive(mode_long);
-//	set_type_alignment_bytes(type_long, 4); // Setting this creates an object layout equivalent to gcj. (but breaks other things)
+	//	set_type_alignment_bytes(type_long, 4); // Setting this creates an object layout equivalent to gcj. (but breaks other things)
 
 	ir_mode *mode_boolean = mode_byte;
 	type_boolean = new_type_primitive(mode_boolean);
 
+	/* Note: ir_overflow_min_max is incompatible with the x86 backend, we should
+	 * support both style and select whatever backend_params.float_int_overflow
+	 * reports. This however needs some fixup code to be generated here. */
 	mode_float
-		= new_float_mode("F", irma_ieee754, 8, 23);
+		= new_float_mode("F", irma_ieee754, 8, 23, ir_overflow_min_max);
 	type_float = new_type_primitive(mode_float);
 
 	mode_double
-		= new_float_mode("D", irma_ieee754, 11, 52);
+		= new_float_mode("D", irma_ieee754, 11, 52, ir_overflow_min_max);
 	type_double = new_type_primitive(mode_double);
-//	set_type_alignment_bytes(type_double, 4); // Setting this creates an object layout equivalent to gcj. (but breaks other things)
+	// set_type_alignment_bytes(type_double, 4); // Setting this creates an object layout equivalent to gcj. (but breaks other things)
 
 	mode_reference = mode_P;
 
