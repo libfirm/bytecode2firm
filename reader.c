@@ -2672,6 +2672,8 @@ static ir_type *get_class_type(const char *name)
 		fprintf(stderr, "==> reading class %s\n", name);
 
 	class_t *cls = read_class(name);
+	if (cls == NULL)
+		panic("Couldn't find class %s", name);
 
 	class_t *old_class_file = class_file;
 	class_file = cls;

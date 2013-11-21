@@ -350,7 +350,7 @@ class_t *read_class(const char *classname)
 		from_bootclasspath = false;
 
 		if (in == NULL)
-		  panic("Couldn't find class '%s' (%s)\n", classname, classfilename);
+			return NULL;
 	}
 
 	class_file = read_class_file();
