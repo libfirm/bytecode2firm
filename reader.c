@@ -2953,7 +2953,11 @@ int main(int argc, char **argv)
 	const char *bootclasspath = NULL;
 	const char *output_name   = NULL;
 	bool        save_temps    = false;
-	            verbose       = false;
+	enum {
+		RUNTIME_GCJ,
+		RUNTIME_SIMPLE,
+		RUNTIME_AUTO
+	} runtime_type = RUNTIME_AUTO;
 
 	int curarg = 1;
 #define EQUALS(x)             (strcmp(x, argv[curarg]) == 0)
@@ -2978,6 +2982,10 @@ int main(int argc, char **argv)
 			save_temps = true;
 		} else if (EQUALS("-v")) {
 			verbose = true;
+		} else if (EQUALS("--simplert")) {
+			runtime_type = RUNTIME_SIMPLE;
+		} else if (EQUALS("--gcj")) {
+			runtime_type = RUNTIME_GCJ;
 		} else {
 			main_class_name = argv[curarg];
 		}
@@ -2999,6 +3007,13 @@ int main(int argc, char **argv)
 		char *guess = guess_rt_path();
 		class_file_init(classpath, guess);
 		free(guess);
+	}
+
+	/* stupid heuristic: if we can find java/util/UUID then we assume
+	 * libgcj is present and working, otherwise we default to simplert. */
+	if (runtime_type == RUNTIME_AUTO) {
+		runtime_type = read_class("java/util/UUID") != NULL
+		             ? RUNTIME_GCJ : RUNTIME_AUTO;
 	}
 
 	if (!output_name)
@@ -3072,16 +3087,14 @@ int main(int argc, char **argv)
 	oo_java_deinit();
 
 	char cmd_buffer[1024];
-	/* TODO: write a proper driver here/workout a system for switching runtime
-	 * libraries without us having to patch reader.c */
-#if 0
-	/* libgcj */
-	sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -lgcj -lstdc++ -L. -Wl,-R. -loo_rt -o %s", asm_file, startup_file, output_name);
-#else
-	/* simplert */
-	const char *my_dir = guess_rt_path();
-	sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -Lrt -lsimplert -Wl,-R%s -o %s", asm_file, startup_file, my_dir, output_name);
-#endif
+	if (runtime_type == RUNTIME_GCJ) {
+		/* libgcj */
+		sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -lgcj -lstdc++ -o %s", asm_file, startup_file, output_name);
+	} else {
+		/* simplert */
+		const char *my_dir = guess_rt_path();
+		sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -Lrt -lsimplert -Wl,-R%s -o %s", asm_file, startup_file, my_dir, output_name);
+	}
 
 	if (verbose)
 		fprintf(stderr, "===> Assembling & linking (%s)\n", cmd_buffer);
