@@ -344,9 +344,7 @@ void gcji_class_init(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem
 {
 	assert(is_Class_type(type));
 
-	symconst_symbol init_sym;
-	init_sym.entity_p = gcj_init_entity;
-	ir_node *init_callee = new_r_SymConst(irg, mode_reference, init_sym, symconst_addr_ent);
+	ir_node *init_callee = new_r_Address(irg, gcj_init_entity);
 
 	ir_node *cur_mem        = *mem;
 	ir_node *jclass         = gcji_get_runtime_classinfo(type, irg, block, &cur_mem);
@@ -365,9 +363,7 @@ ir_node *gcji_allocate_object(ir_type *type, ir_graph *irg, ir_node *block, ir_n
 	ir_node *cur_mem = *mem;
 	gcji_class_init(type, irg, block, &cur_mem);
 
-	symconst_symbol alloc_sym;
-	alloc_sym.entity_p = gcj_alloc_entity;
-	ir_node *alloc_callee = new_r_SymConst(irg, mode_reference, alloc_sym, symconst_addr_ent);
+	ir_node *alloc_callee = new_r_Address(irg, gcj_alloc_entity);
 
 	ir_node *jclass          = gcji_get_runtime_classinfo(type, irg, block, &cur_mem);
 	ir_node *alloc_args[1]   = { jclass };
@@ -387,9 +383,7 @@ ir_node *gcji_allocate_array(ir_type *eltype, ir_node *count, ir_graph *irg, ir_
 	ir_node   *cur_mem    = *mem;
 
 	if (is_Primitive_type(eltype)) {
-		symconst_symbol callee_sym;
-		callee_sym.entity_p = gcj_new_prim_array_entity;
-		ir_node *callee = new_r_SymConst(irg, mode_reference, callee_sym, symconst_addr_ent);
+		ir_node *callee = new_r_Address(irg, gcj_new_prim_array_entity);
 
 		ir_node *jclass      = gcji_get_runtime_classinfo(eltype, irg, block, &cur_mem);
 		ir_node *args[2]     = { jclass, count };
@@ -399,9 +393,7 @@ ir_node *gcji_allocate_array(ir_type *eltype, ir_node *count, ir_graph *irg, ir_
 		ir_node *ress        = new_r_Proj(call, mode_T, pn_Call_T_result);
 		         res         = new_r_Proj(ress, mode_reference, 0);
 	} else {
-		symconst_symbol callee_sym;
-		callee_sym.entity_p = gcj_new_object_array_entity;
-		ir_node *callee = new_r_SymConst(irg, mode_reference, callee_sym, symconst_addr_ent);
+		ir_node *callee = new_r_Address(irg, gcj_new_object_array_entity);
 
 		ir_node *jclass      = gcji_get_runtime_classinfo(eltype, irg, block, &cur_mem);
 		ir_node *nullptr     = new_r_Const_long(irg, mode_reference, 0);
@@ -419,13 +411,8 @@ ir_node *gcji_allocate_array(ir_type *eltype, ir_node *count, ir_graph *irg, ir_
 
 ir_node *gcji_new_string(ir_entity *bytes, ir_graph *irg, ir_node *block, ir_node **mem)
 {
-	symconst_symbol callee_sym;
-	callee_sym.entity_p = gcj_new_string_entity;
-	ir_node *callee = new_r_SymConst(irg, mode_reference, callee_sym, symconst_addr_ent);
-
-	symconst_symbol string_sym;
-	string_sym.entity_p = bytes;
-	ir_node *string_symc = new_r_SymConst(irg, mode_reference, string_sym, symconst_addr_ent);
+	ir_node *callee      = new_r_Address(irg, gcj_new_string_entity);
+	ir_node *string_symc = new_r_Address(irg, bytes);
 
 	ir_node *args[1] = { string_symc };
 
@@ -459,10 +446,7 @@ ir_node *gcji_get_arrayclass(ir_node *array_class_ref, ir_graph *irg, ir_node *b
 {
 	ir_node *cur_mem = *mem;
 
-	symconst_symbol callee_sym;
-	callee_sym.entity_p = gcj_get_array_class_entity;
-
-	ir_node *callee      = new_r_SymConst(irg, mode_reference, callee_sym, symconst_addr_ent);
+	ir_node *callee      = new_r_Address(irg, gcj_get_array_class_entity);
 
 	ir_node *args[]      = { array_class_ref, new_r_Const_long(irg, mode_reference, 0) };
 	ir_type *callee_type = get_entity_type(gcj_get_array_class_entity);
@@ -477,9 +461,7 @@ ir_node *gcji_get_arrayclass(ir_node *array_class_ref, ir_graph *irg, ir_node *b
 
 static ir_node *create_symconst(ir_graph *irg, ir_entity *ent)
 {
-	symconst_symbol sym;
-	sym.entity_p = ent;
-	ir_node *symc = new_r_SymConst(irg, mode_reference, sym, symconst_addr_ent);
+	ir_node *symc = new_r_Address(irg, ent);
 	return symc;
 }
 
@@ -659,20 +641,15 @@ static ir_initializer_t *get_field_desc(ir_type *classtype, ir_entity *ent)
 	}
 
 	ir_graph *ccode = get_const_code_irg();
-	symconst_symbol field_type_symc;
-	field_type_symc.type_p = field_type;
-	ir_node *bsize = new_r_SymConst(ccode, mode_ushort, field_type_symc,
-	                                symconst_type_size);
+
+	ir_node *bsize = new_r_Size(ccode, mode_ushort, field_type);
 
 	ir_initializer_t *offset_addr_init = create_initializer_compound(2);
 	if (linked_field->access_flags & ACCESS_FLAG_STATIC) {
 		set_compound_init_null(offset_addr_init, 0);
 		set_compound_init_entref(offset_addr_init, 1, ent);
 	} else {
-		symconst_symbol field_symc;
-		field_symc.entity_p = ent;
-		ir_node *offset
-			= new_r_SymConst(ccode, mode_int, field_symc, symconst_ofs_ent);
+		ir_node *offset = new_r_Offset(ccode, mode_int, ent);
 		set_compound_init_node(offset_addr_init, 0, offset);
 		set_compound_init_null(offset_addr_init, 1);
 	}
@@ -773,11 +750,8 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	ir_entity *method_table = emit_method_table(classtype);
 	ir_entity *field_table  = emit_field_table(classtype);
 
-	symconst_symbol classtype_sym;
-	classtype_sym.type_p = classtype;
 	ir_graph *ccode = get_const_code_irg();
-	ir_node  *size_in_bytes
-		= new_r_SymConst(ccode, mode_int, classtype_sym, symconst_type_size);
+	ir_node  *size_in_bytes	= new_r_Size(ccode, mode_int, classtype);
 
 	int16_t field_count = linked_class->n_fields;
 	int16_t static_field_count = 0;
@@ -1031,9 +1005,7 @@ ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface, ir_entity *metho
 	ir_entity *desc_const_ent= gcji_emit_utf8_const(desc_const, 1);
 	ir_node   *desc_ref      = create_symconst(irg, desc_const_ent);
 
-	symconst_symbol callee_sym;
-	callee_sym.entity_p      = gcj_lookup_interface_entity;
-	ir_node   *callee        = new_r_SymConst(irg, mode_reference, callee_sym, symconst_addr_ent);
+	ir_node   *callee        = new_r_Address(irg, gcj_lookup_interface_entity);
 
 	ir_node   *args[3]       = { cd_ref, name_ref, desc_ref };
 	ir_type   *call_type     = get_entity_type(gcj_lookup_interface_entity);
@@ -1111,10 +1083,7 @@ ir_node *gcji_new_multiarray(ir_node *array_class_ref, unsigned dims, ir_node **
 {
 	ir_node *cur_mem = *mem;
 
-	symconst_symbol callee_sym;
-	callee_sym.entity_p = gcj_new_multiarray_entity;
-
-	ir_node *callee      = new_r_SymConst(irg, mode_reference, callee_sym, symconst_addr_ent);
+	ir_node *callee      = new_r_Address(irg, gcj_new_multiarray_entity);
 	ir_node *dims_arr    = alloc_dims_array(dims, sizes, irg, block, &cur_mem);
 	ir_node *args[]      = { array_class_ref, new_r_Const_long(irg, mode_int, dims), dims_arr };
 	ir_type *callee_type = get_entity_type(gcj_new_multiarray_entity);

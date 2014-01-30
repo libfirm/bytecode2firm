@@ -444,9 +444,7 @@ static ir_node *get_local(uint16_t n, ir_mode *mode)
 
 static ir_node *create_symconst(ir_entity *entity)
 {
-	union symconst_symbol sym;
-	sym.entity_p = entity;
-	return new_SymConst(mode_reference, sym, symconst_addr_ent);
+	return new_Address(entity);
 }
 
 static ir_node *gen_calloc_call(ir_node *size, ir_node *count, ir_node **mem)
@@ -467,9 +465,7 @@ static ir_node *gen_alloc(ir_type *type, ir_node *count, ir_node **mem)
 		count = new_Conv(count, mode_size_t);
 	}
 
-	symconst_symbol type_sym;
-	type_sym.type_p = type;
-	ir_node *size = new_SymConst(mode_size_t, type_sym, symconst_type_size);
+	ir_node *size = new_Size(mode_size_t, type);
 
 	return gen_calloc_call(size, count, mem);
 }

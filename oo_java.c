@@ -41,17 +41,13 @@ static void java_init_vtable_slots(ir_type *klass, ir_initializer_t *vtable_init
 
 	ir_entity *oo_ci = oo_get_class_rtti_entity(klass);
 	assert(oo_ci);
-	symconst_symbol oo_ci_sym;
-	oo_ci_sym.entity_p = oo_ci;
-	ir_node *oo_ci_symc = new_r_SymConst(const_code, mode_reference, oo_ci_sym, symconst_addr_ent);
+	ir_node *oo_ci_symc = new_r_Address(const_code, oo_ci);
 	ir_initializer_t *oo_ci_init = create_initializer_const(oo_ci_symc);
 	set_initializer_compound_value(vtable_init, 1, oo_ci_init);
 
 	ir_entity *class_dollar_field = gcji_get_class_dollar_field(klass);
 	assert(class_dollar_field);
-	symconst_symbol cdf_sym;
-	cdf_sym.entity_p = class_dollar_field;
-	ir_node *cdf_symc = new_r_SymConst(const_code, mode_reference, cdf_sym, symconst_addr_ent);
+	ir_node *cdf_symc = new_r_Address(const_code, class_dollar_field);
 
 	const char *cname = get_class_name(klass);
 	int workaround = 0;
