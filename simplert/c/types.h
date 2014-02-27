@@ -5,6 +5,7 @@
 
 typedef int8_t  jbyte;
 typedef int16_t jshort;
+typedef uint16_t jchar;
 typedef int32_t jint;
 typedef _Bool   jboolean;
 typedef float   jfloat;
@@ -13,7 +14,10 @@ typedef double  jdouble;
 typedef struct java_lang_Object java_lang_Object;
 typedef struct java_lang_Class java_lang_Class;
 typedef java_lang_Object *jobject;
-typedef java_lang_Class *jclass;
+typedef void *jarray; /* TODO */
+
+struct vtable_t;
+typedef struct vtable_t vtable_t;
 
 typedef struct utf8_const {
 	uint16_t hash;
@@ -22,7 +26,7 @@ typedef struct utf8_const {
 } utf8_const;
 
 struct java_lang_Object {
-	jclass vptr;
+	vtable_t *vptr;
 };
 
 typedef struct jv_constants {
@@ -41,10 +45,10 @@ typedef struct jv_method {
 } jv_method;
 
 typedef struct jv_field {
-	utf8_const *name;
-	jclass      type;
-	uint16_t    flags;
-	uint16_t    bsize;
+	utf8_const      *name;
+	java_lang_Class *type;
+	uint16_t         flags;
+	uint16_t         bsize;
 	union {
 		int   offset;
 		char *addr;
@@ -52,11 +56,11 @@ typedef struct jv_field {
 } jv_field;
 
 struct java_lang_Class {
-	java_lang_Object super;
-	jclass           next_or_version;
+	java_lang_Object base;
+	java_lang_Class *next_or_version;
 	utf8_const      *name;
 	uint16_t         accflags;
-	jclass           superclass;
+	java_lang_Class *superclass;
 	jv_constants     constants;
 	jv_method       *methods;
 	int16_t          method_count;
@@ -64,7 +68,26 @@ struct java_lang_Class {
 	jv_field        *fields;
 	int              size_in_bytes;
 	int16_t          field_count;
+	int16_t          static_field_count;
+	vtable_t        *vtable;
+	void            *otable;
+	void            *otable_syms;
+	void            *atable;
+	void            *atable_syms;
+	void            *itable;
+	void            *itable_syms;
+	void            *catch_classes;
+	java_lang_Class *interfaces;
+	void            *loader;
+	jshort           interface_count;
+	jbyte            state;
+	void            *thread;
 	// ...
 };
+
+void init_prim_rtti();
+jobject _Jv_AllocObjectNoFinalizer(java_lang_Class *type);
+jv_method *get_method(java_lang_Class *cls, const utf8_const *name,
+                      const utf8_const *signature);
 
 #endif
