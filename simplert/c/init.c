@@ -56,11 +56,3 @@ void _Jv_InitClass(java_lang_Class *cls)
 		initmethod();
 	}
 }
-
-jobject _Jv_NewPrimArray(java_lang_Class *eltype, jint count)
-{
-	(void)eltype;
-	(void)count;
-	fprintf(stderr, "TODO: Jv_NewPrimArray\n");
-	return 0;
-}

@@ -7,6 +7,7 @@ typedef int8_t  jbyte;
 typedef int16_t jshort;
 typedef uint16_t jchar;
 typedef int32_t jint;
+typedef int64_t jlong;
 typedef _Bool   jboolean;
 typedef float   jfloat;
 typedef double  jdouble;
@@ -16,7 +17,10 @@ typedef struct java_lang_Class java_lang_Class;
 typedef java_lang_Object *jobject;
 typedef void *jarray; /* TODO */
 
-struct vtable_t;
+struct vtable_t {
+	java_lang_Class *rtti;
+	void            *dynamic_methods[];
+};
 typedef struct vtable_t vtable_t;
 
 typedef struct utf8_const {

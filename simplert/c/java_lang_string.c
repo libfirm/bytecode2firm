@@ -5,7 +5,8 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-extern java_lang_Class _ZN4java4lang6String6class$E;
+// String rtti
+java_lang_Class __attribute__((weak)) _ZN4java4lang6String6class$E;
 
 static const char **get_data_field(jobject string)
 {
