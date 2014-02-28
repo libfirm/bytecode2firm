@@ -278,7 +278,7 @@ class_t *read_class_file(void)
 	}
 	uint16_t minor_version = read_u16();
 	uint16_t major_version = read_u16();
-	if (major_version != 49 && major_version != 50) {
+	if (major_version != 49 && major_version != 50 && major_version != 51) {
 		fprintf(stderr, "WARNING: class-file version %u.%u is not tested\n",
 		        major_version, minor_version);
 	}

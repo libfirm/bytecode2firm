@@ -26,13 +26,10 @@ void class_registry_init(void)
 
 ir_type *class_registry_get(const char *classname)
 {
-	ir_type *type = cpmap_find(&class_registry, classname);
-	if (type == NULL) {
-		ident *id = new_id_from_str(classname);
-		type      = new_type_class(id);
+	return cpmap_find(&class_registry, classname);
+}
 
-		cpmap_set(&class_registry, classname, type);
-	}
-
-	return type;
+void class_registry_set(const char *classname, ir_type *type)
+{
+	cpmap_set(&class_registry, classname, type);
 }

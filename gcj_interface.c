@@ -27,14 +27,14 @@ static ir_entity *gcj_checkcast_entity;
 static ir_entity *gcj_get_array_class_entity;
 static ir_entity *gcj_new_multiarray_entity;
 
-static ir_entity *gcj_booleanClass_entity;
-static ir_entity *gcj_byteClass_entity;
-static ir_entity *gcj_charClass_entity;
-static ir_entity *gcj_shortClass_entity;
-static ir_entity *gcj_intClass_entity;
-static ir_entity *gcj_longClass_entity;
-static ir_entity *gcj_floatClass_entity;
-static ir_entity *gcj_doubleClass_entity;
+static ir_entity *gcj_boolean_rtti_entity;
+static ir_entity *gcj_byte_rtti_entity;
+static ir_entity *gcj_char_rtti_entity;
+static ir_entity *gcj_short_rtti_entity;
+static ir_entity *gcj_int_rtti_entity;
+static ir_entity *gcj_long_rtti_entity;
+static ir_entity *gcj_float_rtti_entity;
+static ir_entity *gcj_double_rtti_entity;
 static ir_entity *gcj_compiled_execution_engine_entity;
 
 static ir_mode   *mode_ushort;
@@ -43,8 +43,6 @@ static ir_type   *type_method_desc;
 static ir_type   *type_field_desc;
 static ir_type   *type_utf8_const;
 static ir_type   *type_java_lang_class;
-
-extern ir_entity *vptr_entity;
 
 extern char* strdup(const char* s);
 static ir_entity *do_emit_utf8_const(const char *bytes, size_t len);
@@ -89,16 +87,6 @@ static void free_scpe(scp_entry *scpe)
 
 	free(scpe->s);
 	free(scpe);
-}
-
-static ir_entity *get_class_member_by_name(ir_type *cls, ident *ident)
-{
-	for (size_t i = 0, n = get_class_n_members(cls); i < n; ++i) {
-		ir_entity *entity = get_class_member(cls, i);
-		if (get_entity_ident(entity) == ident)
-			return entity;
-	}
-	return NULL;
 }
 
 static void add_compound_member(ir_type *compound, const char *name,
@@ -155,15 +143,32 @@ static ir_type *create_utf8_const_type(void)
 	return type;
 }
 
-static ir_type *create_java_lang_class_type(void)
+void gcji_create_vtable_entity(ir_type *type)
 {
-	/* TODO: we could make some of the type_references more specific */
-	ir_type *type = new_type_struct(new_id_from_str("java.lang.Class"));
-	add_compound_member(type, "vptr", type_reference);
-	add_compound_member(type, "next_or_version", type_int);
+	const char *name         = get_class_name(type);
+	ident      *vtable_ident = mangle_vtable_name(name);
+	ir_type    *unknown      = get_unknown_type();
+	ir_type    *glob         = get_glob_type();
+	ir_entity  *vtable       = new_entity(glob, vtable_ident, unknown);
+	oo_set_class_vtable_entity(type, vtable);
+}
+
+void gcji_set_java_lang_class(ir_type *type)
+{
+	assert(type_java_lang_class == NULL);
+	type_java_lang_class = type;
+}
+
+void gcji_init_java_lang_class(ir_type *type)
+{
+	assert(type_java_lang_class == type);
+
+	ir_type *ref_java_lang_object = new_type_pointer(type_java_lang_class);
+
+	add_compound_member(type, "next_or_version", ref_java_lang_object);
 	add_compound_member(type, "name", type_reference);
 	add_compound_member(type, "accflags", type_ushort);
-	add_compound_member(type, "superclass", type_reference);
+	add_compound_member(type, "superclass", ref_java_lang_object);
 	add_compound_member(type, "constants.size", type_int);
 	add_compound_member(type, "constants.tags", type_reference);
 	add_compound_member(type, "constants.data", type_reference);
@@ -198,8 +203,6 @@ static ir_type *create_java_lang_class_type(void)
 	add_compound_member(type, "aux_info", type_reference);
 	add_compound_member(type, "engine", type_reference);
 	add_compound_member(type, "reflection_data", type_reference);
-	default_layout_compound_type(type);
-	return type;
 }
 
 void gcji_init()
@@ -207,8 +210,8 @@ void gcji_init()
 	class_dollar_ident = new_id_from_str("class$");
 	glob               = get_glob_type();
 
-	ir_type *t_ptr     = new_type_primitive(mode_reference);
-	ir_type *t_size    = new_type_primitive(mode_Iu);
+	ir_type *t_ptr  = new_type_primitive(mode_reference);
+	ir_type *t_size = new_type_primitive(mode_Iu);
 
 	// gcj_alloc
 	ir_type *gcj_alloc_method_type = new_type_method(1, 1);
@@ -216,7 +219,7 @@ void gcji_init()
 	set_method_res_type(gcj_alloc_method_type, 0, t_ptr);
 	set_method_additional_properties(gcj_alloc_method_type, mtp_property_malloc);
 
-	ident   *gcj_alloc_id = new_id_from_str("_Jv_AllocObjectNoFinalizer");
+	ident *gcj_alloc_id = new_id_from_str("_Jv_AllocObjectNoFinalizer");
 	gcj_alloc_entity = new_entity(glob, gcj_alloc_id, gcj_alloc_method_type);
 	set_entity_visibility(gcj_alloc_entity, ir_visibility_external);
 
@@ -224,7 +227,7 @@ void gcji_init()
 	ir_type *gcj_init_method_type = new_type_method(1, 0);
 	set_method_param_type(gcj_init_method_type, 0, t_ptr);
 
-	ident   *gcj_init_id = new_id_from_str("_Jv_InitClass");
+	ident *gcj_init_id = new_id_from_str("_Jv_InitClass");
 	gcj_init_entity = new_entity(glob, gcj_init_id, gcj_init_method_type);
 	set_entity_visibility(gcj_init_entity, ir_visibility_external);
 
@@ -233,7 +236,7 @@ void gcji_init()
 	set_method_param_type(gcj_new_string_method_type, 0, t_ptr);
 	set_method_res_type(gcj_new_string_method_type, 0, t_ptr);
 
-	ident   *gcj_new_string_id = new_id_from_str("_Z22_Jv_NewStringUtf8ConstP13_Jv_Utf8Const");
+	ident *gcj_new_string_id = new_id_from_str("_Z22_Jv_NewStringUtf8ConstP13_Jv_Utf8Const");
 	gcj_new_string_entity = new_entity(glob, gcj_new_string_id, gcj_new_string_method_type);
 	set_entity_visibility(gcj_new_string_entity, ir_visibility_external);
 
@@ -243,7 +246,7 @@ void gcji_init()
 	set_method_param_type(gcj_new_prim_array_method_type, 1, t_size);
 	set_method_res_type(gcj_new_prim_array_method_type, 0, t_ptr);
 
-	ident   *gcj_new_prim_array_id = new_id_from_str("_Jv_NewPrimArray");
+	ident *gcj_new_prim_array_id = new_id_from_str("_Jv_NewPrimArray");
 	gcj_new_prim_array_entity = new_entity(glob, gcj_new_prim_array_id, gcj_new_prim_array_method_type);
 	set_entity_visibility(gcj_new_prim_array_entity, ir_visibility_external);
 
@@ -254,7 +257,7 @@ void gcji_init()
 	set_method_param_type(gcj_new_object_array_method_type, 2, t_ptr);
 	set_method_res_type(gcj_new_object_array_method_type, 0, t_ptr);
 
-	ident   *gcj_new_object_array_id = new_id_from_str("_Jv_NewObjectArray");
+	ident *gcj_new_object_array_id = new_id_from_str("_Jv_NewObjectArray");
 	gcj_new_object_array_entity = new_entity(glob, gcj_new_object_array_id, gcj_new_object_array_method_type);
 	set_entity_visibility(gcj_new_object_array_entity, ir_visibility_external);
 
@@ -305,22 +308,22 @@ void gcji_init()
 	set_entity_visibility(gcj_new_multiarray_entity, ir_visibility_external);
 
 	// primitive classes
-	gcj_booleanClass_entity= new_entity(glob, new_id_from_str("_Jv_booleanClass"), type_reference);
-	gcj_byteClass_entity   = new_entity(glob, new_id_from_str("_Jv_byteClass"), type_reference);
-	gcj_charClass_entity   = new_entity(glob, new_id_from_str("_Jv_charClass"), type_reference);
-	gcj_shortClass_entity  = new_entity(glob, new_id_from_str("_Jv_shortClass"), type_reference);
-	gcj_intClass_entity    = new_entity(glob, new_id_from_str("_Jv_intClass"), type_reference);
-	gcj_longClass_entity   = new_entity(glob, new_id_from_str("_Jv_longClass"), type_reference);
-	gcj_floatClass_entity  = new_entity(glob, new_id_from_str("_Jv_floatClass"), type_reference);
-	gcj_doubleClass_entity = new_entity(glob, new_id_from_str("_Jv_doubleClass"), type_reference);
-	set_entity_visibility(gcj_booleanClass_entity, ir_visibility_external);
-	set_entity_visibility(gcj_byteClass_entity, ir_visibility_external);
-	set_entity_visibility(gcj_charClass_entity, ir_visibility_external);
-	set_entity_visibility(gcj_shortClass_entity, ir_visibility_external);
-	set_entity_visibility(gcj_intClass_entity, ir_visibility_external);
-	set_entity_visibility(gcj_longClass_entity, ir_visibility_external);
-	set_entity_visibility(gcj_floatClass_entity, ir_visibility_external);
-	set_entity_visibility(gcj_doubleClass_entity, ir_visibility_external);
+	gcj_boolean_rtti_entity= new_entity(glob, new_id_from_str("_Jv_booleanClass"), type_reference);
+	gcj_byte_rtti_entity   = new_entity(glob, new_id_from_str("_Jv_byteClass"), type_reference);
+	gcj_char_rtti_entity   = new_entity(glob, new_id_from_str("_Jv_charClass"), type_reference);
+	gcj_short_rtti_entity  = new_entity(glob, new_id_from_str("_Jv_shortClass"), type_reference);
+	gcj_int_rtti_entity    = new_entity(glob, new_id_from_str("_Jv_intClass"), type_reference);
+	gcj_long_rtti_entity   = new_entity(glob, new_id_from_str("_Jv_longClass"), type_reference);
+	gcj_float_rtti_entity  = new_entity(glob, new_id_from_str("_Jv_floatClass"), type_reference);
+	gcj_double_rtti_entity = new_entity(glob, new_id_from_str("_Jv_doubleClass"), type_reference);
+	set_entity_visibility(gcj_boolean_rtti_entity, ir_visibility_external);
+	set_entity_visibility(gcj_byte_rtti_entity, ir_visibility_external);
+	set_entity_visibility(gcj_char_rtti_entity, ir_visibility_external);
+	set_entity_visibility(gcj_short_rtti_entity, ir_visibility_external);
+	set_entity_visibility(gcj_int_rtti_entity, ir_visibility_external);
+	set_entity_visibility(gcj_long_rtti_entity, ir_visibility_external);
+	set_entity_visibility(gcj_float_rtti_entity, ir_visibility_external);
+	set_entity_visibility(gcj_double_rtti_entity, ir_visibility_external);
 
 	// execution engine
 	gcj_compiled_execution_engine_entity = new_entity(glob, new_id_from_str("_Jv_soleCompiledEngine"), type_reference);
@@ -331,10 +334,9 @@ void gcji_init()
 
 	cpset_init(&scp, scp_hash, scp_cmp);
 
-	type_method_desc     = create_method_desc_type();
-	type_field_desc      = create_field_desc_type();
-	type_utf8_const      = create_utf8_const_type();
-	type_java_lang_class = create_java_lang_class_type();
+	type_method_desc = create_method_desc_type();
+	type_field_desc  = create_field_desc_type();
+	type_utf8_const  = create_utf8_const_type();
 }
 
 void gcji_deinit()
@@ -635,6 +637,41 @@ static ir_entity *emit_method_table(ir_type *classtype)
 	return mt_ent;
 }
 
+#define MUX_PRIM_TYPES(typevar, action_boolean, action_byte, action_char, action_short, action_int, action_long, action_float, action_double) \
+		do { \
+	      if (typevar == type_boolean) { action_boolean; } \
+		  else if (typevar == type_byte) { action_byte; } \
+		  else if (typevar == type_char) { action_char; } \
+		  else if (typevar == type_short) { action_short; } \
+		  else if (typevar == type_int) { action_int; } \
+		  else if (typevar == type_long) { action_long; } \
+		  else if (typevar == type_float) { action_float; } \
+		  else if (typevar == type_double) { action_double; } \
+		} while (0);
+
+ir_entity *gcji_get_rtti_object(ir_type *type)
+{
+	if (is_Pointer_type(type)) {
+		ir_type *points_to = get_pointer_points_to_type(type);
+		if (is_Class_type(points_to))
+			return oo_get_class_rtti_entity(points_to);
+		return NULL;
+	} else if (is_Primitive_type(type)) {
+		MUX_PRIM_TYPES(type,
+				return gcj_boolean_rtti_entity,
+				return gcj_byte_rtti_entity,
+				return gcj_char_rtti_entity,
+				return gcj_short_rtti_entity,
+				return gcj_int_rtti_entity,
+				return gcj_long_rtti_entity,
+				return gcj_float_rtti_entity,
+				return gcj_double_rtti_entity);
+		return NULL;
+	} else {
+		return oo_get_class_rtti_entity(type);
+	}
+}
+
 static ir_initializer_t *get_field_desc(ir_type *classtype, ir_entity *ent)
 {
 	class_t *linked_class = (class_t*) oo_get_type_link(classtype);
@@ -644,10 +681,10 @@ static ir_initializer_t *get_field_desc(ir_type *classtype, ir_entity *ent)
 	constant_t *name_const = linked_class->constants[linked_field->name_index];
 	ir_entity  *name_ent   = gcji_emit_utf8_const(name_const, 1);
 
-	ir_type   *field_type = get_entity_type(ent);
-	ir_entity *cdf        = gcji_get_class_dollar_field(field_type);
-	if (!cdf) {
-		cdf = emit_type_signature(field_type);
+	ir_type   *field_type  = get_entity_type(ent);
+	ir_entity *rtti_object = gcji_get_rtti_object(field_type);
+	if (rtti_object == NULL) {
+		rtti_object = emit_type_signature(field_type);
 	}
 
 	ir_graph *ccode = get_const_code_irg();
@@ -668,7 +705,7 @@ static ir_initializer_t *get_field_desc(ir_type *classtype, ir_entity *ent)
 	ir_initializer_t *init = create_initializer_compound(NUM_FIELDS);
 	size_t f = 0;
 	set_compound_init_entref(init, f++, name_ent);
-	set_compound_init_entref(init, f++, cdf);
+	set_compound_init_entref(init, f++, rtti_object);
 	set_compound_init_num(init, f++, mode_ushort, linked_field->access_flags);
 	set_compound_init_node(init, f++, bsize);
 	set_initializer_compound_value(init, f++, offset_addr_init);
@@ -722,9 +759,9 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 
 		ir_type    *type = class_registry_get(clsname->bytes);
 		assert(type);
-		ir_entity  *cdf  = gcji_get_class_dollar_field(type);
-		assert(cdf != NULL);
-		set_compound_init_entref(init, i, cdf);
+		ir_entity  *rtti_object = gcji_get_rtti_object(type);
+		assert(rtti_object != NULL);
+		set_compound_init_entref(init, i, rtti_object);
 	}
 
 	ident     *id     = id_unique("_IF_%u_");
@@ -734,89 +771,93 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 	return if_ent;
 }
 
-static ir_node *create_vtable_ref(ir_entity *vtable)
+void gcji_create_rtti(class_t *cls, ir_type *type)
 {
-	ir_graph *ccode         = get_const_code_irg();
-	ir_node  *vtable_ref    = create_ccode_symconst(vtable);
-	ir_node  *block         = get_r_cur_block(ccode);
-	ir_node  *vtable_offset = new_r_Const_long(ccode, mode_reference, get_type_size_bytes(type_reference) * GCJI_VTABLE_OFFSET);
-	vtable_ref = new_r_Add(block, vtable_ref, vtable_offset, mode_reference);
-	return vtable_ref;
-}
+	const char *name = get_class_name(type);
+	/* create RTTI object entity (actual initializer is constructed in liboo) */
+	ident     *rtti_ident  = mangle_rtti_name(name);
+	ir_type   *unknown     = get_unknown_type();
+	ir_entity *rtti_object = new_entity(glob, rtti_ident, unknown);
+	oo_set_class_rtti_entity(type, rtti_object);
 
-ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
-{
-	class_t *linked_class = (class_t*) oo_get_type_link(classtype);
-	assert(linked_class);
+#if 0
+	/* RTTI from external classes is already created */
+	if (cls->is_extern) {
+		return;
+	}
+#endif
 
-	ident     *class_vt_name = mangle_vtable_name("java/lang/Class");
-	ir_entity *class_vtable  = new_entity(get_glob_type(), class_vt_name, type_reference);
-	ir_node   *class_vt_ref  = create_vtable_ref(class_vtable);
+	assert(type_java_lang_class != NULL);
+	set_entity_type(rtti_object, type_java_lang_class);
+
+	ir_entity *vtable = oo_get_class_vtable_entity(type_java_lang_class);
 
 	ir_entity *name_ent = gcji_emit_utf8_const(
-			linked_class->constants[linked_class->constants[linked_class->this_class]->classref.name_index], 1);
+			cls->constants[cls->constants[cls->this_class]->classref.name_index], 1);
 
-	uint16_t   accflags     = linked_class->access_flags;
-	ir_entity *method_table = emit_method_table(classtype);
-	ir_entity *field_table  = emit_field_table(classtype);
+	uint16_t   accflags     = cls->access_flags;
+	ir_entity *method_table = emit_method_table(type);
+	ir_entity *field_table  = emit_field_table(type);
 
 	ir_graph *ccode = get_const_code_irg();
-	ir_node  *size_in_bytes	= new_r_Size(ccode, mode_int, classtype);
+	ir_node  *size_in_bytes	= new_r_Size(ccode, mode_int, type);
 
-	int16_t field_count = linked_class->n_fields;
+	int16_t field_count = cls->n_fields;
 	int16_t static_field_count = 0;
 	for (int16_t i = 0; i < field_count; i++) {
-		if ((linked_class->fields[i]->access_flags & ACCESS_FLAG_STATIC) != 0)
+		if ((cls->fields[i]->access_flags & ACCESS_FLAG_STATIC) != 0)
 			++static_field_count;
 	}
 
-	ir_type *superclass = NULL;
-	if (get_class_n_supertypes(classtype) > 0) {
-		ir_type *superclass = get_class_supertype(classtype, 0);
+	ir_entity *superclass_rtti = NULL;
+	if (get_class_n_supertypes(type) > 0) {
+		ir_type *superclass = get_class_supertype(type, 0);
 		/* TODO: search for first non-interface instead of taking the
 		 * first one and hoping it is a non-interface */
 		assert(!oo_get_class_is_interface(superclass));
-	}
-	ir_entity *superclass_ent = NULL;
-	if (superclass != NULL) {
-		superclass_ent = gcji_get_class_dollar_field(superclass);
+
+		superclass_rtti = gcji_get_rtti_object(superclass);
 	}
 
-	ir_node *vtable_ref = NULL;
-	if ((linked_class->access_flags & ACCESS_FLAG_INTERFACE) == 0) {
-		ir_entity *vtable = oo_get_class_vtable_entity(classtype);
-		assert(vtable != NULL);
-		vtable_ref = create_vtable_ref(vtable);
+	ir_entity *cls_vtable = NULL;
+	if ((cls->access_flags & ACCESS_FLAG_INTERFACE) == 0) {
+		cls_vtable = oo_get_class_vtable_entity(type);
+		assert(cls_vtable != NULL);
 	}
 
-	int16_t interface_count = linked_class->n_interfaces;
-	ir_entity *interfaces = emit_interface_table(classtype);
+	int16_t interface_count = cls->n_interfaces;
+	ir_entity *interfaces = emit_interface_table(type);
 
 	// w/o slots 0=class$ and 1=gc_stuff. see lower_oo.c
-	int16_t vtable_method_count = oo_get_class_vtable_size(classtype)-2;
+	int16_t vtable_method_count = oo_get_class_vtable_size(type)-2;
 
+	/* initializer for base class java.lang.Object */
+	ir_initializer_t *base_init = create_initializer_compound(1);
+	set_compound_init_entref(base_init, 0, vtable);
+
+	/* initializer for java.lang.Class */
 	unsigned NUM_FIELDS = 39;
 	ir_initializer_t *init = create_initializer_compound(NUM_FIELDS);
 	size_t f = 0;
-	set_compound_init_node(init, f++, class_vt_ref);
-	set_compound_init_num(init, f++, mode_int, 407000);
+	set_initializer_compound_value(init, f++, base_init);
+	set_compound_init_num(init, f++, mode_P, 407000);
 	set_compound_init_entref(init, f++, name_ent);
 	set_compound_init_num(init, f++, mode_ushort, accflags);
-	set_compound_init_entref(init, f++, superclass_ent);
+	set_compound_init_entref(init, f++, superclass_rtti);
 	// _Jv_Constants inlined. not sure if this is needed for compiled code.
 	set_compound_init_null(init, f++);
 	set_compound_init_null(init, f++);
 	set_compound_init_null(init, f++);
 
 	set_compound_init_entref(init, f++, method_table);
-	set_compound_init_num(init, f++, mode_short, linked_class->n_methods);
+	set_compound_init_num(init, f++, mode_short, cls->n_methods);
 	set_compound_init_num(init, f++, mode_short, vtable_method_count);
 
 	set_compound_init_entref(init, f++, field_table);
 	set_compound_init_node(init, f++, size_in_bytes);
 	set_compound_init_num(init, f++, mode_short, field_count);
 	set_compound_init_num(init, f++, mode_short, static_field_count);
-	set_compound_init_node(init, f++, vtable_ref);
+	set_compound_init_entref(init, f++, cls_vtable);
 
 	// most of the following fields are set at runtime during the class linking.
 	set_compound_init_null(init, f++);
@@ -846,27 +887,8 @@ ir_entity *gcji_construct_class_dollar_field(ir_type *classtype)
 	set_compound_init_null(init, f++);
 	assert(f == NUM_FIELDS);
 
-	ir_entity *class_dollar_field = gcji_get_class_dollar_field(classtype);
-	assert(class_dollar_field);
-	set_entity_initializer(class_dollar_field, init);
-	set_entity_visibility(class_dollar_field, ir_visibility_external);
-	set_entity_alignment(class_dollar_field, 32);
-
-	return class_dollar_field;
+	set_entity_initializer(rtti_object, init);
 }
-
-#define MUX_PRIM_TYPES(typevar, action_boolean, action_byte, action_char, action_short, action_int, action_long, action_float, action_double) \
-		do { \
-	      if (typevar == type_boolean) { action_boolean; } \
-		  else if (typevar == type_byte) { action_byte; } \
-		  else if (typevar == type_char) { action_char; } \
-		  else if (typevar == type_short) { action_short; } \
-		  else if (typevar == type_int) { action_int; } \
-		  else if (typevar == type_long) { action_long; } \
-		  else if (typevar == type_float) { action_float; } \
-		  else if (typevar == type_double) { action_double; } \
-		} while (0);
-
 
 static ir_entity *emit_type_signature(ir_type *type)
 {
@@ -908,49 +930,11 @@ static ir_entity *emit_type_signature(ir_type *type)
 	return res;
 }
 
-ir_entity *gcji_get_class_dollar_field(ir_type *type)
-{
-	assert(type != get_glob_type());
-
-	ir_entity *cdf = NULL;
-	if (is_Class_type(type)) {
-		const char *classname  = get_class_name(type);
-		const char *membername = get_id_str(class_dollar_ident);
-		ident *mangled_id = mangle_member_name(classname, membername, NULL);
-		cdf = get_class_member_by_name(get_glob_type(), mangled_id);
-		if (!cdf) {
-			cdf = new_entity(get_glob_type(), class_dollar_ident, type_java_lang_class);
-			set_entity_ld_ident(cdf, mangled_id);
-			set_entity_visibility(cdf, ir_visibility_external);
-			set_entity_alignment(cdf, 32);
-		}
-	} else if (is_Primitive_type(type)) {
-		MUX_PRIM_TYPES(type,
-				cdf = gcj_booleanClass_entity,
-				cdf = gcj_byteClass_entity,
-				cdf = gcj_charClass_entity,
-				cdf = gcj_shortClass_entity,
-				cdf = gcj_intClass_entity,
-				cdf = gcj_longClass_entity,
-				cdf = gcj_floatClass_entity,
-				cdf = gcj_doubleClass_entity);
-	} else if (is_Pointer_type(type)) {
-		ir_type *pt = get_pointer_points_to_type(type);
-		if (is_Class_type(pt)) {
-			cdf = gcji_get_class_dollar_field(pt);
-		}
-		/* else return NULL. In case of arrays, gcj emits an utf8const with the signature of the array type instead.
-		It is later exchanged with a real java.lang.Class instance during the (runtime) linking phase. */
-	}
-
-	return cdf;
-}
-
 ir_node *gcji_get_runtime_classinfo(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem)
 {
-	ir_entity *cdf = gcji_get_class_dollar_field(type);
-	if (cdf) {
-		return create_symconst(irg, cdf);
+	ir_entity *rtti_object = gcji_get_rtti_object(type);
+	if (rtti_object != NULL) {
+		return create_symconst(irg, rtti_object);
 	}
 
 	/* Arrays are represented as pointer types. We extract the base type,
@@ -972,8 +956,8 @@ ir_node *gcji_get_runtime_classinfo(ir_type *type, ir_graph *irg, ir_node *block
 
 	if (!is_Primitive_type(eltype)) n_pointer_levels--;
 
-	ir_entity *elem_cdf = gcji_get_class_dollar_field(eltype);
-	assert(elem_cdf);
+	ir_entity *elem_cdf = gcji_get_rtti_object(eltype);
+	assert(elem_cdf != NULL);
 	ir_node *array_class_ref = create_symconst(irg, elem_cdf);
 
 	ir_node *cur_mem = *mem;
@@ -987,12 +971,20 @@ ir_node *gcji_get_runtime_classinfo(ir_type *type, ir_graph *irg, ir_node *block
 	return array_class_ref;
 }
 
+static ir_entity *get_vptr_entity(void)
+{
+	ir_type *type = class_registry_get("java/lang/Object");
+	assert(type != NULL);
+	return oo_get_class_vptr_entity(type);
+}
+
 ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface, ir_entity *method, ir_graph *irg, ir_node *block, ir_node **mem)
 {
 	ir_node   *cur_mem       = *mem;
 
 	// we need the reference to the object's class$ field
 	// first, dereference the vptr in order to get the vtable address.
+	ir_entity *vptr_entity   = get_vptr_entity();
 	ir_node   *vptr_addr     = new_r_Sel(block, new_r_NoMem(irg), objptr, 0, NULL, vptr_entity);
 	ir_node   *vptr_load     = new_r_Load(block, cur_mem, vptr_addr, mode_reference, cons_none);
 	ir_node   *vtable_addr   = new_r_Proj(vptr_load, mode_reference, pn_Load_res);

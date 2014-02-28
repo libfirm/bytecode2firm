@@ -105,11 +105,10 @@ ir_type *type_array_float;
 ir_type *type_array_double;
 ir_type *type_array_reference;
 
-static ident *vptr_ident;
 static ident *subobject_ident;
 
-ir_entity *vptr_entity; // there's exactly one vptr entity, member of java.lang.Object.
 static ir_entity *calloc_entity;
+static ir_type   *type_java_lang_class;
 
 static ir_mode *mode_float_arithmetic;
 
@@ -201,7 +200,6 @@ static void init_types(void)
 	set_array_lower_bound_int(type_array_reference, 0, 0);
 	set_type_state(type_array_reference, layout_fixed);
 
-	vptr_ident              = new_id_from_str("@vptr");
 	subobject_ident         = new_id_from_str("@base");
 
 	const size_t size_bits    = get_mode_size_bits(mode_P);
@@ -341,7 +339,8 @@ static void create_field_entity(field_t *field, ir_type *owner)
 	ident      *ld_id        = mangle_member_name(classname, name, NULL);
 	set_entity_ld_ident(entity, ld_id);
 
-	oo_java_setup_field_info(entity, field);
+	oo_set_entity_link(entity, field);
+	field->link = entity;
 
 	if (oo_get_class_is_extern(owner))
 		set_entity_visibility(entity, ir_visibility_external);
@@ -476,30 +475,33 @@ static ir_entity *find_entity(ir_type *classtype, const char *name, const char *
 {
 	assert(is_Class_type(classtype));
 
-	ir_entity *entity     = NULL;
-
 	// the current class_file is managed like a stack. See: get_class_type(..)
 	class_t *old_class    = class_file;
 	class_t *linked_class = (class_t*) oo_get_type_link(classtype);
 	class_file = linked_class;
 
 	// 1. is the entity defined in this class?
-	for (uint16_t i = 0; entity == NULL && i < class_file->n_methods; i++) {
+	ir_entity *entity = NULL;
+	for (uint16_t i = 0; i < class_file->n_methods; i++) {
 		method_t *m = class_file->methods[i];
 		const char *n = get_constant_string(m->name_index);
 		const char *s = get_constant_string(m->descriptor_index);
 
 		if (strcmp(name, n) == 0 && strcmp(desc, s) == 0) {
 			entity = m->link;
+			break;
 		}
 	}
-	for (uint16_t i = 0; entity == NULL && i < class_file->n_fields; i++) {
-		field_t *f = class_file->fields[i];
-		const char *n = get_constant_string(f->name_index);
-		const char *s = get_constant_string(f->descriptor_index);
+	if (entity == NULL) {
+		for (uint16_t i = 0; i < class_file->n_fields; i++) {
+			field_t *f = class_file->fields[i];
+			const char *n = get_constant_string(f->name_index);
+			const char *s = get_constant_string(f->descriptor_index);
 
-		if (strcmp(name, n) == 0 && strcmp(desc, s) == 0) {
-			entity = f->link;
+			if (strcmp(name, n) == 0 && strcmp(desc, s) == 0) {
+				entity = f->link;
+				break;
+			}
 		}
 	}
 
@@ -512,11 +514,13 @@ static ir_entity *find_entity(ir_type *classtype, const char *name, const char *
 
 	// 3. is the entity defined in an interface?
 	if (entity == NULL && class_file->n_interfaces > 0) {
-		for (uint16_t i = 0; i < class_file->n_interfaces && entity == NULL; i++) {
+		for (uint16_t i = 0; i < class_file->n_interfaces; i++) {
 			uint16_t interface_ref = class_file->interfaces[i];
 			ir_type *interface     = get_classref_type(interface_ref);
 			assert(interface);
 			entity = find_entity(interface, name, desc);
+			if (entity != NULL)
+				break;
 		}
 	}
 
@@ -931,11 +935,11 @@ static void push_load_const(uint16_t index)
 		const char *classname = get_constant_string(constant->classref.name_index);
 		ir_type *klass = get_class_type(classname);
 		assert(klass);
-		ir_entity *cdf = gcji_get_class_dollar_field(klass);
-		assert(cdf);
-		ir_node *cdf_symc = create_symconst(cdf);
+		ir_entity *rtti_object = gcji_get_rtti_object(klass);
+		assert(rtti_object != NULL);
+		ir_node *rtti_addr = create_symconst(rtti_object);
 
-		symbolic_push(cdf_symc);
+		symbolic_push(rtti_addr);
 		break;
 	}
 	default:
@@ -2632,16 +2636,43 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	else
 		entity = new_entity(owner, mangled_id, type);
 
-	const char *classname    = get_class_name(owner);
-	ident      *ld_id        = mangle_member_name(classname, name, descriptor);
+	oo_set_entity_link(entity, method);
+	method->link = entity;
+
+	const char *classname = get_class_name(owner);
+	ident      *ld_id     = mangle_member_name(classname, name, descriptor);
 	set_entity_ld_ident(entity, ld_id);
 
-	oo_java_setup_method_info(entity, method, class_file);
-
-	if (method->access_flags & ACCESS_FLAG_NATIVE
-	 || oo_get_class_is_extern(owner)) {
+	// set access flags
+	uint16_t access_flags       = method->access_flags;
+	uint16_t owner_access_flags = class_file->access_flags;
+	bool final    = (access_flags | owner_access_flags) & ACCESS_FLAG_FINAL;
+	bool abstract = access_flags & ACCESS_FLAG_ABSTRACT;
+	oo_set_method_is_abstract(entity, abstract);
+	oo_set_method_is_final(entity, final);
+	if ((method->access_flags & ACCESS_FLAG_NATIVE) != 0
+	    || oo_get_class_is_extern(owner)) {
 		set_entity_visibility(entity, ir_visibility_external);
 	}
+
+	// decide binding mode
+	bool is_constructor = strncmp(name, "<init>", 6) == 0;
+	bool exclude_from_vtable =
+	   ((access_flags & ACCESS_FLAG_STATIC)
+	 || (access_flags & ACCESS_FLAG_PRIVATE)
+	 || (access_flags & ACCESS_FLAG_FINAL)
+	 || (is_constructor));
+	oo_set_method_exclude_from_vtable(entity, exclude_from_vtable);
+
+	ddispatch_binding binding = bind_unknown;
+	if (exclude_from_vtable || (owner_access_flags & ACCESS_FLAG_FINAL))
+		binding = bind_static;
+	else if (owner_access_flags & ACCESS_FLAG_INTERFACE)
+		binding = bind_interface;
+	else
+		binding = bind_dynamic;
+
+	oo_set_entity_binding(entity, binding);
 }
 
 static void create_method_code(ir_entity *entity)
@@ -2660,11 +2691,18 @@ static void create_method_code(ir_entity *entity)
 	}
 }
 
+static ir_type *create_ir_class_type(const char *name)
+{
+	ident   *class_ident = new_id_from_str(name);
+	ir_type *type        = new_type_class(class_ident);
+	return type;
+}
+
 static ir_type *get_class_type(const char *name)
 {
-	ir_type *type = class_registry_get(name);
-	if (oo_get_type_link(type) != NULL)
-		return type;
+	ir_type *existing_type = class_registry_get(name);
+	if (existing_type != NULL)
+		return existing_type;
 
 	if (verbose)
 		fprintf(stderr, "==> reading class %s\n", name);
@@ -2673,22 +2711,51 @@ static ir_type *get_class_type(const char *name)
 	if (cls == NULL)
 		panic("Couldn't find class %s", name);
 
+	ir_type *type;
+	/* java/lang/Class has been constructed at startup */
+	if (strcmp(name, "java/lang/Class") == 0) {
+		type = type_java_lang_class;
+	} else {
+		type = create_ir_class_type(name);
+	}
+	class_registry_set(name, type);
+	oo_set_type_link(type, cls);
+	cls->link = type;
+
 	class_t *old_class_file = class_file;
 	class_file = cls;
 
+	/* add supertype and setup vptr */
 	if (class_file->super_class != 0) {
-		oo_java_setup_type_info(type, cls);
 		ir_type *supertype = get_classref_type(class_file->super_class);
 		assert(supertype != type);
 		add_class_supertype(type, supertype);
+		/* the supertype data is contained in the object so we create a field
+		 * that contains this data */
 		new_entity(type, subobject_ident, supertype);
 
+		/* use the same vptr field as our superclass */
+		ir_entity *vptr = oo_get_class_vptr_entity(supertype);
+		oo_set_class_vptr_entity(type, vptr);
 	} else {
-		/* this should only happen for java.lang.Object */
+		/* java.lang.Object is the only class without a superclass */
 		assert(strcmp(name, "java/lang/Object") == 0);
-		vptr_entity = new_entity(type, vptr_ident, type_reference);
-		oo_java_setup_type_info(type, cls);
+
+		/* create a new vptr field */
+		ident     *vptr_ident = new_id_from_str("@vptr");
+		ir_entity *vptr       = new_entity(type, vptr_ident, type_reference);
+		oo_set_class_vptr_entity(type, vptr);
 	}
+
+	/* set access mode/flags */
+	oo_set_class_is_final(type,     cls->access_flags & ACCESS_FLAG_FINAL);
+	oo_set_class_is_abstract(type,  cls->access_flags & ACCESS_FLAG_ABSTRACT);
+	oo_set_class_is_interface(type, cls->access_flags & ACCESS_FLAG_INTERFACE);
+	oo_set_class_is_extern(type,    cls->is_extern);
+
+	/* create vtable entity (the actual initializer will be created in liboo) */
+	if (!(cls->access_flags & ACCESS_FLAG_INTERFACE))
+		gcji_create_vtable_entity(type);
 
 	for (size_t f = 0; f < (size_t) class_file->n_fields; ++f) {
 		field_t *field = class_file->fields[f];
@@ -2702,6 +2769,8 @@ static ir_type *get_class_type(const char *name)
 		ir_type *iface = get_classref_type(class_file->interfaces[i]);
 		add_class_supertype(type, iface);
 	}
+
+	gcji_create_rtti(cls, type);
 
 	assert(class_file == cls);
 	class_file = old_class_file;
@@ -2935,6 +3004,7 @@ int main(int argc, char **argv)
 	gen_firm_init();
 	init_types();
 	class_registry_init();
+	mangle_init();
 	oo_java_init();
 	gcji_init();
 
@@ -3012,13 +3082,16 @@ int main(int argc, char **argv)
 
 	worklist = new_pdeq();
 
-	/* read java.lang.Object/Class first (makes vptr entity available) */
-	get_class_type("java/lang/Object");
+	/* read java.lang.Class - this type is needed to construct RTTI
+	 * information */
+	type_java_lang_class = create_ir_class_type("java/lang/Class");
+	gcji_set_java_lang_class(type_java_lang_class);
 	get_class_type("java/lang/Class");
+	gcji_init_java_lang_class(type_java_lang_class);
 
 	/* trigger loading of the class specified on commandline */
-	ir_type *main_class_type = get_class_type(main_class_name);
-	ir_entity *main_cdf = gcji_get_class_dollar_field(main_class_type);
+	ir_type   *main_class_type = get_class_type(main_class_name);
+	ir_entity *main_rtti       = gcji_get_rtti_object(main_class_type);
 
 	while (!pdeq_empty(worklist)) {
 		ir_type *classtype = pdeq_getl(worklist);
@@ -3047,15 +3120,15 @@ int main(int argc, char **argv)
 		fprintf(stderr, "===> Optimization & backend\n");
 
 	// we had to get the class$ above, because calling gcji_get_class_dollar_field after the class has been lowered (e.g. now) would create a new entity.
-	assert(main_cdf && is_entity(main_cdf));
-	const char *main_cdf_ldident = get_entity_ld_name(main_cdf);
+	assert(main_rtti && is_entity(main_rtti));
+	const char *main_rtti_ldname = get_entity_ld_name(main_rtti);
 
 	char startup_file[] = "bc2firm_startup_XXXXXX";
 	int startup_fd = mkstemp(startup_file);
 	FILE *startup_out = fdopen(startup_fd, "w");
 	fprintf(startup_out, "extern void JvRunMain(void* klass, int argc, const char **argv);\n");
-	fprintf(startup_out, "extern void *%s;\n", main_cdf_ldident);
-	fprintf(startup_out, "int main(int argc, const char **argv) { JvRunMain(&%s, argc, argv); return 0; }\n", main_cdf_ldident);
+	fprintf(startup_out, "extern void *%s;\n", main_rtti_ldname);
+	fprintf(startup_out, "int main(int argc, const char **argv) { JvRunMain(&%s, argc, argv); return 0; }\n", main_rtti_ldname);
 	fclose(startup_out);
 
 	char asm_file[] = "bc2firm_asm_XXXXXX";
@@ -3076,6 +3149,7 @@ int main(int argc, char **argv)
 	class_file_exit();
 	gcji_deinit();
 	oo_java_deinit();
+	mangle_deinit();
 
 	char cmd_buffer[1024];
 	if (runtime_type == RUNTIME_GCJ) {

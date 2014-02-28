@@ -12,7 +12,7 @@ static const char *mangle_prefix = "_";
 static const char *mangle_prefix = "";
 #endif
 
-static const char* base36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+static const char *base36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 static char *duplicate_string_n(const char* s, size_t n)
 {
@@ -422,6 +422,11 @@ ident *mangle_vtable_name(const char *classname)
 
 	mangle_ct_flush(&ct);
 	return result;
+}
+
+ident *mangle_rtti_name(const char *classname)
+{
+	return mangle_member_name(classname, "class$", NULL);
 }
 
 void mangle_init(void)
