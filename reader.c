@@ -2751,6 +2751,15 @@ static ir_type *construct_class_methods(ir_type *type)
 	return type;
 }
 
+static ir_entity *get_class_member_by_name(ir_type *cls, ident *ident)
+{
+	for (size_t i = 0, n = get_class_n_members(cls); i < n; ++i) {
+		ir_entity *entity = get_class_member(cls, i);
+		if (get_entity_ident(entity) == ident)
+			return entity;
+	}
+	return NULL;
+}
 
 static void link_interface_method_recursive(ir_type *klass, ir_entity *interface_method)
 {

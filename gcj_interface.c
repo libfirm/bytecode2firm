@@ -91,6 +91,16 @@ static void free_scpe(scp_entry *scpe)
 	free(scpe);
 }
 
+static ir_entity *get_class_member_by_name(ir_type *cls, ident *ident)
+{
+	for (size_t i = 0, n = get_class_n_members(cls); i < n; ++i) {
+		ir_entity *entity = get_class_member(cls, i);
+		if (get_entity_ident(entity) == ident)
+			return entity;
+	}
+	return NULL;
+}
+
 static void add_compound_member(ir_type *compound, const char *name,
                                 ir_type *type)
 {
