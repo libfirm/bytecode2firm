@@ -3151,6 +3151,7 @@ int main(int argc, char **argv)
 	be_parse_arg("ia32-emit_cfi_directives");
 #endif
 
+	be_dwarf_set_source_language(DW_LANG_Java);
 	generate_code(asm_out, main_class_name);
 
 	gen_firm_finish();
