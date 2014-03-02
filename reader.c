@@ -612,6 +612,10 @@ static ir_entity *get_method_entity(uint16_t index)
 			= get_constant_string(name_and_type->name_and_type.descriptor_index);
 
 		entity = find_entity(classtype, methodname, descriptor);
+		if (entity == NULL)
+			panic("Couldn't find method %s.%s (%s)", get_class_name(classtype),
+			      methodname, descriptor);
+
 		assert(entity && is_method_entity(entity));
 		methodref->base.link = entity;
 	}
