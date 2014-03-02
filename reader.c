@@ -35,16 +35,13 @@
 #include <liboo/dmemory.h>
 #include <liboo/rtti.h>
 #include <liboo/nodes.h>
+#include <liboo/eh.h>
 
 //#define OOO
 //#define EXCEPTIONS
 
 #ifdef OOO
 #include <liboo/ooopt.h>
-#endif
-
-#ifdef EXCEPTIONS
-#include <liboo/eh.h>
 #endif
 
 extern FILE *fdopen (int __fd, __const char *__modes);
@@ -108,6 +105,7 @@ ir_type *type_array_reference;
 static ident *subobject_ident;
 
 static ir_entity *calloc_entity;
+static ir_entity *abort_entity;
 static ir_type   *type_java_lang_class;
 
 static ir_mode *mode_float_arithmetic;
@@ -212,6 +210,11 @@ static void init_types(void)
 	set_method_res_type(calloc_type, 0, get_type_for_mode(mode_P));
 	ident *calloc_id = new_id_from_str("calloc");
 	calloc_entity = create_compilerlib_entity(calloc_id, calloc_type);
+
+	ident *abort_id = new_id_from_str("abort");
+	ir_type *abort_type = new_type_method(0, 0);
+	add_method_additional_properties(abort_type, mtp_property_noreturn);
+	abort_entity = create_compilerlib_entity(abort_id, abort_type);
 }
 
 static ir_type *descriptor_to_type(const char **descriptor);
@@ -1583,9 +1586,6 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		}
 
 		case OPC_ATHROW:
-#ifndef EXCEPTIONS
-			panic("Encountered ATHROW, but exception handling is deactivated");
-#endif
 		case OPC_IRETURN:
 		case OPC_LRETURN:
 		case OPC_FRETURN:
@@ -2464,13 +2464,20 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 		case OPC_ATHROW: {
-#ifndef EXCEPTIONS
-			panic("Encountered ATHROW, but exception handling is deactivated");
-#else
 			ir_node *addr       = symbolic_pop(mode_reference);
+#ifndef EXCEPTIONS
+			(void)addr;
+			ir_node *abaddr  = new_Address(abort_entity);
+			ir_type *abtype  = get_entity_type(abort_entity);
+			ir_node *cur_mem = get_store();
+			ir_node *call    = new_Call(cur_mem, abaddr, 0, NULL, abtype);
+			keep_alive(call);
+			keep_alive(get_cur_block());
+			set_cur_block(NULL);
+#else
 			eh_throw(addr);
-			continue;
 #endif
+			continue;
 		}
 		case OPC_MONITORENTER:
 		case OPC_MONITOREXIT: {

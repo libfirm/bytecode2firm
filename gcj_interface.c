@@ -1033,7 +1033,9 @@ ir_node *gcji_instanceof(ir_node *objptr, ir_type *classtype, ir_graph *irg, ir_
 	ir_node   *call = new_r_Call(block, cur_mem, callee, 2, args, instanceof_type);
 	           cur_mem = new_r_Proj(call, mode_M, pn_Call_M);
 	ir_node   *ress = new_r_Proj(call, mode_T, pn_Call_T_result);
-	ir_node   *res = new_r_Proj(ress, mode_int, 0);
+	ir_node   *call_res = new_r_Proj(ress, mode_int, 0);
+	ir_node   *zero = new_r_Const(irg, get_mode_null(mode_int));
+	ir_node   *res  = new_r_Cmp(block, call_res, zero, ir_relation_less_greater);
 
 	*mem = cur_mem;
 	return res;
