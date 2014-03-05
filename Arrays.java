@@ -86,8 +86,8 @@ public class Arrays
 	{
 		int m = a.length / 2;
 		a[0] = Float.NEGATIVE_INFINITY;
-		a[m] = 37.2f;
-		a[a.length-1] = 23.114e17f;
+		a[m] = 37.25f;
+		a[a.length-1] = 5.125f;
 		System.out.println(java.util.Arrays.toString(a));
 	}
 	
@@ -95,7 +95,7 @@ public class Arrays
 	{
 		int m = a.length / 2;
 		a[0] = Math.E;
-		a[m] = Math.pow(Math.PI, 2) / 17.0;
+		a[m] = 17.7;
 		a[a.length-1] = Double.NaN;
 		System.out.println(java.util.Arrays.toString(a));
 	}
