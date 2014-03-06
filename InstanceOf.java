@@ -21,16 +21,15 @@ public class InstanceOf
 		System.out.println(y instanceof Z);
 		System.out.println(z instanceof Z);
 	}
-	
+
 	static void testCheckCast()
 	{
 		java.util.List strings = new java.util.ArrayList();
 		strings.add("hallo");
+	
+		String str = strings.get(0) + " welt";
 		
-		StringBuffer sb = new StringBuffer();
-		sb.append(strings.get(0)).append(" welt");
-		
-		strings.add(sb.toString());
+		strings.add(str);
 		strings.add(new Object());
 		String s = (String)strings.get(1);
 		
