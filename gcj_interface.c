@@ -501,12 +501,6 @@ ir_node *gcji_get_arrayclass(ir_node *array_class_ref, ir_graph *irg, ir_node *b
 	return res;
 }
 
-static ir_node *create_ccode_symconst(ir_entity *ent)
-{
-	ir_graph *ccode = get_const_code_irg();
-	return new_r_Address(ccode, ent);
-}
-
 ir_entity *gcji_emit_utf8_const(constant_t *constant, int mangle_slash)
 {
 	assert(constant->base.kind == CONSTANT_UTF8_STRING);
@@ -563,7 +557,8 @@ static void set_compound_init_entref(ir_initializer_t *init, size_t idx,
 		set_compound_init_null(init, idx);
 		return;
 	}
-	ir_node *node = create_ccode_symconst(entity);
+	ir_graph *ccode = get_const_code_irg();
+	ir_node  *node  = new_r_Address(ccode, entity);
 	set_compound_init_node(init, idx, node);
 }
 
