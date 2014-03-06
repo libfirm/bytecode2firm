@@ -36,13 +36,17 @@ static ir_entity *gcj_long_rtti_entity;
 static ir_entity *gcj_float_rtti_entity;
 static ir_entity *gcj_double_rtti_entity;
 static ir_entity *gcj_compiled_execution_engine_entity;
+static ir_entity *gcj_array_length;
 
-static ir_mode   *mode_ushort;
-static ir_type   *type_ushort;
-static ir_type   *type_method_desc;
-static ir_type   *type_field_desc;
-static ir_type   *type_utf8_const;
-static ir_type   *type_java_lang_class;
+static ir_mode *mode_ushort;
+static ir_type *type_ushort;
+static ir_type *type_method_desc;
+static ir_type *type_field_desc;
+static ir_type *type_utf8_const;
+static ir_type *type_java_lang_object;
+static ir_type *type_java_lang_class;
+
+ident *subobject_ident;
 
 extern char* strdup(const char* s);
 static ir_entity *do_emit_utf8_const(const char *bytes, size_t len);
@@ -89,11 +93,11 @@ static void free_scpe(scp_entry *scpe)
 	free(scpe);
 }
 
-static void add_compound_member(ir_type *compound, const char *name,
-                                ir_type *type)
+static ir_entity *add_compound_member(ir_type *compound, const char *name,
+                                      ir_type *type)
 {
 	ident *id = new_id_from_str(name);
-	new_entity(compound, id, type);
+	return new_entity(compound, id, type);
 }
 
 static ir_type *create_method_desc_type(void)
@@ -143,32 +147,35 @@ static ir_type *create_utf8_const_type(void)
 	return type;
 }
 
-void gcji_create_vtable_entity(ir_type *type)
+void gcji_create_array_type(void)
 {
-	const char *name         = get_class_name(type);
-	ident      *vtable_ident = mangle_vtable_name(name);
-	ir_type    *unknown      = get_unknown_type();
-	ir_type    *glob         = get_glob_type();
-	ir_entity  *vtable       = new_entity(glob, vtable_ident, unknown);
-	oo_set_class_vtable_entity(type, vtable);
+	ident   *id   = new_id_from_str("array");
+	ir_type *type = new_type_class(id);
+	assert(type_java_lang_object != NULL);
+	add_compound_member(type, subobject_ident, type_java_lang_object);
+	ident *length_id = new_id_from_str("length");
+	gcj_array_length = add_compound_member(type, length_id, type_int);
+
+	ir_type *data_array = new_type_array(1, type_byte);
+	set_array_variable_size(data_array, 1);
+	ident *data_id = new_id_from_str("data");
+	add_compound_member(type, data_id, data_array);
+	set_compound_variable_size(type, 1);
 }
 
-void gcji_set_java_lang_class(ir_type *type)
+ir_entity *gcji_get_abstract_method_entity(void)
 {
-	assert(type_java_lang_class == NULL);
-	type_java_lang_class = type;
+	return gcj_abstract_method_entity;
 }
 
-void gcji_init_java_lang_class(ir_type *type)
+void gcji_add_java_lang_class_fields(ir_type *type)
 {
-	assert(type_java_lang_class == type);
-
-	ir_type *ref_java_lang_object = new_type_pointer(type_java_lang_class);
-
-	add_compound_member(type, "next_or_version", ref_java_lang_object);
+	assert(type == type_java_lang_class);
+	ir_type *ref_java_lang_class = new_type_pointer(type_java_lang_class);
+	add_compound_member(type, "next_or_version", ref_java_lang_class);
 	add_compound_member(type, "name", type_reference);
 	add_compound_member(type, "accflags", type_ushort);
-	add_compound_member(type, "superclass", ref_java_lang_object);
+	add_compound_member(type, "superclass", ref_java_lang_class);
 	add_compound_member(type, "constants.size", type_int);
 	add_compound_member(type, "constants.tags", type_reference);
 	add_compound_member(type, "constants.data", type_reference);
@@ -203,6 +210,28 @@ void gcji_init_java_lang_class(ir_type *type)
 	add_compound_member(type, "aux_info", type_reference);
 	add_compound_member(type, "engine", type_reference);
 	add_compound_member(type, "reflection_data", type_reference);
+}
+
+void gcji_create_vtable_entity(ir_type *type)
+{
+	const char *name         = get_class_name(type);
+	ident      *vtable_ident = mangle_vtable_name(name);
+	ir_type    *unknown      = get_unknown_type();
+	ir_type    *glob         = get_glob_type();
+	ir_entity  *vtable       = new_entity(glob, vtable_ident, unknown);
+	oo_set_class_vtable_entity(type, vtable);
+}
+
+void gcji_set_java_lang_class(ir_type *type)
+{
+	assert(type_java_lang_class == NULL);
+	type_java_lang_class = type;
+}
+
+void gcji_set_java_lang_object(ir_type *type)
+{
+	assert(type_java_lang_object == NULL);
+	type_java_lang_object = type;
 }
 
 void gcji_init()
@@ -337,6 +366,8 @@ void gcji_init()
 	type_method_desc = create_method_desc_type();
 	type_field_desc  = create_field_desc_type();
 	type_utf8_const  = create_utf8_const_type();
+
+	subobject_ident  = new_id_from_str("@base");
 }
 
 void gcji_deinit()
@@ -439,18 +470,19 @@ ir_node *gcji_new_string(ir_entity *bytes, ir_graph *irg, ir_node *block, ir_nod
 	return res;
 }
 
-ir_node *gcji_get_arraylength(dbg_info *dbgi, ir_node *block, ir_node *arrayref, ir_node **mem)
+ir_node *gcji_get_arraylength(dbg_info *dbgi, ir_node *block, ir_node *arrayref,
+                              ir_node **mem)
 {
-	ir_graph *irg     = get_irn_irg(block);
-	ir_node  *cur_mem = *mem;
+	ir_graph *irg       = get_irn_irg(block);
+	ir_node  *cur_mem   = *mem;
+	ir_node  *addr      = new_r_simpleSel(block, get_irg_no_mem(irg),
+	                                        arrayref, gcj_array_length);
+	ir_node  *load      = new_rd_Load(dbgi, block, cur_mem, addr, mode_int,
+	                                  cons_none);
+	ir_node  *load_mem  = new_r_Proj(load, mode_M, pn_Load_M);
+	ir_node  *res       = new_r_Proj(load, mode_int, pn_Load_res);
 
-	ir_node  *length_offset = new_r_Const_long(irg, mode_reference, GCJI_LENGTH_OFFSET); // in gcj, arrays are subclasses of java/lang/Object. "length" is the second field.
-	ir_node  *length_addr   = new_rd_Add(dbgi, block, arrayref, length_offset, mode_reference);
-	ir_node  *length_load   = new_rd_Load(dbgi, block, cur_mem, length_addr, mode_int, cons_none);
-	          cur_mem       = new_r_Proj(length_load, mode_M, pn_Load_M);
-	ir_node  *res           = new_r_Proj(length_load, mode_int, pn_Load_res);
-
-	*mem = cur_mem;
+	*mem = load_mem;
 	return res;
 }
 
@@ -771,7 +803,7 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 	return if_ent;
 }
 
-void gcji_create_rtti(class_t *cls, ir_type *type)
+void gcji_create_rtti_object(ir_type *type)
 {
 	const char *name = get_class_name(type);
 	/* create RTTI object entity (actual initializer is constructed in liboo) */
@@ -779,14 +811,11 @@ void gcji_create_rtti(class_t *cls, ir_type *type)
 	ir_type   *unknown     = get_unknown_type();
 	ir_entity *rtti_object = new_entity(glob, rtti_ident, unknown);
 	oo_set_class_rtti_entity(type, rtti_object);
+}
 
-#if 0
-	/* RTTI from external classes is already created */
-	if (cls->is_extern) {
-		return;
-	}
-#endif
-
+void gcji_setup_rtti_object(class_t *cls, ir_type *type)
+{
+	ir_entity *rtti_object = oo_get_class_rtti_entity(type);
 	assert(type_java_lang_class != NULL);
 	set_entity_type(rtti_object, type_java_lang_class);
 
@@ -828,8 +857,8 @@ void gcji_create_rtti(class_t *cls, ir_type *type)
 	int16_t interface_count = cls->n_interfaces;
 	ir_entity *interfaces = emit_interface_table(type);
 
-	// w/o slots 0=class$ and 1=gc_stuff. see lower_oo.c
-	int16_t vtable_method_count = oo_get_class_vtable_size(type)-2;
+	// w/o slots 0=rtti. see lower_oo.c
+	int16_t vtable_method_count = oo_get_class_vtable_size(type)-1;
 
 	/* initializer for base class java.lang.Object */
 	ir_initializer_t *base_init = create_initializer_compound(1);

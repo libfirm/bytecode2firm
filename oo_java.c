@@ -33,7 +33,7 @@ static void java_init_vtable_slots(ir_type *klass, ir_initializer_t *vtable_init
 
 	ir_initializer_t *rtti_init = create_initializer_const(rtti_addr);
 
-	assert(vtable_size > 0); // setting initializers for slots 0..3 here.
+	assert(vtable_size > 0);
 	set_initializer_compound_value(vtable_init, 0, rtti_init);
 }
 

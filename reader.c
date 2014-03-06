@@ -70,7 +70,14 @@ static const char *get_constant_string(uint16_t index)
 	return constant->utf8_string.bytes;
 }
 
+/**
+ * Gets firm type for the class with given name. Note that calling this function
+ * will not ensure that all methods, fields, vtable and rtti is already
+ * constructed, you must call finalize_class_type() if you need any of them.
+ */
 static ir_type *get_class_type(const char *name);
+static void finalize_type(ir_type *type);
+static void finalize_class_type(ir_type *type);
 static ir_type *get_classref_type(uint16_t index);
 
 ir_mode *mode_byte;
@@ -102,13 +109,9 @@ ir_type *type_array_float;
 ir_type *type_array_double;
 ir_type *type_array_reference;
 
-static ident *subobject_ident;
-
 static ir_entity *calloc_entity;
 static ir_entity *abort_entity;
-static ir_type   *type_java_lang_class;
-
-static ir_mode *mode_float_arithmetic;
+static ir_mode   *mode_float_arithmetic;
 
 /* Get arithmetic mode for a mode. */
 static ir_mode *get_ir_mode_arithmetic(ir_mode *mode)
@@ -197,8 +200,6 @@ static void init_types(void)
 	type_array_reference    = new_type_array(1, type_reference);
 	set_array_lower_bound_int(type_array_reference, 0, 0);
 	set_type_state(type_array_reference, layout_fixed);
-
-	subobject_ident         = new_id_from_str("@base");
 
 	const size_t size_bits    = get_mode_size_bits(mode_P);
 	const size_t modulo_shift = get_mode_modulo_shift(mode_P);
@@ -602,6 +603,7 @@ static ir_entity *get_method_entity(uint16_t index)
 		}
 		ir_type *classtype
 			= get_classref_type(methodref->methodref.class_index);
+		finalize_class_type(classtype);
 
 		if (!is_Class_type(classtype)) {
 			// semantically, this is correct (array types support the methods of j.l.Object.
@@ -671,6 +673,7 @@ static ir_entity *get_interface_entity(uint16_t index)
 
 		ir_type *classtype
 			= get_classref_type(interfacemethodref->interfacemethodref.class_index);
+		finalize_class_type(classtype);
 
 		const char *methodname
 			= get_constant_string(name_and_type->name_and_type.name_index);
@@ -689,7 +692,7 @@ static ir_entity *get_field_entity(uint16_t index)
 {
 	constant_t *fieldref = get_constant(index);
 	if (fieldref->kind != CONSTANT_FIELDREF) {
-		panic("get_field_entity index argumetn not a fieldref");
+		panic("get_field_entity index argument not a fieldref");
 	}
 	ir_entity *entity = fieldref->base.link;
 	if (entity == NULL) {
@@ -700,6 +703,7 @@ static ir_entity *get_field_entity(uint16_t index)
 		}
 		ir_type *classtype
 			= get_classref_type(fieldref->fieldref.class_index);
+		finalize_class_type(classtype);
 
 		const char *fieldname
 			= get_constant_string(name_and_type->name_and_type.name_index);
@@ -727,7 +731,8 @@ static ir_type *get_field_defining_class(uint16_t index)
 		panic("invalid name_and_type in field %u", index);
 	}
 	ir_type *classtype
-	  = get_classref_type(fieldref->fieldref.class_index);
+		= get_classref_type(fieldref->fieldref.class_index);
+	finalize_class_type(classtype);
 
 	const char *fieldname
 	  = get_constant_string(name_and_type->name_and_type.name_index);
@@ -941,7 +946,7 @@ static void push_load_const(uint16_t index)
 	case CONSTANT_CLASSREF: {
 		const char *classname = get_constant_string(constant->classref.name_index);
 		ir_type *klass = get_class_type(classname);
-		assert(klass);
+		finalize_class_type(klass);
 		ir_entity *rtti_object = gcji_get_rtti_object(klass);
 		assert(rtti_object != NULL);
 		ir_node *rtti_addr = create_symconst(rtti_object);
@@ -2179,8 +2184,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			}
 
 			if (opcode == OPC_GETSTATIC || opcode == OPC_PUTSTATIC) {
-				ir_type  *owner  = get_field_defining_class(index);
-				assert(owner);
+				ir_type *owner = get_field_defining_class(index);
+				finalize_class_type(owner);
 
 				ir_graph *irg    = get_current_ir_graph();
 				ir_node  *block  = get_cur_block();
@@ -2214,6 +2219,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_type   *type   = get_entity_type(entity);
 			unsigned   n_args = get_method_n_params(type);
 			ir_node   *args[n_args];
+			finalize_class_type(get_entity_owner(entity));
 
 			for (int i = n_args-1; i >= 0; --i) {
 				ir_type *arg_type = get_method_param_type(type, i);
@@ -2255,7 +2261,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node   *callee = create_symconst(entity);
 			ir_type   *type   = get_entity_type(entity);
 			ir_type   *owner  = get_method_defining_class(index);
-			assert(owner);
+			finalize_class_type(owner);
 			unsigned   n_args = get_method_n_params(type);
 			ir_node   *args[n_args];
 
@@ -2383,6 +2389,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_NEW: {
 			uint16_t  index     = get_16bit_arg(&i);
 			ir_type  *classtype = get_classref_type(index);
+			finalize_class_type(classtype);
 			ir_node  *mem       = get_store();
 			ir_node  *count     = new_Const_long(mode_size_t, 1);
 			ir_node  *result    = gen_alloc(classtype, count, &mem);
@@ -2413,6 +2420,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ANEWARRAY: {
 			uint16_t index        = get_16bit_arg(&i);
 			ir_type *element_type = get_classref_type(index);
+			finalize_class_type(element_type);
 			ir_type *type         = new_type_array(1, element_type);
 			set_type_state(type, layout_fixed);
 			set_array_lower_bound_int(type, 0, 0);
@@ -2436,11 +2444,11 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			uint16_t   index     = get_16bit_arg(&i);
 			ir_node   *addr      = symbolic_pop(mode_reference);
 
-			ir_type   *classtype = get_classref_type(index);
-			assert(classtype);
+			ir_type   *type      = get_classref_type(index);
+			finalize_type(type);
 
 			ir_node   *cur_mem   = get_store();
-			gcji_checkcast(classtype, addr, irg, get_cur_block(), &cur_mem);
+			gcji_checkcast(type, addr, irg, get_cur_block(), &cur_mem);
 			set_store(cur_mem);
 
 			symbolic_push(addr);
@@ -2451,7 +2459,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node *addr       = symbolic_pop(mode_reference);
 
 			ir_type *classtype  = get_classref_type(index);
-			assert(classtype);
+			finalize_class_type(classtype);
 
 			ir_node *cur_mem    = get_store();
 			ir_node *instanceof = new_InstanceOf(cur_mem, addr, classtype);
@@ -2482,7 +2490,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_MONITORENTER:
 		case OPC_MONITOREXIT: {
 			// FIXME: need real implementation.
-			ir_node *addr         = symbolic_pop(mode_reference);
+			ir_node *addr = symbolic_pop(mode_reference);
 			(void) addr;
 			continue;
 		}
@@ -2631,6 +2639,16 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	set_type_state(frame_type, layout_fixed);
 }
 
+static ir_entity *get_class_member_by_name(ir_type *cls, ident *ident)
+{
+	for (size_t i = 0, n = get_class_n_members(cls); i < n; ++i) {
+		ir_entity *entity = get_class_member(cls, i);
+		if (get_entity_ident(entity) == ident)
+			return entity;
+	}
+	return NULL;
+}
+
 static void create_method_entity(method_t *method, ir_type *owner)
 {
 	const char *name         = get_constant_string(method->name_index);
@@ -2684,6 +2702,29 @@ static void create_method_entity(method_t *method, ir_type *owner)
 		binding = bind_dynamic;
 
 	oo_set_entity_binding(entity, binding);
+
+	if (access_flags & ACCESS_FLAG_ABSTRACT) {
+		ir_entity *abstract_method = gcji_get_abstract_method_entity();
+		ir_node   *addr            = new_r_Address(get_const_code_irg(), abstract_method);
+		set_atomic_ent_value(entity, addr);
+	} else {
+		// see if we overwrite entities in the superclass
+		ir_type *cls = owner;
+		while (get_class_n_supertypes(cls) > 0) {
+			ir_type *superclass = oo_get_class_superclass(cls);
+			if (superclass == NULL)
+				break;
+
+			ir_entity *overwritten
+				= get_class_member_by_name(superclass, mangled_id);
+			if (overwritten != NULL) {
+				add_entity_overwrites(entity, overwritten);
+				oo_set_method_is_inherited(entity, true);
+				break;
+			}
+			cls = superclass;
+		}
+	}
 }
 
 static void create_method_code(ir_entity *entity)
@@ -2702,12 +2743,28 @@ static void create_method_code(ir_entity *entity)
 	}
 }
 
-static ir_type *create_ir_class_type(const char *name)
+#if 0
+static void link_methods_from_supertype(ir_type *type)
 {
-	ident   *class_ident = new_id_from_str(name);
-	ir_type *type        = new_type_class(class_ident);
-	return type;
+	if (get_class_n_supertypes(type) == 0)
+		return;
+	assert(get_class_n_supertypes(type) == 1);
+	ir_type *super = get_class_supertype(type, 0);
+
+	for (size_t i = 0, n = get_class_n_members(super); i < n; ++i) {
+		ir_entity *member = get_class_member(super, i);
+		ident     *name   = get_entity_ident(member);
+		ir_entity *new    = get_class_member_by_name(type, name);
+		if (new == NULL) {
+			ir_type *member_type = get_entity_type(member);
+			new = new_entity(type, name, member_type);
+			/* link to real implementation */
+			set_atomic_ent_value(new, get_atomic_ent_value(member));
+			add_entity_overwrites(new, member);
+		}
+	}
 }
+#endif
 
 static ir_type *get_class_type(const char *name)
 {
@@ -2722,72 +2779,17 @@ static ir_type *get_class_type(const char *name)
 	if (cls == NULL)
 		panic("Couldn't find class %s", name);
 
-	ir_type *type;
-	/* java/lang/Class has been constructed at startup */
-	if (strcmp(name, "java/lang/Class") == 0) {
-		type = type_java_lang_class;
-	} else {
-		type = create_ir_class_type(name);
-	}
+	ident   *class_ident = new_id_from_str(name);
+	ir_type *type        = new_type_class(class_ident);
 	class_registry_set(name, type);
 	oo_set_type_link(type, cls);
 	cls->link = type;
 
-	class_t *old_class_file = class_file;
-	class_file = cls;
-
-	/* add supertype and setup vptr */
-	if (class_file->super_class != 0) {
-		ir_type *supertype = get_classref_type(class_file->super_class);
-		assert(supertype != type);
-		add_class_supertype(type, supertype);
-		/* the supertype data is contained in the object so we create a field
-		 * that contains this data */
-		new_entity(type, subobject_ident, supertype);
-
-		/* use the same vptr field as our superclass */
-		ir_entity *vptr = oo_get_class_vptr_entity(supertype);
-		oo_set_class_vptr_entity(type, vptr);
-	} else {
-		/* java.lang.Object is the only class without a superclass */
-		assert(strcmp(name, "java/lang/Object") == 0);
-
-		/* create a new vptr field */
-		ident     *vptr_ident = new_id_from_str("@vptr");
-		ir_entity *vptr       = new_entity(type, vptr_ident, type_reference);
-		oo_set_class_vptr_entity(type, vptr);
+	if (strcmp(name, "java/lang/Class") == 0) {
+		gcji_set_java_lang_class(type);
+	} else if (strcmp(name, "java/lang/Object") == 0) {
+		gcji_set_java_lang_object(type);
 	}
-
-	/* set access mode/flags */
-	oo_set_class_is_final(type,     cls->access_flags & ACCESS_FLAG_FINAL);
-	oo_set_class_is_abstract(type,  cls->access_flags & ACCESS_FLAG_ABSTRACT);
-	oo_set_class_is_interface(type, cls->access_flags & ACCESS_FLAG_INTERFACE);
-	oo_set_class_is_extern(type,    cls->is_extern);
-
-	/* create vtable entity (the actual initializer will be created in liboo) */
-	if (!(cls->access_flags & ACCESS_FLAG_INTERFACE))
-		gcji_create_vtable_entity(type);
-
-	for (size_t f = 0; f < (size_t) class_file->n_fields; ++f) {
-		field_t *field = class_file->fields[f];
-		create_field_entity(field, type);
-	}
-	for (size_t m = 0; m < (size_t) class_file->n_methods; ++m) {
-		method_t *method = class_file->methods[m];
-		create_method_entity(method, type);
-	}
-	for (size_t i = 0; i < (size_t) class_file->n_interfaces; ++i) {
-		ir_type *iface = get_classref_type(class_file->interfaces[i]);
-		add_class_supertype(type, iface);
-	}
-
-	gcji_create_rtti(cls, type);
-
-	assert(class_file == cls);
-	class_file = old_class_file;
-
-	/* put class in worklist so the method code is constructed later */
-	pdeq_putr(worklist, type);
 
 	return type;
 }
@@ -2833,14 +2835,106 @@ static ir_type *construct_class_methods(ir_type *type)
 	return type;
 }
 
-static ir_entity *get_class_member_by_name(ir_type *cls, ident *ident)
+static void enqueue_class(ir_type *type)
 {
-	for (size_t i = 0, n = get_class_n_members(cls); i < n; ++i) {
-		ir_entity *entity = get_class_member(cls, i);
-		if (get_entity_ident(entity) == ident)
-			return entity;
+	class_t *cls = (class_t*)oo_get_type_link(type);
+	if (cls->in_construction_queue)
+		return;
+	pdeq_putr(worklist, type);
+	cls->in_construction_queue = true;
+}
+
+static void finalize_class_type(ir_type *type)
+{
+	assert(is_Class_type(type));
+	class_t *cls = (class_t*)oo_get_type_link(type);
+	if (cls->constructed)
+		return;
+	cls->constructed = true;
+
+	class_t *old_class_file = class_file;
+	class_file = cls;
+
+	/* add supertype and setup vptr */
+	if (class_file->super_class != 0) {
+		ir_type *supertype = get_classref_type(class_file->super_class);
+		assert(supertype != type);
+		finalize_class_type(supertype);
+
+		add_class_supertype(type, supertype);
+		/* the supertype data is contained in the object so we create a field
+		 * that contains this data */
+		new_entity(type, subobject_ident, supertype);
+
+		/* use the same vptr field as our superclass */
+		ir_entity *vptr = oo_get_class_vptr_entity(supertype);
+		oo_set_class_vptr_entity(type, vptr);
+	} else {
+		/* java.lang.Object is the only class without a superclass */
+		assert(strcmp(get_class_name(type), "java/lang/Object") == 0);
+
+		/* create a new vptr field */
+		ident     *vptr_ident = new_id_from_str("@vptr");
+		ir_entity *vptr       = new_entity(type, vptr_ident, type_reference);
+		oo_set_class_vptr_entity(type, vptr);
 	}
-	return NULL;
+
+	/* set access mode/flags */
+	oo_set_class_is_final(type,     cls->access_flags & ACCESS_FLAG_FINAL);
+	oo_set_class_is_abstract(type,  cls->access_flags & ACCESS_FLAG_ABSTRACT);
+	oo_set_class_is_interface(type, cls->access_flags & ACCESS_FLAG_INTERFACE);
+	oo_set_class_is_extern(type,    cls->is_extern);
+
+	/* create vtable entity (the actual initializer will be created in liboo) */
+	if (!(cls->access_flags & ACCESS_FLAG_INTERFACE))
+		gcji_create_vtable_entity(type);
+	/* create rtti entity */
+	gcji_create_rtti_object(type);
+
+	for (size_t f = 0; f < (size_t) class_file->n_fields; ++f) {
+		field_t *field = class_file->fields[f];
+		create_field_entity(field, type);
+	}
+	if (strcmp(get_class_name(type), "java/lang/Class") == 0) {
+		gcji_add_java_lang_class_fields(type);
+		/* now is a good time to create the class types */
+		gcji_create_array_type();
+	}
+
+	for (size_t m = 0; m < (size_t) class_file->n_methods; ++m) {
+		method_t *method = class_file->methods[m];
+		create_method_entity(method, type);
+	}
+	//link_methods_from_supertype(type);
+
+	for (size_t i = 0; i < (size_t) class_file->n_interfaces; ++i) {
+		ir_type *iface = get_classref_type(class_file->interfaces[i]);
+		finalize_class_type(iface);
+		add_class_supertype(type, iface);
+	}
+
+	ddispatch_setup_vtable(type);
+	/* RTTI from external classes is already created */
+	if (!cls->is_extern) {
+		gcji_setup_rtti_object(cls, type);
+	}
+
+	// make sure the methods are constructed later
+	enqueue_class(type);
+
+	assert(class_file == cls);
+	class_file = old_class_file;
+}
+
+static void finalize_type(ir_type *type)
+{
+	if (is_Pointer_type(type)) {
+		finalize_type(get_pointer_points_to_type(type));
+	} else if (is_Class_type(type)) {
+		finalize_class_type(type);
+	} else if (is_Array_type(type)) {
+		finalize_type(get_array_element_type(type));
+	}
 }
 
 static void link_interface_method_recursive(ir_type *klass, ir_entity *interface_method)
@@ -2887,8 +2981,7 @@ static void link_interface_method_recursive(ir_type *klass, ir_entity *interface
 		oo_copy_entity_info(impl, impl_copy);
 		oo_set_method_is_inherited(impl_copy, true);
 
-		ir_initializer_t *init = get_entity_initializer(impl); // XXX: required?
-		set_entity_initializer(impl_copy, init);
+		set_atomic_ent_value(impl_copy, get_atomic_ent_value(impl));
 
 		add_entity_overwrites(impl_copy, impl);
 		add_entity_overwrites(impl_copy, interface_method);
@@ -2930,61 +3023,11 @@ static void link_interface_methods(ir_type *klass, void *env)
 	}
 }
 
-static void link_normal_method_recursive(ir_type *klass, ir_entity *superclass_method)
-{
-	assert(is_Class_type(klass));
-	assert(is_method_entity(superclass_method));
-
-	ident *method_id = get_entity_ident(superclass_method);
-	ir_entity *m = get_class_member_by_name(klass, method_id);
-	if (m) {
-		if (get_entity_overwrites_index(m, superclass_method) == INVALID_MEMBER_INDEX)
-			add_entity_overwrites(m, superclass_method);
-		return;
-	}
-
-	size_t n_subclasses = get_class_n_subtypes(klass);
-	for (size_t i = 0; i < n_subclasses; i++) {
-		ir_type *subclass = get_class_subtype(klass, i);
-		link_normal_method_recursive(subclass, superclass_method);
-	}
-}
-
-static void link_normal_methods(ir_type *klass, void *env)
-{
-	(void) env;
-	assert(is_Class_type(klass));
-
-	if (oo_get_class_is_interface(klass))
-		return;
-
-	// don't need to iterate the class_t structure, as we are only interested in non-static methods
-	size_t n_subclasses = get_class_n_subtypes(klass);
-	if (n_subclasses == 0)
-		return;
-
-	size_t n_member = get_class_n_members(klass);
-	for (size_t m = 0; m < n_member; m++) {
-		ir_entity *member = get_class_member(klass, m);
-		if (!is_method_entity(member) || oo_get_method_exclude_from_vtable(member))
-			continue;
-
-		for (size_t sc = 0; sc < n_subclasses; sc++) {
-			ir_type *subclass = get_class_subtype(klass, sc);
-			if (oo_get_class_is_interface(subclass))
-				continue;
-
-			link_normal_method_recursive(subclass, member);
-		}
-	}
-}
-
 static void link_methods(void)
 {
 	 // handle the interfaces first, because it might be required to copy method entities to implementing classes.
 	 // (see example in link_interface_method_recursive)
 	class_walk_super2sub(link_interface_methods, NULL, NULL);
-	class_walk_super2sub(link_normal_methods, NULL, NULL);
 }
 
 static void layout_types(ir_type *type, void *env)
@@ -3093,22 +3136,22 @@ int main(int argc, char **argv)
 
 	worklist = new_pdeq();
 
-	/* read java.lang.Class - this type is needed to construct RTTI
+	/* read java.lang.Class first - this type is needed to construct RTTI
 	 * information */
-	type_java_lang_class = create_ir_class_type("java/lang/Class");
-	gcji_set_java_lang_class(type_java_lang_class);
-	get_class_type("java/lang/Class");
-	gcji_init_java_lang_class(type_java_lang_class);
+	ir_type *java_lang_class = get_class_type("java/lang/Class");
+	enqueue_class(java_lang_class);
 
 	/* trigger loading of the class specified on commandline */
-	ir_type   *main_class_type = get_class_type(main_class_name);
-	ir_entity *main_rtti       = gcji_get_rtti_object(main_class_type);
+	ir_type *main_class = get_class_type(main_class_name);
+	enqueue_class(main_class);
 
 	while (!pdeq_empty(worklist)) {
 		ir_type *classtype = pdeq_getl(worklist);
 
-		if (!oo_get_class_is_extern(classtype))
+		if (!oo_get_class_is_extern(classtype)) {
+			finalize_class_type(classtype);
 			construct_class_methods(classtype);
+		}
 	}
 
 	link_methods();
@@ -3131,6 +3174,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "===> Optimization & backend\n");
 
 	// we had to get the class$ above, because calling gcji_get_class_dollar_field after the class has been lowered (e.g. now) would create a new entity.
+	ir_entity *main_rtti = gcji_get_rtti_object(main_class);
 	assert(main_rtti && is_entity(main_rtti));
 	const char *main_rtti_ldname = get_entity_ld_name(main_rtti);
 

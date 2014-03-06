@@ -205,6 +205,9 @@ typedef struct {
 
 	ir_type      *link;
 	bool          is_extern;
+	/** in queue for vtable, methods and rtti are construction */
+	bool          in_construction_queue;
+	bool          constructed;
 } class_t;
 
 void class_file_init(const char *classpath, const char *bootclasspath);
