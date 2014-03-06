@@ -70,10 +70,11 @@ rt/libsimplert.so: $(SIMPLERT_C_SOURCES)
 	$(Q)mkdir -p rt
 	$(Q)$(CC) -std=c99 -Wall -W -m32 -g3 -shared $(SIMPLERT_C_SOURCES) -o $@
 
+SIMPLERT_SOURCES_ABS=$(abspath $(SIMPLERT_C_SOURCES))
 rt/simplert.a: $(SIMPLERT_C_SOURCES)
 	@echo '===> CC+AR $@'
 	$(Q)mkdir -p rt build/rt
-	$(Q)cd build/rt && $(CC) -std=c99 -Wall -W -m32 -g3 -c $(addprefix ../../, $(SIMPLERT_C_SOURCES))
+	$(Q)cd build/rt && $(CC) -std=c99 -Wall -W -m32 -g3 -c $(SIMPLERT_SOURCES_ABS)
 	$(Q)ar rcs $@ build/rt//*.o
 
 rt/java/lang/Object.class: $(SIMPLERT_JAVA_SOURCES)
