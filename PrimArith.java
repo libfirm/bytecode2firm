@@ -83,7 +83,7 @@ public class PrimArith {
 		float f = i;
 		System.out.println("i2f: " + f);
 		double d = i;
-		System.out.println("i2f: " + d);
+		System.out.println("i2d: " + d);
 		
 		i = (int) l; 
 		System.out.println("l2i: " + i);
