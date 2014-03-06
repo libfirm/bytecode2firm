@@ -2996,7 +2996,7 @@ int main(int argc, char **argv)
 
 	setup_class_paths();
 
-	/* stupid heuristic: if we can find java/util/UUID then we assume
+	/* FIXME stupid heuristic: if we can find java/util/UUID then we assume
 	 * libgcj is present and working, otherwise we default to simplert. */
 	if (runtime_type == RUNTIME_AUTO) {
 		runtime_type = read_class("java/util/UUID") != NULL
