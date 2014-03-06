@@ -50,6 +50,8 @@
 extern FILE *fdopen (int __fd, __const char *__modes);
 extern int mkstemp (char *__template);
 
+bool static_stdlib = false;
+
 static pdeq    *worklist;
 static class_t *class_file;
 static const char *main_class_name;
@@ -2960,6 +2962,8 @@ int main(int argc, char **argv)
 			bootclasspath = ARG_PARAM;
 		} else if (EQUALS_AND_HAS_ARG("-o")) {
 			output_name = ARG_PARAM;
+		} else if (EQUALS("--static-stdlib")) {
+			static_stdlib = true;
 		} else if (EQUALS_AND_HAS_ARG("-f")) {
 			const char *param = ARG_PARAM;
 			if (!firm_option(param))
@@ -3079,7 +3083,11 @@ int main(int argc, char **argv)
 		sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -lgcj -lstdc++ -o %s", asm_file, startup_file, output_name);
 	} else {
 		/* simplert */
-		sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -Lrt -lsimplert -Wl,-R%s -o %s", asm_file, startup_file, bootclasspath, output_name);
+		if (static_stdlib) {
+			sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none %s/simplert.a -o %s", asm_file, startup_file, bootclasspath, output_name);
+		} else {
+			sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -Lrt -lsimplert -Wl,-R%s -o %s", asm_file, startup_file, bootclasspath, output_name);
+		}
 	}
 
 	if (verbose)

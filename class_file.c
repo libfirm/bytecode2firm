@@ -1,4 +1,5 @@
 #include "class_file.h"
+#include "oo_java.h"
 
 #include <stdio.h>
 #include <assert.h>
@@ -356,7 +357,8 @@ class_t *read_class(const char *classname)
 	class_file = read_class_file();
 	fclose(in);
 
-	class_file->is_extern = from_bootclasspath;
+	if (!static_stdlib)
+		class_file->is_extern = from_bootclasspath;
 	return class_file;
 }
 

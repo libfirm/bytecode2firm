@@ -5,6 +5,8 @@
 #include <libfirm/firm.h>
 #include "class_file.h"
 
+extern bool static_stdlib;
+
 void oo_java_init(void);
 void oo_java_deinit(void);
 

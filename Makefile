@@ -39,7 +39,7 @@ endif
 
 .PHONY: all libfirm liboo clean distclean
 
-all: $(GOAL) rt/libsimplert.so classes/java/lang/Object.class
+all: $(GOAL) rt/libsimplert.so rt/simplert.a rt/java/lang/Object.class
 
 libfirm:
 	$(Q)$(MAKE) -C $(FIRM_HOME)
@@ -66,15 +66,23 @@ $(BUILDDIR)/%.o: %.c
 	$(Q)$(CC) $(CPPFLAGS) $(CFLAGS) -MP -MMD -c -o $@ $<
 
 rt/libsimplert.so: $(SIMPLERT_C_SOURCES)
+	@echo '===> CC $@'
 	$(Q)mkdir -p rt
-	$(Q)gcc -std=c99 -Wall -W -m32 -g3 -shared $(SIMPLERT_C_SOURCES) -o $@
+	$(Q)$(CC) -std=c99 -Wall -W -m32 -g3 -shared $(SIMPLERT_C_SOURCES) -o $@
 
-classes/java/lang/Object.class: $(SIMPLERT_JAVA_SOURCES)
-	$(Q)mkdir -p classes
-	$(Q)javac -d classes $(SIMPLERT_JAVA_SOURCES)
+rt/simplert.a: $(SIMPLERT_C_SOURCES)
+	@echo '===> CC+AR $@'
+	$(Q)mkdir -p rt build/rt
+	$(Q)cd build/rt && $(CC) -std=c99 -Wall -W -m32 -g3 -c $(addprefix ../../, $(SIMPLERT_C_SOURCES))
+	$(Q)ar rcs $@ build/rt//*.o
+
+rt/java/lang/Object.class: $(SIMPLERT_JAVA_SOURCES)
+	@echo '===> JAVAC all runtime classes'
+	$(Q)mkdir -p rt
+	$(Q)javac -d rt $(SIMPLERT_JAVA_SOURCES)
 
 clean:
-	$(Q)rm -rf $(OBJECTS) $(GOAL) $(DEPS)
+	$(Q)rm -rf $(OBJECTS) $(GOAL) $(DEPS) $(BUILDDIR) rt/*
 
 distclean: clean
 	$(Q)$(MAKE) -C $(FIRM_HOME) clean
