@@ -3,7 +3,10 @@ bytecode2firm - a Java bytecode front end for libFirm.
 Setup
 ------
 
-You need libgcj on your system.  Install gcj. bytecode2firm needs
+For our simple runtime, you can just compile via make.
+
+If you want as much Java library as possible,
+you need libgcj on your system.  Install gcj. bytecode2firm needs
 libgcj.so, and the precompiled runtime classes from gcj's rt.jar.
 In Ubuntu, install "libgcj-10 gcj-4.4-jre-lib". (Hint: you might want
 to make sure that gcj is not your default Java VM afterwards. See
@@ -11,9 +14,9 @@ to make sure that gcj is not your default Java VM afterwards. See
 Locate the rt.jar and unzip it to an directory named "rt" in the source
 directory (or specify -bootclasspath when invoking bytecode2firm).
 
-For the initial setup, you can simply execute a script.
+For the initial setup, you can execute a script:
 
-  ./setup.sh
+  ./setup_runtime_gcj.sh
 
 Running
 --------
