@@ -5,8 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern vtable_t _ZTVN4java4lang5ClassE;
-extern vtable_t _ZTVN4java4lang6ObjectE;
+extern extended_vtable_t _ZTVN4java4lang5ClassE;
 
 java_lang_Class _Jv_intClass;
 java_lang_Class _Jv_booleanClass;
@@ -50,7 +49,7 @@ static void init_rtti(java_lang_Class *rtti, size_t size, char sig,
 	assert((size_t)(int)size == size);
 
 	memset(rtti, 0, sizeof(*rtti));
-	rtti->base.vptr     = &_ZTVN4java4lang5ClassE;
+	rtti->base.vptr     = &_ZTVN4java4lang5ClassE.vtable;
 	rtti->name          = utf8_const_from_c_chars(name);
 	rtti->vtable        = (vtable_t*)-1;
 	rtti->size_in_bytes = (int)size;

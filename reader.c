@@ -197,6 +197,7 @@ static void init_types(void)
 	set_array_lower_bound_int(type_array_double, 0, 0);
 
 	type_reference          = new_type_primitive(mode_reference);
+	set_type_alignment_bytes(type_reference, 4);
 	type_array_reference    = new_type_array(1, type_reference);
 	set_array_lower_bound_int(type_array_reference, 0, 0);
 	set_type_state(type_array_reference, layout_fixed);
@@ -445,34 +446,6 @@ static ir_node *get_local(uint16_t n, ir_mode *mode)
 	assert(n < max_locals);
 	assert(mode == NULL || mode == get_arith_mode(mode));
 	return get_value(code->max_stack + n, mode);
-}
-
-static ir_node *create_symconst(ir_entity *entity)
-{
-	return new_Address(entity);
-}
-
-static ir_node *gen_calloc_call(ir_node *size, ir_node *count, ir_node **mem)
-{
-	ir_node *calloc    = create_symconst(calloc_entity);
-	ir_node *args[2]   = { count, size };
-	ir_type *call_type = get_entity_type(calloc_entity);
-	ir_node *call      = new_Call(*mem, calloc, 2, args, call_type);
-	ir_node *call_res  = new_r_Proj(call, mode_T, pn_Call_T_result);
-	ir_node *result    = new_r_Proj(call_res, mode_P, 0);
-	*mem = new_r_Proj(call, mode_M, pn_Call_M);
-	return result;
-}
-
-static ir_node *gen_alloc(ir_type *type, ir_node *count, ir_node **mem)
-{
-	if (get_irn_mode(count) != mode_size_t) {
-		count = new_Conv(count, mode_size_t);
-	}
-
-	ir_node *size = new_Size(mode_size_t, type);
-
-	return gen_calloc_call(size, count, mem);
 }
 
 static ir_entity *find_entity(ir_type *classtype, const char *name, const char *desc)
@@ -945,11 +918,9 @@ static void push_load_const(uint16_t index)
 	}
 	case CONSTANT_CLASSREF: {
 		const char *classname = get_constant_string(constant->classref.name_index);
-		ir_type *klass = get_class_type(classname);
-		finalize_class_type(klass);
-		ir_entity *rtti_object = gcji_get_rtti_object(klass);
-		assert(rtti_object != NULL);
-		ir_node *rtti_addr = create_symconst(rtti_object);
+		ir_type   *klass       = get_class_type(classname);
+		ir_entity *rtti_entity = gcji_get_rtti_entity(klass);
+		ir_node   *rtti_addr   = new_Address(rtti_entity);
 
 		symbolic_push(rtti_addr);
 		break;
@@ -1303,6 +1274,15 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	ir_graph *irg = new_ir_graph(entity, max_locals + code->max_stack);
 	current_ir_graph = irg;
 	stack_pointer    = 0;
+
+	/* static methods need to run static code */
+	method_t *method = oo_get_entity_link(entity);
+	if (method->access_flags & ACCESS_FLAG_STATIC) {
+		ir_type *owner = (ir_type*)class_file->link;
+		ir_node *cur_mem = get_store();
+		gcji_class_init(owner, get_cur_block(), &cur_mem);
+		set_store(cur_mem);
+	}
 
 	/* arguments become local variables */
 	ir_node *first_block = get_cur_block();
@@ -2186,10 +2166,9 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				ir_type *owner = get_field_defining_class(index);
 				finalize_class_type(owner);
 
-				ir_graph *irg    = get_current_ir_graph();
 				ir_node  *block  = get_cur_block();
-				gcji_class_init(owner, irg, block, &cur_mem);
-				addr = create_symconst(entity);
+				gcji_class_init(owner, block, &cur_mem);
+				addr = new_Address(entity);
 			} else {
 				ir_node  *object = symbolic_pop(mode_reference);
 				addr             = new_simpleSel(new_NoMem(), object, entity);
@@ -2257,7 +2236,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_INVOKESTATIC: {
 			uint16_t   index  = get_16bit_arg(&i);
 			ir_entity *entity = get_method_entity(index);
-			ir_node   *callee = create_symconst(entity);
+			ir_node   *callee = new_Address(entity);
 			ir_type   *type   = get_entity_type(entity);
 			ir_type   *owner  = get_method_defining_class(index);
 			finalize_class_type(owner);
@@ -2275,7 +2254,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			}
 			ir_node *cur_mem = get_store();
 			ir_node *block = get_r_cur_block(irg);
-			gcji_class_init(owner, irg, block, &cur_mem);
+			gcji_class_init(owner, block, &cur_mem);
 			set_store(cur_mem);
 
 #ifdef EXCEPTIONS
@@ -2303,7 +2282,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_INVOKESPECIAL: {
 			uint16_t   index   = get_16bit_arg(&i);
 			ir_entity *entity  = get_method_entity(index);
-			ir_node   *callee  = create_symconst(entity);
+			ir_node   *callee  = new_Address(entity);
 			ir_type   *type   = get_entity_type(entity);
 			unsigned   n_args = get_method_n_params(type);
 			ir_node   *args[n_args];
@@ -2390,10 +2369,9 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_type  *classtype = get_classref_type(index);
 			finalize_class_type(classtype);
 			ir_node  *mem       = get_store();
-			ir_node  *count     = new_Const_long(mode_size_t, 1);
-			ir_node  *result    = gen_alloc(classtype, count, &mem);
-			ir_node  *block     = get_nodes_block(result);
-			ddispatch_prepare_new_instance(NULL, block, result, &mem, classtype);
+			ir_node  *block     = get_cur_block();
+			ir_node  *result    = gcji_allocate_object(classtype, block, &mem);
+			//ddispatch_prepare_new_instance(NULL, block, result, &mem, classtype);
 			set_store(mem);
 			symbolic_push(result);
 			continue;
@@ -2671,37 +2649,10 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	ident      *ld_id     = mangle_member_name(classname, name, descriptor);
 	set_entity_ld_ident(entity, ld_id);
 
-	// set access flags
-	uint16_t access_flags       = method->access_flags;
-	uint16_t owner_access_flags = class_file->access_flags;
-	bool final    = (access_flags | owner_access_flags) & ACCESS_FLAG_FINAL;
-	bool abstract = access_flags & ACCESS_FLAG_ABSTRACT;
-	oo_set_method_is_abstract(entity, abstract);
-	oo_set_method_is_final(entity, final);
-	if ((method->access_flags & ACCESS_FLAG_NATIVE) != 0
-	    || oo_get_class_is_extern(owner)) {
-		set_entity_visibility(entity, ir_visibility_external);
-	}
 
-	// decide binding mode
-	bool is_constructor = strncmp(name, "<init>", 6) == 0;
-	bool exclude_from_vtable =
-	   ((access_flags & ACCESS_FLAG_STATIC)
-	 || (access_flags & ACCESS_FLAG_PRIVATE)
-	 || (is_constructor));
-	oo_set_method_exclude_from_vtable(entity, exclude_from_vtable);
-
-	ddispatch_binding binding = bind_unknown;
-	if (exclude_from_vtable || (owner_access_flags & ACCESS_FLAG_FINAL)
-	    || (access_flags & ACCESS_FLAG_FINAL))
-		binding = bind_static;
-	else if (owner_access_flags & ACCESS_FLAG_INTERFACE)
-		binding = bind_interface;
-	else
-		binding = bind_dynamic;
-
-	oo_set_entity_binding(entity, binding);
-
+	// determine if we overwrite something
+	uint16_t access_flags         = method->access_flags;
+	bool     overwrites_something = false;
 	if (access_flags & ACCESS_FLAG_ABSTRACT) {
 		ir_entity *abstract_method = gcji_get_abstract_method_entity();
 		ir_node   *addr            = new_r_Address(get_const_code_irg(), abstract_method);
@@ -2719,11 +2670,44 @@ static void create_method_entity(method_t *method, ir_type *owner)
 			if (overwritten != NULL) {
 				add_entity_overwrites(entity, overwritten);
 				oo_set_method_is_inherited(entity, true);
+				overwrites_something = true;
 				break;
 			}
 			cls = superclass;
 		}
 	}
+
+	// set access flags
+	uint16_t owner_access_flags = class_file->access_flags;
+	bool final    = (access_flags | owner_access_flags) & ACCESS_FLAG_FINAL;
+	bool abstract = access_flags & ACCESS_FLAG_ABSTRACT;
+	oo_set_method_is_abstract(entity, abstract);
+	oo_set_method_is_final(entity, final);
+	if ((method->access_flags & ACCESS_FLAG_NATIVE) != 0
+	    || oo_get_class_is_extern(owner)) {
+		set_entity_visibility(entity, ir_visibility_external);
+	}
+
+	// decide binding mode
+	bool is_constructor = strncmp(name, "<init>", 6) == 0;
+	bool exclude_from_vtable =
+	   ((access_flags & ACCESS_FLAG_STATIC)
+	 || (access_flags & ACCESS_FLAG_PRIVATE)
+	 || (is_constructor)
+	 || ((access_flags & ACCESS_FLAG_FINAL) && !overwrites_something));
+	oo_set_method_exclude_from_vtable(entity, exclude_from_vtable);
+
+	ddispatch_binding binding = bind_unknown;
+	if (exclude_from_vtable || (owner_access_flags & ACCESS_FLAG_FINAL)
+	    || (access_flags & ACCESS_FLAG_FINAL))
+		binding = bind_static;
+	else if (owner_access_flags & ACCESS_FLAG_INTERFACE)
+		binding = bind_interface;
+	else
+		binding = bind_dynamic;
+
+	oo_set_entity_binding(entity, binding);
+
 }
 
 static void create_method_code(ir_entity *entity)
@@ -2789,6 +2773,18 @@ static ir_type *get_class_type(const char *name)
 	} else if (strcmp(name, "java/lang/Object") == 0) {
 		gcji_set_java_lang_object(type);
 	}
+
+	/* set access mode/flags */
+	oo_set_class_is_final(type,     cls->access_flags & ACCESS_FLAG_FINAL);
+	oo_set_class_is_abstract(type,  cls->access_flags & ACCESS_FLAG_ABSTRACT);
+	oo_set_class_is_interface(type, cls->access_flags & ACCESS_FLAG_INTERFACE);
+	oo_set_class_is_extern(type,    cls->is_extern);
+
+	/* create vtable entity (the actual initializer will be created in liboo) */
+	if (!(cls->access_flags & ACCESS_FLAG_INTERFACE))
+		gcji_create_vtable_entity(type);
+	/* create rtti entity */
+	gcji_create_rtti_entity(type);
 
 	return type;
 }
@@ -2878,18 +2874,6 @@ static void finalize_class_type(ir_type *type)
 		oo_set_class_vptr_entity(type, vptr);
 	}
 
-	/* set access mode/flags */
-	oo_set_class_is_final(type,     cls->access_flags & ACCESS_FLAG_FINAL);
-	oo_set_class_is_abstract(type,  cls->access_flags & ACCESS_FLAG_ABSTRACT);
-	oo_set_class_is_interface(type, cls->access_flags & ACCESS_FLAG_INTERFACE);
-	oo_set_class_is_extern(type,    cls->is_extern);
-
-	/* create vtable entity (the actual initializer will be created in liboo) */
-	if (!(cls->access_flags & ACCESS_FLAG_INTERFACE))
-		gcji_create_vtable_entity(type);
-	/* create rtti entity */
-	gcji_create_rtti_object(type);
-
 	for (size_t f = 0; f < (size_t) class_file->n_fields; ++f) {
 		field_t *field = class_file->fields[f];
 		create_field_entity(field, type);
@@ -2912,10 +2896,12 @@ static void finalize_class_type(ir_type *type)
 		add_class_supertype(type, iface);
 	}
 
+	default_layout_compound_type(type);
+
 	ddispatch_setup_vtable(type);
 	/* RTTI from external classes is already created */
 	if (!cls->is_extern) {
-		gcji_setup_rtti_object(cls, type);
+		gcji_setup_rtti_entity(cls, type);
 	}
 
 	// make sure the methods are constructed later
@@ -3029,11 +3015,16 @@ static void link_methods(void)
 	class_walk_super2sub(link_interface_methods, NULL, NULL);
 }
 
-static void layout_types(ir_type *type, void *env)
+static void remove_external_vtable(ir_type *type, void *env)
 {
 	(void) env;
-	if (get_type_state(type) != layout_fixed)
-		default_layout_compound_type(type);
+	if (oo_get_class_is_extern(type)) {
+		ir_entity *vtable = oo_get_class_vtable_entity(type);
+		if (vtable != NULL) {
+			set_entity_initializer(vtable, NULL);
+			set_entity_type(vtable, get_unknown_type());
+		}
+	}
 }
 
 #ifndef DEFAULT_BOOTCLASSPATH
@@ -3152,6 +3143,12 @@ int main(int argc, char **argv)
 			construct_class_methods(classtype);
 		}
 	}
+	/* if java/lang/Class is external, then we might not have constructed it
+	 * yet, but we need to do this in this special case as the gcji stuff
+	 * produces instances of it
+	 */
+	finalize_class_type(java_lang_class);
+	irp_finalize_cons();
 
 	link_methods();
 
@@ -3165,15 +3162,18 @@ int main(int argc, char **argv)
 	}
 #endif
 
-	irp_finalize_cons();
 	oo_lower();
-	class_walk_super2sub(layout_types, NULL, NULL);
+	/* kinda hacky: we remove vtables for external classes now
+	 * (we constructed them in the first places because we needed the vtable_ids
+	 *  for the methods in non-external subclasses)
+	 */
+	class_walk_super2sub(remove_external_vtable, NULL, NULL);
 
 	if (verbose)
 		fprintf(stderr, "===> Optimization & backend\n");
 
 	// we had to get the class$ above, because calling gcji_get_class_dollar_field after the class has been lowered (e.g. now) would create a new entity.
-	ir_entity *main_rtti = gcji_get_rtti_object(main_class);
+	ir_entity *main_rtti = gcji_get_rtti_entity(main_class);
 	assert(main_rtti && is_entity(main_rtti));
 	const char *main_rtti_ldname = get_entity_ld_name(main_rtti);
 

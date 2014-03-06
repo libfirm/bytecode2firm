@@ -35,7 +35,6 @@ static ir_entity *gcj_int_rtti_entity;
 static ir_entity *gcj_long_rtti_entity;
 static ir_entity *gcj_float_rtti_entity;
 static ir_entity *gcj_double_rtti_entity;
-static ir_entity *gcj_compiled_execution_engine_entity;
 static ir_entity *gcj_array_length;
 
 static ir_mode *mode_ushort;
@@ -161,6 +160,8 @@ void gcji_create_array_type(void)
 	ident *data_id = new_id_from_str("data");
 	add_compound_member(type, data_id, data_array);
 	set_compound_variable_size(type, 1);
+
+	default_layout_compound_type(type);
 }
 
 ir_entity *gcji_get_abstract_method_entity(void)
@@ -354,10 +355,6 @@ void gcji_init()
 	set_entity_visibility(gcj_float_rtti_entity, ir_visibility_external);
 	set_entity_visibility(gcj_double_rtti_entity, ir_visibility_external);
 
-	// execution engine
-	gcj_compiled_execution_engine_entity = new_entity(glob, new_id_from_str("_Jv_soleCompiledEngine"), type_reference);
-	set_entity_visibility(gcj_compiled_execution_engine_entity, ir_visibility_external);
-
 	mode_ushort = new_int_mode("US", irma_twos_complement, 16, 0, 16);
 	type_ushort = new_type_primitive(mode_ushort);
 
@@ -383,11 +380,12 @@ void gcji_deinit()
 	cpset_destroy(&scp);
 }
 
-void gcji_class_init(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem)
+void gcji_class_init(ir_type *type, ir_node *block, ir_node **mem)
 {
 	assert(is_Class_type(type));
 
-	ir_node *init_callee = new_r_Address(irg, gcj_init_entity);
+	ir_graph *irg         = get_irn_irg(block);
+	ir_node  *init_callee = new_r_Address(irg, gcj_init_entity);
 
 	ir_node *cur_mem        = *mem;
 	ir_node *jclass         = gcji_get_runtime_classinfo(type, irg, block, &cur_mem);
@@ -399,14 +397,14 @@ void gcji_class_init(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem
 	*mem = cur_mem;
 }
 
-ir_node *gcji_allocate_object(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem)
+ir_node *gcji_allocate_object(ir_type *type, ir_node *block, ir_node **mem)
 {
 	assert(is_Class_type(type));
 
 	ir_node *cur_mem = *mem;
-	gcji_class_init(type, irg, block, &cur_mem);
 
-	ir_node *alloc_callee = new_r_Address(irg, gcj_alloc_entity);
+	ir_graph *irg          = get_irn_irg(block);
+	ir_node  *alloc_callee = new_r_Address(irg, gcj_alloc_entity);
 
 	ir_node *jclass          = gcji_get_runtime_classinfo(type, irg, block, &cur_mem);
 	ir_node *alloc_args[1]   = { jclass };
@@ -604,6 +602,7 @@ static ir_entity *do_emit_utf8_const(const char *bytes, size_t len)
 	ir_entity *utf8c = new_entity(get_glob_type(), id, type_utf8_const);
 	set_entity_initializer(utf8c, cinit);
 	set_entity_ld_ident(utf8c, id);
+	add_entity_linkage(utf8c, IR_LINKAGE_CONSTANT);
 
 	scp_entry *new_scpe = XMALLOC(scp_entry);
 	new_scpe->s = XMALLOCN(char, len0);
@@ -681,7 +680,7 @@ static ir_entity *emit_method_table(ir_type *classtype)
 		  else if (typevar == type_double) { action_double; } \
 		} while (0);
 
-ir_entity *gcji_get_rtti_object(ir_type *type)
+ir_entity *gcji_get_rtti_entity(ir_type *type)
 {
 	if (is_Pointer_type(type)) {
 		ir_type *points_to = get_pointer_points_to_type(type);
@@ -714,9 +713,9 @@ static ir_initializer_t *get_field_desc(ir_type *classtype, ir_entity *ent)
 	ir_entity  *name_ent   = gcji_emit_utf8_const(name_const, 1);
 
 	ir_type   *field_type  = get_entity_type(ent);
-	ir_entity *rtti_object = gcji_get_rtti_object(field_type);
-	if (rtti_object == NULL) {
-		rtti_object = emit_type_signature(field_type);
+	ir_entity *rtti_entity = gcji_get_rtti_entity(field_type);
+	if (rtti_entity == NULL) {
+		rtti_entity = emit_type_signature(field_type);
 	}
 
 	ir_graph *ccode = get_const_code_irg();
@@ -737,7 +736,7 @@ static ir_initializer_t *get_field_desc(ir_type *classtype, ir_entity *ent)
 	ir_initializer_t *init = create_initializer_compound(NUM_FIELDS);
 	size_t f = 0;
 	set_compound_init_entref(init, f++, name_ent);
-	set_compound_init_entref(init, f++, rtti_object);
+	set_compound_init_entref(init, f++, rtti_entity);
 	set_compound_init_num(init, f++, mode_ushort, linked_field->access_flags);
 	set_compound_init_node(init, f++, bsize);
 	set_initializer_compound_value(init, f++, offset_addr_init);
@@ -750,6 +749,8 @@ static ir_entity *emit_field_table(ir_type *classtype)
 	class_t *linked_class = (class_t*) oo_get_type_link(classtype);
 	assert(linked_class);
 	uint16_t n_fields = linked_class->n_fields;
+	if (n_fields == 0)
+		return NULL;
 
 	ir_type *type_array = new_type_array(1, type_field_desc);
 	set_array_bounds_int(type_array, 0, 0, n_fields);
@@ -791,9 +792,9 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 
 		ir_type    *type = class_registry_get(clsname->bytes);
 		assert(type);
-		ir_entity  *rtti_object = gcji_get_rtti_object(type);
-		assert(rtti_object != NULL);
-		set_compound_init_entref(init, i, rtti_object);
+		ir_entity  *rtti_entity = gcji_get_rtti_entity(type);
+		assert(rtti_entity != NULL);
+		set_compound_init_entref(init, i, rtti_entity);
 	}
 
 	ident     *id     = id_unique("_IF_%u_");
@@ -803,23 +804,52 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 	return if_ent;
 }
 
-void gcji_create_rtti_object(ir_type *type)
+void gcji_create_rtti_entity(ir_type *type)
 {
 	const char *name = get_class_name(type);
 	/* create RTTI object entity (actual initializer is constructed in liboo) */
 	ident     *rtti_ident  = mangle_rtti_name(name);
 	ir_type   *unknown     = get_unknown_type();
-	ir_entity *rtti_object = new_entity(glob, rtti_ident, unknown);
-	oo_set_class_rtti_entity(type, rtti_object);
+	ir_entity *rtti_entity = new_entity(glob, rtti_ident, unknown);
+	oo_set_class_rtti_entity(type, rtti_entity);
 }
 
-void gcji_setup_rtti_object(class_t *cls, ir_type *type)
+static void add_pointer_in_jcr_segment(ir_entity *entity)
 {
-	ir_entity *rtti_object = oo_get_class_rtti_entity(type);
-	assert(type_java_lang_class != NULL);
-	set_entity_type(rtti_object, type_java_lang_class);
+	ir_type   *segment = get_segment_type(IR_SEGMENT_JCR);
+	ident     *id  = id_unique("jcr_ptr.%u");
+	ir_entity *ptr = new_entity(segment, id, type_reference);
+	ir_graph  *irg = get_const_code_irg();
+	ir_node   *val = new_r_Address(irg, entity);
 
-	ir_entity *vtable = oo_get_class_vtable_entity(type_java_lang_class);
+	set_entity_ld_ident(ptr, new_id_from_chars("", 0));
+	set_entity_compiler_generated(ptr, 1);
+	set_entity_visibility(ptr, ir_visibility_private);
+	set_entity_linkage(ptr, IR_LINKAGE_CONSTANT|IR_LINKAGE_HIDDEN_USER);
+	set_entity_alignment(ptr, 1);
+	set_atomic_ent_value(ptr, val);
+}
+
+static ir_node *get_vtable_ref(ir_type *type)
+{
+	ir_entity *cls_vtable = oo_get_class_vtable_entity(type);
+	if (cls_vtable == NULL)
+		return NULL;
+	ir_graph *ccode = get_const_code_irg();
+	ir_node  *addr  = new_r_Address(ccode, cls_vtable);
+	unsigned offset
+		= ddispatch_get_vptr_points_to_index() * get_mode_size_bytes(mode_reference);
+	ir_node *cnst  = new_r_Const_long(ccode, mode_reference, offset);
+	ir_node *block = get_r_cur_block(ccode);
+	ir_node *add   = new_r_Add(block, addr, cnst, mode_reference);
+	return add;
+}
+
+void gcji_setup_rtti_entity(class_t *cls, ir_type *type)
+{
+	ir_entity *rtti_entity = oo_get_class_rtti_entity(type);
+	assert(type_java_lang_class != NULL);
+	set_entity_type(rtti_entity, type_java_lang_class);
 
 	ir_entity *name_ent = gcji_emit_utf8_const(
 			cls->constants[cls->constants[cls->this_class]->classref.name_index], 1);
@@ -845,24 +875,23 @@ void gcji_setup_rtti_object(class_t *cls, ir_type *type)
 		 * first one and hoping it is a non-interface */
 		assert(!oo_get_class_is_interface(superclass));
 
-		superclass_rtti = gcji_get_rtti_object(superclass);
+		superclass_rtti = gcji_get_rtti_entity(superclass);
 	}
 
-	ir_entity *cls_vtable = NULL;
-	if ((cls->access_flags & ACCESS_FLAG_INTERFACE) == 0) {
-		cls_vtable = oo_get_class_vtable_entity(type);
-		assert(cls_vtable != NULL);
-	}
+	ir_node *vtable_init = get_vtable_ref(type);
 
 	int16_t interface_count = cls->n_interfaces;
 	ir_entity *interfaces = emit_interface_table(type);
 
 	// w/o slots 0=rtti. see lower_oo.c
-	int16_t vtable_method_count = oo_get_class_vtable_size(type)-1;
+	int16_t vtable_method_count = oo_get_class_vtable_size(type)
+		- (ddispatch_get_index_of_first_method() - ddispatch_get_vptr_points_to_index());
+
+	ir_node *class_vtable = get_vtable_ref(type_java_lang_class);
 
 	/* initializer for base class java.lang.Object */
 	ir_initializer_t *base_init = create_initializer_compound(1);
-	set_compound_init_entref(base_init, 0, vtable);
+	set_compound_init_node(base_init, 0, class_vtable);
 
 	/* initializer for java.lang.Class */
 	unsigned NUM_FIELDS = 39;
@@ -886,7 +915,7 @@ void gcji_setup_rtti_object(class_t *cls, ir_type *type)
 	set_compound_init_node(init, f++, size_in_bytes);
 	set_compound_init_num(init, f++, mode_short, field_count);
 	set_compound_init_num(init, f++, mode_short, static_field_count);
-	set_compound_init_entref(init, f++, cls_vtable);
+	set_compound_init_node(init, f++, vtable_init);
 
 	// most of the following fields are set at runtime during the class linking.
 	set_compound_init_null(init, f++);
@@ -901,6 +930,8 @@ void gcji_setup_rtti_object(class_t *cls, ir_type *type)
 	set_compound_init_null(init, f++);
 	set_compound_init_num(init, f++, mode_short, interface_count);
 
+	set_compound_init_num(init, f++, mode_byte, 1); // state
+
 	set_compound_init_null(init, f++);
 	set_compound_init_null(init, f++);
 	set_compound_init_null(init, f++);
@@ -911,12 +942,14 @@ void gcji_setup_rtti_object(class_t *cls, ir_type *type)
 	set_compound_init_null(init, f++);
 	set_compound_init_null(init, f++);
 	set_compound_init_null(init, f++);
-	set_compound_init_null(init, f++);
-	set_compound_init_entref(init, f++, gcj_compiled_execution_engine_entity);
+	set_compound_init_null(init, f++); // engine
 	set_compound_init_null(init, f++);
 	assert(f == NUM_FIELDS);
 
-	set_entity_initializer(rtti_object, init);
+	set_entity_initializer(rtti_entity, init);
+	set_entity_alignment(rtti_entity, 32);
+
+	add_pointer_in_jcr_segment(rtti_entity);
 }
 
 static ir_entity *emit_type_signature(ir_type *type)
@@ -961,9 +994,9 @@ static ir_entity *emit_type_signature(ir_type *type)
 
 ir_node *gcji_get_runtime_classinfo(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem)
 {
-	ir_entity *rtti_object = gcji_get_rtti_object(type);
-	if (rtti_object != NULL) {
-		return create_symconst(irg, rtti_object);
+	ir_entity *rtti_entity = gcji_get_rtti_entity(type);
+	if (rtti_entity != NULL) {
+		return create_symconst(irg, rtti_entity);
 	}
 
 	/* Arrays are represented as pointer types. We extract the base type,
@@ -985,7 +1018,7 @@ ir_node *gcji_get_runtime_classinfo(ir_type *type, ir_graph *irg, ir_node *block
 
 	if (!is_Primitive_type(eltype)) n_pointer_levels--;
 
-	ir_entity *elem_cdf = gcji_get_rtti_object(eltype);
+	ir_entity *elem_cdf = gcji_get_rtti_entity(eltype);
 	assert(elem_cdf != NULL);
 	ir_node *array_class_ref = create_symconst(irg, elem_cdf);
 

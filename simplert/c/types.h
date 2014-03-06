@@ -22,9 +22,16 @@ typedef struct array_header_t *jarray;
 
 struct vtable_t {
 	java_lang_Class *rtti;
+	void            *gc_descr;
 	void            *dynamic_methods[];
 };
 typedef struct vtable_t vtable_t;
+
+typedef struct extended_vtable_t {
+	uint32_t x0;
+	uint32_t x1;
+	vtable_t vtable;
+} extended_vtable_t;
 
 typedef struct utf8_const {
 	uint16_t hash;

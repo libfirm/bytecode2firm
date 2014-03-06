@@ -8,8 +8,6 @@
 
 #include "debug.h"
 
-extern vtable_t _ZTVN4java4lang6ObjectE;
-
 jobject _Jv_AllocObjectNoFinalizer(java_lang_Class *type)
 {
 	jint size = type->size_in_bytes;
@@ -24,12 +22,12 @@ jobject _Jv_AllocObjectNoFinalizer(java_lang_Class *type)
 }
 
 extern java_lang_Class _ZN4java4lang6Object6class$E;
-extern vtable_t _ZTVN4java4lang6ObjectE;
-extern vtable_t _ZTVN4java4lang5ClassE;
+extern extended_vtable_t _ZTVN4java4lang6ObjectE;
+extern extended_vtable_t _ZTVN4java4lang5ClassE;
 
 static vtable_t *duplicate_object_vtable(void)
 {
-	const vtable_t *obj_table      = &_ZTVN4java4lang6ObjectE;
+	const vtable_t *obj_table      = &_ZTVN4java4lang6ObjectE.vtable;
 	unsigned        vtable_count   = obj_table->rtti->vtable_method_count;
 	size_t          obj_table_size = sizeof(vtable_t) + vtable_count*sizeof(void*);
 	vtable_t *vtable = calloc(1, obj_table_size);
@@ -70,7 +68,7 @@ static java_lang_Class *create_array_class(java_lang_Class *eltype)
 	namecnst->len = idx;
 	namecnst->hash = calc_string_hash(name_chars, idx);
 
-	arrayclass->base.vptr       = &_ZTVN4java4lang5ClassE;
+	arrayclass->base.vptr       = &_ZTVN4java4lang5ClassE.vtable;
 	arrayclass->vtable          = vtable;
 	arrayclass->size_in_bytes   = -1;
 	arrayclass->me.element_type = eltype;

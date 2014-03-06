@@ -33,8 +33,13 @@ static void java_init_vtable_slots(ir_type *klass, ir_initializer_t *vtable_init
 
 	ir_initializer_t *rtti_init = create_initializer_const(rtti_addr);
 
-	assert(vtable_size > 0);
-	set_initializer_compound_value(vtable_init, 0, rtti_init);
+	assert(vtable_size >= 4);
+	ir_initializer_t *null_init = get_initializer_null();
+	set_initializer_compound_value(vtable_init, 0, null_init);
+	set_initializer_compound_value(vtable_init, 1, null_init);
+	set_initializer_compound_value(vtable_init, 2, rtti_init);
+	// gc_descr...
+	set_initializer_compound_value(vtable_init, 3, null_init);
 }
 
 static void dummy(ir_type *t)
@@ -46,7 +51,7 @@ void oo_java_init(void)
 {
 	oo_init();
 
-	ddispatch_set_vtable_layout(0, 1, 0, java_init_vtable_slots);
+	ddispatch_set_vtable_layout(2, 4, 2, java_init_vtable_slots);
 	ddispatch_set_abstract_method_ident(new_id_from_str("_Jv_ThrowAbstractMethodError"));
 	ddispatch_set_interface_lookup_constructor(gcji_lookup_interface);
 
