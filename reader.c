@@ -1260,7 +1260,6 @@ static uint32_t get_32bit_arg(uint32_t *pos)
 	return value;
 }
 
-#ifdef EXCEPTIONS
 static void sort_exceptions(exception_t *excptns, size_t n)
 {
 	bool swapped;
@@ -1284,7 +1283,6 @@ static void sort_exceptions(exception_t *excptns, size_t n)
 	// Note: must preserve the order of catch clauses for the same try.
 	// Example: B extends A, try { ... } catch (B b) {} catch (A a) {}
 }
-#endif
 
 #if 0
 static void print_exception(exception_t *excptns, size_t n)
@@ -1327,7 +1325,6 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	unsigned *targets = rbitset_malloc(code->code_length);
 	basic_blocks = NEW_ARR_F(basic_block_t, 0);
 
-#ifdef EXCEPTIONS
 	unsigned *catch_begins = rbitset_malloc(code->code_length);
 	rbitset_clear_all(catch_begins, code->code_length);
 
@@ -1358,7 +1355,6 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		rbitset_set(try_begins,   e->start_pc);
 		rbitset_set(try_ends,     e->end_pc);
 	}
-#endif
 
 	basic_block_t start;
 	start.pc            = 0;
@@ -1775,7 +1771,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	basic_block_t *next_target = &basic_blocks[0];
 
 #ifdef EXCEPTIONS
-		eh_start_method();
+	eh_start_method();
 #endif
 
 	for (uint32_t i = 0; i < code->code_length; /* nothing */) {
@@ -1828,6 +1824,9 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 
 		if (rbitset_is_set(try_ends, i))
 			eh_pop_lpad();
+#else
+		if (rbitset_is_set(catch_begins, i))
+			symbolic_push(new_Unknown(mode_reference));
 #endif
 
 		opcode_kind_t opcode = code->code[i++];
@@ -2615,12 +2614,12 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		panic("unknown/unimplemented opcode 0x%X found\n", opcode);
 	}
 
-#ifdef EXCEPTIONS
 	xfree(catch_begins);
 	xfree(try_begins);
 	xfree(try_ends);
 	xfree(excptns);
 
+#ifdef EXCEPTIONS
 	eh_end_method();
 #endif
 
