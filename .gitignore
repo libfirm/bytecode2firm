@@ -1,8 +1,4 @@
 /build
-/classes
 /config.mak
-/rt
 *.vcg
-*.s
-*.S
 *.gch
