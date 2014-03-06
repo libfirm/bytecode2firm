@@ -23,6 +23,10 @@ SOURCES       = $(wildcard *.c) $(wildcard adt/*.c) $(wildcard driver/*.c)
 DEPS          = $(addprefix $(BUILDDIR)/, $(addsuffix .d, $(basename $(SOURCES))))
 OBJECTS       = $(addprefix $(BUILDDIR)/, $(addsuffix .o, $(basename $(SOURCES))))
 
+SIMPLERT_JAVA_SOURCES = $(shell find simplert/java -name "*.java")
+SIMPLERT_C_SOURCES = $(shell find simplert/c -name "*.c") $(shell find simplert/c -name "*.h")
+SIMPLERT_SOURCES = $(SIMPLERT_C_SOURCES) $(SIMPLERT_JAVA_SOURCES)
+
 UNUSED := $(shell mkdir -p $(BUILDDIR) $(BUILDDIR)/adt $(BUILDDIR)/driver)
 
 DEFAULT_BOOTCLASSPATH ?= -DDEFAULT_BOOTCLASSPATH=\"$(abspath .)/rt\"
@@ -35,7 +39,7 @@ endif
 
 .PHONY: all libfirm liboo clean distclean
 
-all: $(GOAL)
+all: $(GOAL) rt/libsimplert.so classes/java/lang/Object.class
 
 libfirm:
 	$(Q)$(MAKE) -C $(FIRM_HOME)
@@ -60,6 +64,14 @@ $(GOAL): $(OBJECTS) $(FIRM_FILE) $(LIBOO_FILE)
 $(BUILDDIR)/%.o: %.c
 	@echo '===> CC $<'
 	$(Q)$(CC) $(CPPFLAGS) $(CFLAGS) -MP -MMD -c -o $@ $<
+
+rt/libsimplert.so: $(SIMPLERT_C_SOURCES)
+	$(Q)mkdir -p rt
+	$(Q)gcc -std=c99 -Wall -W -m32 -g3 -shared $(SIMPLERT_C_SOURCES) -o $@
+
+classes/java/lang/Object.class: $(SIMPLERT_JAVA_SOURCES)
+	$(Q)mkdir -p classes
+	$(Q)javac -d classes $(SIMPLERT_JAVA_SOURCES)
 
 clean:
 	$(Q)rm -rf $(OBJECTS) $(GOAL) $(DEPS)
