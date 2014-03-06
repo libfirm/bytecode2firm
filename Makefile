@@ -33,7 +33,7 @@ ifneq ($(V),1)
 Q ?= @
 endif
 
-.PHONY: all libfirm liboo clean
+.PHONY: all libfirm liboo clean distclean
 
 all: $(GOAL)
 
@@ -62,4 +62,8 @@ $(BUILDDIR)/%.o: %.c
 	$(Q)$(CC) $(CPPFLAGS) $(CFLAGS) -MP -MMD -c -o $@ $<
 
 clean:
-	rm -rf $(OBJECTS) $(GOAL) $(DEPS)
+	$(Q)rm -rf $(OBJECTS) $(GOAL) $(DEPS)
+
+distclean: clean
+	$(Q)$(MAKE) -C $(FIRM_HOME) clean
+	$(Q)$(MAKE) -C $(LIBOO_HOME) clean
