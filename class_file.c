@@ -7,11 +7,18 @@
 #include "adt/obst.h"
 #include "adt/error.h"
 
-static FILE           *in;
-static struct obstack  obst;
-static class_t        *class_file;
-static const char     *classpath;
-static const char     *bootclasspath;
+typedef struct classpath_entry_t classpath_entry_t;
+struct classpath_entry_t {
+	const char        *path;
+	bool               is_extern;
+	classpath_entry_t *next;
+};
+
+static FILE              *in;
+static struct obstack     obst;
+static class_t           *class_file;
+static classpath_entry_t *classpath;
+static classpath_entry_t *classpath_last;
 
 static uint8_t read_u8(void)
 {
@@ -336,43 +343,74 @@ class_t *read_class_file(void)
 
 class_t *read_class(const char *classname)
 {
-	assert(obstack_object_size(&obst) == 0);
-	obstack_printf(&obst, "%s/%s.class", bootclasspath, classname);
-	obstack_1grow(&obst, '\0');
-	char *classfilename = obstack_finish(&obst);
-	bool  from_bootclasspath = true;
-
-	in = fopen(classfilename, "r");
-	if (in == NULL) {
-		obstack_printf(&obst, "%s/%s.class", classpath, classname);
+	bool is_extern = false;
+	for (classpath_entry_t *entry = classpath; entry != NULL;
+	     entry = entry->next) {
+		assert(obstack_object_size(&obst) == 0);
+		obstack_printf(&obst, "%s/%s.class", entry->path, classname);
 		obstack_1grow(&obst, '\0');
-		classfilename = obstack_finish(&obst);
-		in = fopen(classfilename, "r");
-		from_bootclasspath = false;
+		char *classfilename = obstack_finish(&obst);
 
-		if (in == NULL)
-			return NULL;
+		in = fopen(classfilename, "r");
+		obstack_free(&obst, classfilename);
+		if (in != NULL) {
+			is_extern = entry->is_extern;
+			break;
+		}
 	}
+	if (in == NULL)
+		return NULL;
 
 	class_file = read_class_file();
+	class_file->is_extern = is_extern;
 	fclose(in);
 
-	if (!static_stdlib)
-		class_file->is_extern = from_bootclasspath;
 	return class_file;
 }
 
-void class_file_init(const char *new_classpath, const char *new_bootclasspath)
+static classpath_entry_t *alloc_classpath(const char *path, bool is_extern)
+{
+	size_t len = strlen(path);
+	char  *duplicated_path = obstack_copy(&obst, path, len+1);
+	classpath_entry_t *entry = OALLOCZ(&obst, classpath_entry_t);
+	entry->path      = duplicated_path;
+	entry->is_extern = is_extern;
+	return entry;
+}
+
+void classpath_append(const char *path, bool is_extern)
+{
+	classpath_entry_t *entry = alloc_classpath(path, is_extern);
+	if (classpath == NULL)
+		classpath = entry;
+	else
+		classpath_last->next = entry;
+	classpath_last       = entry;
+
+}
+
+void classpath_prepend(const char *path, bool is_extern)
+{
+	classpath_entry_t *entry = alloc_classpath(path, is_extern);
+	if (classpath == NULL)
+		classpath_last = entry;
+	entry->next = classpath;
+	classpath   = entry;
+}
+
+void classpath_print(FILE *out)
+{
+	fprintf(out, "Classpath:\n");
+	for (classpath_entry_t *entry = classpath; entry != NULL;
+	     entry = entry->next) {
+	    fprintf(out, "\t%s%s\n", entry->path,
+	            entry->is_extern ? " [extern]" : "");
+	}
+}
+
+void class_file_init(void)
 {
 	obstack_init(&obst);
-
-	size_t  len = strlen(new_classpath) + 1;
-	obstack_grow(&obst, new_classpath, len);
-	classpath   = obstack_finish(&obst);
-
-	len = strlen(new_bootclasspath) + 1;
-	obstack_grow(&obst, new_bootclasspath, len);
-	bootclasspath = obstack_finish(&obst);
 }
 
 void class_file_exit(void)

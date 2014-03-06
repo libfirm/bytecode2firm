@@ -24,13 +24,20 @@ DEPS          = $(addprefix $(BUILDDIR)/, $(addsuffix .d, $(basename $(SOURCES))
 OBJECTS       = $(addprefix $(BUILDDIR)/, $(addsuffix .o, $(basename $(SOURCES))))
 
 SIMPLERT_JAVA_SOURCES = $(shell find simplert/java -name "*.java")
-SIMPLERT_C_SOURCES = $(shell find simplert/c -name "*.c") $(shell find simplert/c -name "*.h")
-SIMPLERT_SOURCES = $(SIMPLERT_C_SOURCES) $(SIMPLERT_JAVA_SOURCES)
+SIMPLERT_CLASSES = $(SIMPLERT_DIR)/java/lang/Object.class # just a representative file
+SIMPLERT_C_SOURCES = $(shell find simplert/c -name "*.c")
+SIMPLERT_HEADERS = $(shell find simplert/c -name "*.h")
+SIMPLERT_DIR = $(BUILDDIR)/simplert
+SIMPLERT_so = $(SIMPLERT_DIR)/libsimplert.so
+SIMPLERT_a = $(SIMPLERT_DIR)/libsimplert.a
+
+GCJ_DIR = $(BUILDDIR)/gcj
 
 UNUSED := $(shell mkdir -p $(BUILDDIR) $(BUILDDIR)/adt $(BUILDDIR)/driver)
 
-DEFAULT_BOOTCLASSPATH ?= -DDEFAULT_BOOTCLASSPATH=\"$(abspath .)/rt\"
-CPPFLAGS += $(DEFAULT_BOOTCLASSPATH)
+CLASSPATH_SIMPLERT ?= -DCLASSPATH_SIMPLERT=\"$(abspath $(SIMPLERT_DIR))\"
+CLASSPATH_GCJ ?= -DCLASSPATH_GCJ=\"$(abspath $(GCJ_DIR))\"
+CPPFLAGS += $(CLASSPATH_SIMPLERT) $(CLASSPATH_GCJ)
 
 # This hides the noisy commandline outputs. Show them with "make V=1"
 ifneq ($(V),1)
@@ -39,7 +46,7 @@ endif
 
 .PHONY: all libfirm liboo clean distclean
 
-all: $(GOAL) rt/libsimplert.so rt/simplert.a rt/java/lang/Object.class
+all: $(GOAL) $(SIMPLERT_so) $(SIMPLERT_a) $(SIMPLERT_CLASSES)
 
 libfirm:
 	$(Q)$(MAKE) -C $(FIRM_HOME)
@@ -65,25 +72,25 @@ $(BUILDDIR)/%.o: %.c
 	@echo '===> CC $<'
 	$(Q)$(CC) $(CPPFLAGS) $(CFLAGS) -MP -MMD -c -o $@ $<
 
-rt/libsimplert.so: $(SIMPLERT_C_SOURCES)
+$(SIMPLERT_so): $(SIMPLERT_C_SOURCES) $(SIMPLERT_HEADERS)
 	@echo '===> CC $@'
-	$(Q)mkdir -p rt
-	$(Q)$(CC) -std=c99 -Wall -W -m32 -g3 -shared $(SIMPLERT_C_SOURCES) -o $@
+	$(Q)mkdir -p $(SIMPLERT_DIR)
+	$(Q)$(CC) -std=c99 -Wall -W -m32 -g3 -shared $(SIMPLERT_C_SOURCES) -lm -o $@
 
 SIMPLERT_SOURCES_ABS=$(abspath $(SIMPLERT_C_SOURCES))
-rt/simplert.a: $(SIMPLERT_C_SOURCES)
+$(SIMPLERT_a): $(SIMPLERT_C_SOURCES) $(SIMPLERT_HEADERS)
 	@echo '===> CC+AR $@'
-	$(Q)mkdir -p rt build/rt
-	$(Q)cd build/rt && $(CC) -std=c99 -Wall -W -m32 -g3 -c $(SIMPLERT_SOURCES_ABS)
-	$(Q)ar rcs $@ build/rt//*.o
+	$(Q)mkdir -p $(SIMPLERT_DIR)
+	$(Q)cd $(SIMPLERT_DIR) && $(CC) -std=c99 -Wall -W -m32 -g3 -c $(SIMPLERT_SOURCES_ABS)
+	$(Q)ar rcs $@ $(SIMPLERT_DIR)/*.o
 
-rt/java/lang/Object.class: $(SIMPLERT_JAVA_SOURCES)
+$(SIMPLERT_CLASSES): $(SIMPLERT_JAVA_SOURCES)
 	@echo '===> JAVAC all runtime classes'
-	$(Q)mkdir -p rt
-	$(Q)javac -d rt $(SIMPLERT_JAVA_SOURCES)
+	$(Q)mkdir -p $(SIMPLERT_DIR)
+	$(Q)javac -d $(SIMPLERT_DIR) $(SIMPLERT_JAVA_SOURCES)
 
 clean:
-	$(Q)rm -rf $(OBJECTS) $(GOAL) $(DEPS) $(BUILDDIR) rt/*
+	$(Q)rm -rf $(BUILDDIR)/*
 
 distclean: clean
 	$(Q)$(MAKE) -C $(FIRM_HOME) clean

@@ -44,10 +44,15 @@
 #include <liboo/ooopt.h>
 #endif
 
+#ifndef CLASSPATH_GCJ
+#define CLASSPATH_GCJ "build/gcj"
+#endif
+#ifndef CLASSPATH_SIMPLERT
+#define CLASSPATH_SIMPLERT "build/simplert"
+#endif
+
 extern FILE *fdopen (int __fd, __const char *__modes);
 extern int mkstemp (char *__template);
-
-bool static_stdlib = false;
 
 static pdeq    *worklist;
 static class_t *class_file;
@@ -3027,22 +3032,6 @@ static void remove_external_vtable(ir_type *type, void *env)
 	}
 }
 
-#ifndef DEFAULT_BOOTCLASSPATH
-#define DEFAULT_BOOTCLASSPATH "rt"
-#endif
-
-static const char *classpath     = "./classes";
-static const char *bootclasspath = DEFAULT_BOOTCLASSPATH;
-
-static void setup_class_paths(void)
-{
-	if (verbose) {
-		printf("Classpath: %s\n", classpath);
-		printf("Bootclasspath: %s\n", bootclasspath);
-	}
-	class_file_init(classpath, bootclasspath);
-}
-
 int main(int argc, char **argv)
 {
 	gen_firm_init();
@@ -3051,19 +3040,20 @@ int main(int argc, char **argv)
 	mangle_init();
 	oo_java_init();
 	gcji_init();
+	class_file_init();
 
 	if (argc < 2) {
-		fprintf(stderr, "Syntax: %s [-cp <classpath>] [-bootclasspath <bootclasspath>] [-o <output file name>] [-f <firm option>]* class_file\n", argv[0]);
+		fprintf(stderr, "Syntax: %s [-cp <classpath>] [-bootclasspath <bootclasspath>] [-externclasspath] [-o <output file name>] [-f <firm option>]* class_file\n", argv[0]);
 		return 0;
 	}
 
 	const char *output_name   = NULL;
 	bool        save_temps    = false;
+	bool        static_stdlib = false;
 	enum {
 		RUNTIME_GCJ,
-		RUNTIME_SIMPLE,
-		RUNTIME_AUTO
-	} runtime_type = RUNTIME_AUTO;
+		RUNTIME_SIMPLERT
+	} runtime_type = RUNTIME_SIMPLERT;
 
 	int curarg = 1;
 #define EQUALS(x)             (strcmp(x, argv[curarg]) == 0)
@@ -3071,9 +3061,11 @@ int main(int argc, char **argv)
 #define ARG_PARAM             (argv[++curarg])
 	while (curarg < argc) {
 		if (EQUALS_AND_HAS_ARG("-cp") || EQUALS_AND_HAS_ARG("--classpath")) {
-			classpath = ARG_PARAM;
+			classpath_prepend(ARG_PARAM, false);
 		} else if (EQUALS_AND_HAS_ARG("-bootclasspath")) {
-			bootclasspath = ARG_PARAM;
+			classpath_append(ARG_PARAM, false);
+		} else if (EQUALS_AND_HAS_ARG("-externcclasspath")) {
+			classpath_append(ARG_PARAM, true);
 		} else if (EQUALS_AND_HAS_ARG("-o")) {
 			output_name = ARG_PARAM;
 		} else if (EQUALS("--static-stdlib")) {
@@ -3091,7 +3083,7 @@ int main(int argc, char **argv)
 		} else if (EQUALS("-v")) {
 			verbose = true;
 		} else if (EQUALS("--simplert")) {
-			runtime_type = RUNTIME_SIMPLE;
+			runtime_type = RUNTIME_SIMPLERT;
 		} else if (EQUALS("--gcj")) {
 			runtime_type = RUNTIME_GCJ;
 		} else {
@@ -3112,17 +3104,17 @@ int main(int argc, char **argv)
 	main_class_name_short = main_class_name + arg_len - 1;
 	while (main_class_name_short > main_class_name && *(main_class_name_short-1) != '/') main_class_name_short--;
 
-	setup_class_paths();
-
-	/* FIXME stupid heuristic: if we can find java/util/UUID then we assume
-	 * libgcj is present and working, otherwise we default to simplert. */
-	if (runtime_type == RUNTIME_AUTO) {
-		runtime_type = read_class("java/util/UUID") != NULL
-		             ? RUNTIME_GCJ : RUNTIME_AUTO;
-	}
-
 	if (!output_name)
 		output_name = main_class_name_short;
+
+	if (runtime_type == RUNTIME_GCJ) {
+		classpath_append(CLASSPATH_GCJ, true);
+	}
+	if (runtime_type == RUNTIME_SIMPLERT) {
+		classpath_append(CLASSPATH_SIMPLERT, false);
+	}
+	if (verbose)
+		classpath_print(stderr);
 
 	worklist = new_pdeq();
 
@@ -3213,9 +3205,9 @@ int main(int argc, char **argv)
 	} else {
 		/* simplert */
 		if (static_stdlib) {
-			sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none %s/simplert.a -o %s", asm_file, startup_file, bootclasspath, output_name);
+			sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none %s/simplert.a -o %s", asm_file, startup_file, CLASSPATH_SIMPLERT, output_name);
 		} else {
-			sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -Lrt -lsimplert -Wl,-R%s -o %s", asm_file, startup_file, bootclasspath, output_name);
+			sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -L%s -lsimplert -Wl,-R%s -o %s", asm_file, startup_file, CLASSPATH_SIMPLERT, CLASSPATH_SIMPLERT, output_name);
 		}
 	}
 

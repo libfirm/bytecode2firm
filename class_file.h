@@ -210,8 +210,11 @@ typedef struct {
 	bool          constructed;
 } class_t;
 
-void class_file_init(const char *classpath, const char *bootclasspath);
+void class_file_init(void);
 void class_file_exit(void);
+void classpath_append(const char *path, bool is_extern);
+void classpath_prepend(const char *path, bool is_extern);
+void classpath_print(FILE *out);
 class_t *read_class_file(void);
 class_t *read_class(const char *classname);
 
