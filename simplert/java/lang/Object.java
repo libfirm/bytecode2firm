@@ -131,7 +131,7 @@ public class Object
    *
    * @return the class of this Object
    */
-  //public final native Class<? extends Object> getClass();
+  public final native Class<? extends Object> getClass();
 
   /**
    * Get a value that represents this Object, as uniquely as
@@ -168,7 +168,7 @@ public class Object
    * @see #equals(Object)
    * @see System#identityHashCode(Object)
    */
-  //public native int hashCode();
+  public native int hashCode();
 
   /**
    * Wakes up one of the {@link Thread}s that has called
@@ -360,12 +360,11 @@ public class Object
    * @see Class#getName()
    * @see Integer#toHexString(int)
    */
-  /*
   public String toString()
   {
-    return getClass().getName() + '@' + Integer.toHexString(hashCode());
+    //return getClass().getName() + '@' + Integer.toHexString(hashCode());
+   	return "$Object$";
   }
-  */
 
   /**
    * Waits indefinitely for notify() or notifyAll() to be

@@ -3,41 +3,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-enum {
-	JV_STATE_NOTHING = 0,
-	JV_STATE_DONE    = 14
-};
-
-static const utf8_const clinit_name = { 0x0ea9, 8, "<clinit>" };
-static const utf8_const void_sig    = { 0x9b75, 3, "()V"      };
-
-static bool utf8_consts_equal(const utf8_const *c1, const utf8_const *c2)
-{
-	if (c1->hash != c2->hash)
-		return false;
-	uint16_t len = c1->len;
-	if (len != c2->len)
-		return false;
-	const char *d1 = c1->data;
-	const char *d2 = c2->data;
-	for (uint16_t i = 0; i < len; ++i) {
-		if (d1[i] != d2[i])
-			return false;
-	}
-	return true;
-}
-
-jv_method *get_method(java_lang_Class *cls, const utf8_const *name,
-                      const utf8_const *signature)
-{
-	for (int16_t m = 0, n = cls->method_count; m < n; ++m) {
-		jv_method *method = &cls->methods[m];
-		if (utf8_consts_equal(method->name, name)
-		    && utf8_consts_equal(method->signature, signature))
-			return method;
-	}
-	return NULL;
-}
+static const utf8_const clinit_name = { 0x0ea9, 8, { "<clinit>" } };
+static const utf8_const void_sig    = { 0x9b75, 3, { "()V"      } };
 
 void _Jv_InitClass(java_lang_Class *cls)
 {

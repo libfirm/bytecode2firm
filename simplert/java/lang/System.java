@@ -253,8 +253,8 @@ public final class System
 //   * @throws IndexOutOfBoundsException if len is negative, or if the start or
 //   *         end copy position in either array is out of bounds
 //   */
-//  public static native void arraycopy(Object src, int srcStart,
-//				      Object dest, int destStart, int len);
+  public static native void arraycopy(Object src, int srcStart,
+				      Object dest, int destStart, int len);
 //
 //  /**
 //   * Get a hash code computed by the VM for the Object. This hash code will

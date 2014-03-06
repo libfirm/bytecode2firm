@@ -245,13 +245,11 @@ public final class String
    * @see #String(byte[], String)
    * @see #String(byte[], int, int)
    * @see #String(byte[], int, int, String)
-   * @deprecated use {@link #String(byte[], int, int, String)} to perform
-   *             correct encoding
    */
-  public String(byte[] ascii, int hibyte, int offset, int count)
-  {
-    init(ascii, hibyte, offset, count);
-  }
+//  public String(byte[] ascii, int hibyte, int offset, int count)
+//  {
+//    init(ascii, hibyte, offset, count);
+//  }
 
   /**
    * Creates a new String using an 8-bit array of integer values. Each
@@ -270,13 +268,11 @@ public final class String
    * @see #String(byte[], int, int)
    * @see #String(byte[], int, int, String)
    * @see #String(byte[], int, int, int)
-   * @deprecated use {@link #String(byte[], String)} to perform
-   *             correct encoding
    */
-  public String(byte[] ascii, int hibyte)
-  {
-    init(ascii, hibyte, 0, ascii.length);
-  }
+//  public String(byte[] ascii, int hibyte)
+//  {
+//    init(ascii, hibyte, 0, ascii.length);
+//  }
 
 //  /**
 //   * Creates a new String using the portion of the byte array starting at the
@@ -413,10 +409,10 @@ public final class String
 //   * @param buffer StringBuilder to copy
 //   * @throws NullPointerException if buffer is null
 //   */
-//  public String(StringBuilder buffer)
-//  {
-//    this(buffer.value, 0, buffer.count);
-//  }
+  public String(StringBuilder buffer)
+  {
+    this(buffer.value, 0, buffer.count);
+  }
 
   /**
    * Special constructor which can share an array when safe to do so.
@@ -512,8 +508,8 @@ public final class String
 //   *         StringIndexOutOfBoundsException, and dst problems cause an
 //   *         ArrayIndexOutOfBoundsException)
 //   */
-//  public native void getChars(int srcBegin, int srcEnd,
-//			      char[] dst, int dstBegin);
+  public native void getChars(int srcBegin, int srcEnd,
+			      char[] dst, int dstBegin);
 //
 //  /**
 //   * Copies the low byte of each character from this String starting at a
@@ -888,10 +884,10 @@ public final class String
 //   * @throws IndexOutOfBoundsException if begin &lt; 0 || begin &gt; length()
 //   *         (while unspecified, this is a StringIndexOutOfBoundsException)
 //   */
-//  public String substring(int begin)
-//  {
-//    return substring(begin, count);
-//  }
+  public String substring(int begin)
+  {
+    return substring(begin, count);
+  }
 //
 //  /**
 //   * Creates a substring of this String, starting at a specified index
@@ -904,7 +900,7 @@ public final class String
 //   *         || begin &gt; end (while unspecified, this is a
 //   *         StringIndexOutOfBoundsException)
 //   */
-//  public native String substring(int begin, int end);
+  public native String substring(int begin, int end);
 //
 //  /**
 //   * Creates a substring of this String, starting at a specified index
@@ -931,7 +927,7 @@ public final class String
 //   * @return newly concatenated String
 //   * @throws NullPointerException if str is null
 //   */
-//  public native String concat(String str);
+  public native String concat(String str);
 //
 //  /**
 //   * Replaces every instance of a character in this String with a new
@@ -1138,10 +1134,10 @@ public final class String
 //   *
 //   * @return this
 //   */
-//  public String toString()
-//  {
-//    return this;
-//  }
+  public String toString()
+  {
+    return this;
+  }
 //
 //  /**
 //   * Copies the contents of this String into a character array. Subsequent
@@ -1149,7 +1145,12 @@ public final class String
 //   *
 //   * @return character array copying the String
 //   */
-//  public native char[] toCharArray();
+  public char[] toCharArray() {
+  	  char[] res = new char[count];
+  	  for (int i = 0; i < count; ++i)
+  	  	  res[i] = charAt(i);
+  	  return res;
+  }
 //
 //  /**
 //   * Returns a String representation of an Object. This is "null" if the
@@ -1159,10 +1160,10 @@ public final class String
 //   * @param obj the Object
 //   * @return the string conversion of obj
 //   */
-//  public static String valueOf(Object obj)
-//  {
-//    return obj == null ? "null" : obj.toString();
-//  }
+  public static String valueOf(Object obj)
+  {
+    return obj == null ? "null" : obj.toString();
+  }
 //
 //  /**
 //   * Returns a String representation of a character array. Subsequent
@@ -1452,7 +1453,7 @@ public final class String
 
   private native void init(char[] chars, int offset, int count,
 			   boolean dont_copy);
-  private native void init(byte[] chars, int hibyte, int offset, int count);
+//  private native void init(byte[] chars, int hibyte, int offset, int count);
 //  private native void init(byte[] chars, int offset, int count, String enc)
 //    throws UnsupportedEncodingException;
 //  private native void init(gnu.gcj.runtime.StringBuffer buffer);

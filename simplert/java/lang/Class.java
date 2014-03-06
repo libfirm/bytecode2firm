@@ -614,7 +614,7 @@ public final class Class<T>
 //   *
 //   * @return the name of this class
 //   */
-//  public native String getName ();
+  public native String getName();
 //
 //  /**
 //   * Get a resource URL using this class's package using the
@@ -754,7 +754,7 @@ public final class Class<T>
 //   *
 //   * @return whether this class is an interface or not
 //   */
-//  public native boolean isInterface ();
+  public native boolean isInterface ();
 //  
 //  /**
 //   * Return whether this class is a primitive type.  A primitive type class
@@ -775,7 +775,7 @@ public final class Class<T>
 //   * @see Void#TYPE
 //   * @since 1.1
 //   */
-//  public native boolean isPrimitive ();
+  public native boolean isPrimitive ();
 //  
 //  /**
 //   * Get a new instance of this class by calling the no-argument constructor.
@@ -835,12 +835,12 @@ public final class Class<T>
 //   *
 //   * @return the human-readable form of this Object
 //   */
-//  public String toString()
-//  {
-//    if (isPrimitive())
-//      return getName();
-//    return (isInterface() ? "interface " : "class ") + getName();
-//  }
+  public String toString()
+  {
+    if (isPrimitive())
+      return getName();
+    return (isInterface() ? "interface " : "class ") + getName();
+  }
 //
 //  /**
 //   * Returns the desired assertion status of this class, if it were to be
