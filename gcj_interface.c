@@ -501,16 +501,10 @@ ir_node *gcji_get_arrayclass(ir_node *array_class_ref, ir_graph *irg, ir_node *b
 	return res;
 }
 
-static ir_node *create_symconst(ir_graph *irg, ir_entity *ent)
-{
-	ir_node *symc = new_r_Address(irg, ent);
-	return symc;
-}
-
 static ir_node *create_ccode_symconst(ir_entity *ent)
 {
 	ir_graph *ccode = get_const_code_irg();
-	return create_symconst(ccode, ent);
+	return new_r_Address(ccode, ent);
 }
 
 ir_entity *gcji_emit_utf8_const(constant_t *constant, int mangle_slash)
@@ -996,7 +990,7 @@ ir_node *gcji_get_runtime_classinfo(ir_type *type, ir_graph *irg, ir_node *block
 {
 	ir_entity *rtti_entity = gcji_get_rtti_entity(type);
 	if (rtti_entity != NULL) {
-		return create_symconst(irg, rtti_entity);
+		return new_r_Address(irg, rtti_entity);
 	}
 
 	/* Arrays are represented as pointer types. We extract the base type,
@@ -1020,7 +1014,7 @@ ir_node *gcji_get_runtime_classinfo(ir_type *type, ir_graph *irg, ir_node *block
 
 	ir_entity *elem_cdf = gcji_get_rtti_entity(eltype);
 	assert(elem_cdf != NULL);
-	ir_node *array_class_ref = create_symconst(irg, elem_cdf);
+	ir_node *array_class_ref = new_r_Address(irg, elem_cdf);
 
 	ir_node *cur_mem = *mem;
 
@@ -1063,11 +1057,11 @@ ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface, ir_entity *metho
 
 	constant_t *name_const   = linked_class->constants[linked_method->name_index];
 	ir_entity *name_const_ent= gcji_emit_utf8_const(name_const, 1);
-	ir_node   *name_ref      = create_symconst(irg, name_const_ent);
+	ir_node   *name_ref      = new_r_Address(irg, name_const_ent);
 
 	constant_t *desc_const   = linked_class->constants[linked_method->descriptor_index];
 	ir_entity *desc_const_ent= gcji_emit_utf8_const(desc_const, 1);
-	ir_node   *desc_ref      = create_symconst(irg, desc_const_ent);
+	ir_node   *desc_ref      = new_r_Address(irg, desc_const_ent);
 
 	ir_node   *callee        = new_r_Address(irg, gcj_lookup_interface_entity);
 
@@ -1089,7 +1083,7 @@ ir_node *gcji_instanceof(ir_node *objptr, ir_type *classtype, ir_graph *irg, ir_
 	ir_node   *jclass = gcji_get_runtime_classinfo(classtype, irg, block, &cur_mem);
 
 	ir_type   *instanceof_type = get_entity_type(gcj_instanceof_entity);
-	ir_node   *callee = create_symconst(irg, gcj_instanceof_entity);
+	ir_node   *callee = new_r_Address(irg, gcj_instanceof_entity);
 	ir_node   *args[] = { objptr, jclass };
 
 	ir_node   *call = new_r_Call(block, cur_mem, callee, 2, args, instanceof_type);
@@ -1109,7 +1103,7 @@ void gcji_checkcast(ir_type *classtype, ir_node *objptr, ir_graph *irg, ir_node 
 	ir_node   *jclass = gcji_get_runtime_classinfo(classtype, irg, block, &cur_mem);
 
 	ir_type   *instanceof_type = get_entity_type(gcj_checkcast_entity);
-	ir_node   *callee = create_symconst(irg, gcj_checkcast_entity);
+	ir_node   *callee = new_r_Address(irg, gcj_checkcast_entity);
 	ir_node   *args[] = { jclass, objptr };
 
 	ir_node   *call = new_r_Call(block, cur_mem, callee, 2, args, instanceof_type);
