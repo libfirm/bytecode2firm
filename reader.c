@@ -2689,12 +2689,12 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	bool exclude_from_vtable =
 	   ((access_flags & ACCESS_FLAG_STATIC)
 	 || (access_flags & ACCESS_FLAG_PRIVATE)
-	 || (access_flags & ACCESS_FLAG_FINAL)
 	 || (is_constructor));
 	oo_set_method_exclude_from_vtable(entity, exclude_from_vtable);
 
 	ddispatch_binding binding = bind_unknown;
-	if (exclude_from_vtable || (owner_access_flags & ACCESS_FLAG_FINAL))
+	if (exclude_from_vtable || (owner_access_flags & ACCESS_FLAG_FINAL)
+	    || (access_flags & ACCESS_FLAG_FINAL))
 		binding = bind_static;
 	else if (owner_access_flags & ACCESS_FLAG_INTERFACE)
 		binding = bind_interface;
