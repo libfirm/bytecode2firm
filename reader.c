@@ -171,32 +171,24 @@ static void init_types(void)
 	const backend_params *params = be_get_backend_param();
 	mode_float_arithmetic = params->mode_float_arithmetic;
 
-	type_array_byte_boolean = new_type_array(1, type_byte);
+	type_array_byte_boolean = new_type_array(type_byte);
 	set_type_state(type_array_byte_boolean, layout_fixed);
-	set_array_lower_bound_int(type_array_byte_boolean, 0, 0);
-	type_array_short        = new_type_array(1, type_short);
+	type_array_short        = new_type_array(type_short);
 	set_type_state(type_array_short, layout_fixed);
-	set_array_lower_bound_int(type_array_short, 0, 0);
-	type_array_char         = new_type_array(1, type_char);
+	type_array_char         = new_type_array(type_char);
 	set_type_state(type_array_char, layout_fixed);
-	set_array_lower_bound_int(type_array_char, 0, 0);
-	type_array_int          = new_type_array(1, type_int);
+	type_array_int          = new_type_array(type_int);
 	set_type_state(type_array_int, layout_fixed);
-	set_array_lower_bound_int(type_array_int, 0, 0);
-	type_array_long         = new_type_array(1, type_long);
+	type_array_long         = new_type_array(type_long);
 	set_type_state(type_array_long, layout_fixed);
-	set_array_lower_bound_int(type_array_long, 0, 0);
-	type_array_float        = new_type_array(1, type_float);
+	type_array_float        = new_type_array(type_float);
 	set_type_state(type_array_float, layout_fixed);
-	set_array_lower_bound_int(type_array_float, 0, 0);
-	type_array_double       = new_type_array(1, type_double);
+	type_array_double       = new_type_array(type_double);
 	set_type_state(type_array_double, layout_fixed);
-	set_array_lower_bound_int(type_array_double, 0, 0);
 
 	type_reference          = new_type_primitive(mode_reference);
 	set_type_alignment_bytes(type_reference, 4);
-	type_array_reference    = new_type_array(1, type_reference);
-	set_array_lower_bound_int(type_array_reference, 0, 0);
+	type_array_reference    = new_type_array(type_reference);
 	set_type_state(type_array_reference, layout_fixed);
 
 	ident *abort_id = new_id_from_str("abort");
@@ -2371,9 +2363,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			uint16_t index        = get_16bit_arg(&i);
 			ir_type *element_type = get_classref_type(index);
 			finalize_class_type(element_type);
-			ir_type *type         = new_type_array(1, element_type);
+			ir_type *type         = new_type_array(element_type);
 			set_type_state(type, layout_fixed);
-			set_array_lower_bound_int(type, 0, 0);
 			ir_node *count        = symbolic_pop(mode_int);
 			construct_new_array(type, count);
 			continue;

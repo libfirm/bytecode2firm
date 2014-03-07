@@ -134,8 +134,7 @@ static ir_type *create_field_desc_type(void)
 static ir_type *create_utf8_const_type(void)
 {
 	ir_type *type_byte = get_type_for_mode(mode_Bu);
-	ir_type *type_var_char_array = new_type_array(1, type_byte);
-	set_array_lower_bound_int(type_var_char_array, 0, 0);
+	ir_type *type_var_char_array = new_type_array(type_byte);
 	set_array_variable_size(type_var_char_array, 1);
 
 	ident *id = new_id_from_str("utf8_const");
@@ -157,7 +156,7 @@ void gcji_create_array_type(void)
 	ident *length_id = new_id_from_str("length");
 	gcj_array_length = add_compound_member(type, length_id, type_int);
 
-	ir_type *data_array = new_type_array(1, type_byte);
+	ir_type *data_array = new_type_array(type_byte);
 	set_array_variable_size(data_array, 1);
 	ident *data_id = new_id_from_str("data");
 	add_compound_member(type, data_id, data_array);
@@ -518,8 +517,8 @@ static ir_entity *emit_method_table(ir_type *classtype)
 	assert(linked_class);
 	uint16_t n_methods = linked_class->n_methods;
 
-	ir_type *array_type = new_type_array(1, type_method_desc);
-	set_array_bounds_int(array_type, 0, 0, n_methods);
+	ir_type *array_type = new_type_array(type_method_desc);
+	set_array_size_int(array_type, n_methods);
 	unsigned size = n_methods * get_type_size_bytes(type_method_desc);
 	set_type_size_bytes(array_type, size);
 
@@ -622,8 +621,8 @@ static ir_entity *emit_field_table(ir_type *classtype)
 	if (n_fields == 0)
 		return NULL;
 
-	ir_type *type_array = new_type_array(1, type_field_desc);
-	set_array_bounds_int(type_array, 0, 0, n_fields);
+	ir_type *type_array = new_type_array(type_field_desc);
+	set_array_size_int(type_array, n_fields);
 	unsigned size = n_fields * get_type_size_bytes(type_field_desc);
 	set_type_size_bytes(type_array, size);
 
@@ -649,8 +648,8 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 	if (n_interfaces == 0)
 		return NULL;
 
-	ir_type *type_array = new_type_array(1, type_reference);
-	set_array_bounds_int(type_array, 0, 0, n_interfaces);
+	ir_type *type_array = new_type_array(type_reference);
+	set_array_size_int(type_array, n_interfaces);
 	unsigned size = n_interfaces * get_type_size_bytes(type_reference);
 	set_type_size_bytes(type_array, size);
 
