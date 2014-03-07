@@ -91,7 +91,6 @@ $(SIMPLERT_CLASSES): $(SIMPLERT_JAVA_SOURCES)
 
 clean:
 	$(Q)rm -rf $(BUILDDIR)/*
-	$(Q)rm $(shell find . -name "*.gch")
 
 distclean: clean
 	$(Q)$(MAKE) -C $(FIRM_HOME) clean
