@@ -26,7 +26,6 @@
 
 #include "class_registry.h"
 #include "gcj_interface.h"
-#include "oo_java.h"
 #include "mangle.h"
 
 #include <libfirm/be.h>
@@ -3033,7 +3032,7 @@ int main(int argc, char **argv)
 	init_types();
 	class_registry_init();
 	mangle_init();
-	oo_java_init();
+	oo_init();
 	gcji_init();
 	class_file_init();
 
@@ -3180,7 +3179,7 @@ int main(int argc, char **argv)
 
 	class_file_exit();
 	gcji_deinit();
-	oo_java_deinit();
+	oo_deinit();
 	mangle_deinit();
 
 	char cmd_buffer[1024];

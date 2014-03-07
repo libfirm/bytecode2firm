@@ -1,5 +1,4 @@
 #include "class_file.h"
-#include "oo_java.h"
 
 #include <stdio.h>
 #include <assert.h>

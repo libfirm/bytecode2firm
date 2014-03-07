@@ -1,11 +1,13 @@
-
 #include "gcj_interface.h"
 #include "types.h"
 #include "class_file.h"
 #include "class_registry.h"
-#include "oo_java.h"
 
 #include <libfirm/firm.h>
+#include <liboo/oo.h>
+#include <liboo/ddispatch.h>
+#include <liboo/rtti.h>
+#include <liboo/dmemory.h>
 #include "adt/cpset.h"
 #include "mangle.h"
 #include "adt/obst.h"
@@ -235,151 +237,6 @@ void gcji_set_java_lang_object(ir_type *type)
 	type_java_lang_object = type;
 }
 
-void gcji_init()
-{
-	class_dollar_ident = new_id_from_str("class$");
-	glob               = get_glob_type();
-
-	ir_type *t_ptr  = new_type_primitive(mode_reference);
-	ir_type *t_size = new_type_primitive(mode_Iu);
-
-	// gcj_alloc
-	ir_type *gcj_alloc_method_type = new_type_method(1, 1);
-	set_method_param_type(gcj_alloc_method_type, 0, t_ptr);
-	set_method_res_type(gcj_alloc_method_type, 0, t_ptr);
-	set_method_additional_properties(gcj_alloc_method_type, mtp_property_malloc);
-
-	ident *gcj_alloc_id = new_id_from_str("_Jv_AllocObjectNoFinalizer");
-	gcj_alloc_entity = new_entity(glob, gcj_alloc_id, gcj_alloc_method_type);
-	set_entity_visibility(gcj_alloc_entity, ir_visibility_external);
-
-	// gcj_init
-	ir_type *gcj_init_method_type = new_type_method(1, 0);
-	set_method_param_type(gcj_init_method_type, 0, t_ptr);
-
-	ident *gcj_init_id = new_id_from_str("_Jv_InitClass");
-	gcj_init_entity = new_entity(glob, gcj_init_id, gcj_init_method_type);
-	set_entity_visibility(gcj_init_entity, ir_visibility_external);
-
-	// gcj_new_string
-	ir_type *gcj_new_string_method_type = new_type_method(1, 1);
-	set_method_param_type(gcj_new_string_method_type, 0, t_ptr);
-	set_method_res_type(gcj_new_string_method_type, 0, t_ptr);
-
-	ident *gcj_new_string_id = new_id_from_str("_Z22_Jv_NewStringUtf8ConstP13_Jv_Utf8Const");
-	gcj_new_string_entity = new_entity(glob, gcj_new_string_id, gcj_new_string_method_type);
-	set_entity_visibility(gcj_new_string_entity, ir_visibility_external);
-
-	// gcj_new_prim_array
-	ir_type *gcj_new_prim_array_method_type = new_type_method(2, 1);
-	set_method_param_type(gcj_new_prim_array_method_type, 0, t_ptr);
-	set_method_param_type(gcj_new_prim_array_method_type, 1, t_size);
-	set_method_res_type(gcj_new_prim_array_method_type, 0, t_ptr);
-
-	ident *gcj_new_prim_array_id = new_id_from_str("_Jv_NewPrimArray");
-	gcj_new_prim_array_entity = new_entity(glob, gcj_new_prim_array_id, gcj_new_prim_array_method_type);
-	set_entity_visibility(gcj_new_prim_array_entity, ir_visibility_external);
-
-	// gcj_new_object_array
-	ir_type *gcj_new_object_array_method_type = new_type_method(3, 1);
-	set_method_param_type(gcj_new_object_array_method_type, 0, t_size);
-	set_method_param_type(gcj_new_object_array_method_type, 1, t_ptr);
-	set_method_param_type(gcj_new_object_array_method_type, 2, t_ptr);
-	set_method_res_type(gcj_new_object_array_method_type, 0, t_ptr);
-
-	ident *gcj_new_object_array_id = new_id_from_str("_Jv_NewObjectArray");
-	gcj_new_object_array_entity = new_entity(glob, gcj_new_object_array_id, gcj_new_object_array_method_type);
-	set_entity_visibility(gcj_new_object_array_entity, ir_visibility_external);
-
-	// gcji_abstract_method
-	ir_type *gcj_abstract_method_type = new_type_method(0, 0);
-	gcj_abstract_method_entity = new_entity(glob, new_id_from_str("_Jv_ThrowAbstractMethodError"), gcj_abstract_method_type);
-	set_entity_visibility(gcj_abstract_method_entity, ir_visibility_external);
-
-	// gcji_lookup_interface
-	ir_type *gcj_lookup_interface_type = new_type_method(3,1);
-	set_method_param_type(gcj_lookup_interface_type, 0, t_ptr);
-	set_method_param_type(gcj_lookup_interface_type, 1, t_ptr);
-	set_method_param_type(gcj_lookup_interface_type, 2, t_ptr);
-	set_method_res_type(gcj_lookup_interface_type, 0, t_ptr);
-	gcj_lookup_interface_entity = new_entity(glob, new_id_from_str("_Jv_LookupInterfaceMethod"), gcj_lookup_interface_type);
-	set_entity_visibility(gcj_lookup_interface_entity, ir_visibility_external);
-
-	// gcji_instanceof
-	ir_type *gcj_instanceof_type = new_type_method(2,1);
-	set_method_param_type(gcj_instanceof_type, 0, type_reference);
-	set_method_param_type(gcj_instanceof_type, 1, type_reference);
-	set_method_res_type(gcj_instanceof_type, 0, type_int);
-	gcj_instanceof_entity = new_entity(glob, new_id_from_str("_Jv_IsInstanceOf"), gcj_instanceof_type);
-	set_entity_visibility(gcj_instanceof_entity, ir_visibility_external);
-
-	// gcji_checkcast
-	ir_type *gcj_checkcast_type = new_type_method(2,0);
-	set_method_param_type(gcj_checkcast_type, 0, type_reference);
-	set_method_param_type(gcj_checkcast_type, 1, type_reference);
-	gcj_checkcast_entity = new_entity(glob, new_id_from_str("_Jv_CheckCast"), gcj_checkcast_type);
-	set_entity_visibility(gcj_checkcast_entity, ir_visibility_external);
-
-	// gcji_get_array_class
-	ir_type *gcj_get_array_class_type = new_type_method(2,1);
-	set_method_param_type(gcj_get_array_class_type, 0, type_reference);
-	set_method_param_type(gcj_get_array_class_type, 1, type_reference);
-	set_method_res_type(gcj_get_array_class_type, 0, type_reference);
-	gcj_get_array_class_entity = new_entity(glob, new_id_from_str("_Z17_Jv_GetArrayClassPN4java4lang5ClassEPNS0_11ClassLoaderE"), gcj_get_array_class_type);
-	set_entity_visibility(gcj_get_array_class_entity, ir_visibility_external);
-
-	// gcji_new_multi_array
-	ir_type *gcj_new_multiarray_type = new_type_method(3,1);
-	set_method_param_type(gcj_new_multiarray_type, 0, type_reference);
-	set_method_param_type(gcj_new_multiarray_type, 1, type_int);
-	set_method_param_type(gcj_new_multiarray_type, 2, type_reference); // XXX: actually int[]
-	set_method_res_type(gcj_new_multiarray_type, 0, type_reference);
-	gcj_new_multiarray_entity = new_entity(glob, new_id_from_str("_Z17_Jv_NewMultiArrayPN4java4lang5ClassEiPi"), gcj_new_multiarray_type);
-	set_entity_visibility(gcj_new_multiarray_entity, ir_visibility_external);
-
-	// primitive classes
-	gcj_boolean_rtti_entity= new_entity(glob, new_id_from_str("_Jv_booleanClass"), type_reference);
-	gcj_byte_rtti_entity   = new_entity(glob, new_id_from_str("_Jv_byteClass"), type_reference);
-	gcj_char_rtti_entity   = new_entity(glob, new_id_from_str("_Jv_charClass"), type_reference);
-	gcj_short_rtti_entity  = new_entity(glob, new_id_from_str("_Jv_shortClass"), type_reference);
-	gcj_int_rtti_entity    = new_entity(glob, new_id_from_str("_Jv_intClass"), type_reference);
-	gcj_long_rtti_entity   = new_entity(glob, new_id_from_str("_Jv_longClass"), type_reference);
-	gcj_float_rtti_entity  = new_entity(glob, new_id_from_str("_Jv_floatClass"), type_reference);
-	gcj_double_rtti_entity = new_entity(glob, new_id_from_str("_Jv_doubleClass"), type_reference);
-	set_entity_visibility(gcj_boolean_rtti_entity, ir_visibility_external);
-	set_entity_visibility(gcj_byte_rtti_entity, ir_visibility_external);
-	set_entity_visibility(gcj_char_rtti_entity, ir_visibility_external);
-	set_entity_visibility(gcj_short_rtti_entity, ir_visibility_external);
-	set_entity_visibility(gcj_int_rtti_entity, ir_visibility_external);
-	set_entity_visibility(gcj_long_rtti_entity, ir_visibility_external);
-	set_entity_visibility(gcj_float_rtti_entity, ir_visibility_external);
-	set_entity_visibility(gcj_double_rtti_entity, ir_visibility_external);
-
-	mode_ushort = new_int_mode("US", irma_twos_complement, 16, 0, 16);
-	type_ushort = new_type_primitive(mode_ushort);
-
-	cpset_init(&scp, scp_hash, scp_cmp);
-
-	type_method_desc = create_method_desc_type();
-	type_field_desc  = create_field_desc_type();
-	type_utf8_const  = create_utf8_const_type();
-
-	subobject_ident  = new_id_from_str("@base");
-}
-
-void gcji_deinit()
-{
-	cpset_iterator_t iter;
-	cpset_iterator_init(&iter, &scp);
-
-	scp_entry *cur_scpe;
-	while ( (cur_scpe = (scp_entry*)cpset_iterator_next(&iter)) != NULL) {
-		free_scpe(cur_scpe);
-	}
-
-	cpset_destroy(&scp);
-}
-
 void gcji_class_init(ir_type *type, ir_node *block, ir_node **mem)
 {
 	assert(is_Class_type(type));
@@ -560,6 +417,30 @@ static void set_compound_init_entref(ir_initializer_t *init, size_t idx,
 	ir_graph *ccode = get_const_code_irg();
 	ir_node  *node  = new_r_Address(ccode, entity);
 	set_compound_init_node(init, idx, node);
+}
+
+static void setup_vtable(ir_type *cls, ir_initializer_t *initializer,
+                         unsigned vtable_size)
+{
+	/*
+	 * vtable layout (a la gcj)
+	 *
+	 * _ZTVNxyzE:
+	 *   0
+	 *   0
+	 *   <vtable slot 0> _ZNxyz6class$E   (vptr points here)
+	 *   <vtable slot 1> GC bitmap marking descriptor
+	 *   <vtable slot 2> addr(first method)
+	 *   ...
+	 *   <vtable slot n> addr(last method)
+	 */
+	ir_entity *rtti      = oo_get_class_rtti_entity(cls);
+
+	assert(vtable_size >= 4);
+	set_compound_init_null(initializer, 0);
+	set_compound_init_null(initializer, 1);
+	set_compound_init_entref(initializer, 2, rtti);
+	set_compound_init_null(initializer, 3);
 }
 
 static ir_entity *do_emit_utf8_const(const char *bytes, size_t len)
@@ -1149,4 +1030,164 @@ ir_node *gcji_new_multiarray(ir_node *array_class_ref, unsigned dims, ir_node **
 
 	*mem = cur_mem;
 	return res;
+}
+
+static void dummy(ir_type *t)
+{
+	(void)t;
+}
+
+void gcji_init()
+{
+	class_dollar_ident = new_id_from_str("class$");
+	glob               = get_glob_type();
+
+	ir_type *t_ptr  = new_type_primitive(mode_reference);
+	ir_type *t_size = new_type_primitive(mode_Iu);
+
+	// gcj_alloc
+	ir_type *gcj_alloc_method_type = new_type_method(1, 1);
+	set_method_param_type(gcj_alloc_method_type, 0, t_ptr);
+	set_method_res_type(gcj_alloc_method_type, 0, t_ptr);
+	set_method_additional_properties(gcj_alloc_method_type, mtp_property_malloc);
+
+	ident *gcj_alloc_id = new_id_from_str("_Jv_AllocObjectNoFinalizer");
+	gcj_alloc_entity = new_entity(glob, gcj_alloc_id, gcj_alloc_method_type);
+	set_entity_visibility(gcj_alloc_entity, ir_visibility_external);
+
+	// gcj_init
+	ir_type *gcj_init_method_type = new_type_method(1, 0);
+	set_method_param_type(gcj_init_method_type, 0, t_ptr);
+
+	ident *gcj_init_id = new_id_from_str("_Jv_InitClass");
+	gcj_init_entity = new_entity(glob, gcj_init_id, gcj_init_method_type);
+	set_entity_visibility(gcj_init_entity, ir_visibility_external);
+
+	// gcj_new_string
+	ir_type *gcj_new_string_method_type = new_type_method(1, 1);
+	set_method_param_type(gcj_new_string_method_type, 0, t_ptr);
+	set_method_res_type(gcj_new_string_method_type, 0, t_ptr);
+
+	ident *gcj_new_string_id = new_id_from_str("_Z22_Jv_NewStringUtf8ConstP13_Jv_Utf8Const");
+	gcj_new_string_entity = new_entity(glob, gcj_new_string_id, gcj_new_string_method_type);
+	set_entity_visibility(gcj_new_string_entity, ir_visibility_external);
+
+	// gcj_new_prim_array
+	ir_type *gcj_new_prim_array_method_type = new_type_method(2, 1);
+	set_method_param_type(gcj_new_prim_array_method_type, 0, t_ptr);
+	set_method_param_type(gcj_new_prim_array_method_type, 1, t_size);
+	set_method_res_type(gcj_new_prim_array_method_type, 0, t_ptr);
+
+	ident *gcj_new_prim_array_id = new_id_from_str("_Jv_NewPrimArray");
+	gcj_new_prim_array_entity = new_entity(glob, gcj_new_prim_array_id, gcj_new_prim_array_method_type);
+	set_entity_visibility(gcj_new_prim_array_entity, ir_visibility_external);
+
+	// gcj_new_object_array
+	ir_type *gcj_new_object_array_method_type = new_type_method(3, 1);
+	set_method_param_type(gcj_new_object_array_method_type, 0, t_size);
+	set_method_param_type(gcj_new_object_array_method_type, 1, t_ptr);
+	set_method_param_type(gcj_new_object_array_method_type, 2, t_ptr);
+	set_method_res_type(gcj_new_object_array_method_type, 0, t_ptr);
+
+	ident *gcj_new_object_array_id = new_id_from_str("_Jv_NewObjectArray");
+	gcj_new_object_array_entity = new_entity(glob, gcj_new_object_array_id, gcj_new_object_array_method_type);
+	set_entity_visibility(gcj_new_object_array_entity, ir_visibility_external);
+
+	// gcji_abstract_method
+	ir_type *gcj_abstract_method_type = new_type_method(0, 0);
+	gcj_abstract_method_entity = new_entity(glob, new_id_from_str("_Jv_ThrowAbstractMethodError"), gcj_abstract_method_type);
+	set_entity_visibility(gcj_abstract_method_entity, ir_visibility_external);
+
+	// gcji_lookup_interface
+	ir_type *gcj_lookup_interface_type = new_type_method(3,1);
+	set_method_param_type(gcj_lookup_interface_type, 0, t_ptr);
+	set_method_param_type(gcj_lookup_interface_type, 1, t_ptr);
+	set_method_param_type(gcj_lookup_interface_type, 2, t_ptr);
+	set_method_res_type(gcj_lookup_interface_type, 0, t_ptr);
+	gcj_lookup_interface_entity = new_entity(glob, new_id_from_str("_Jv_LookupInterfaceMethod"), gcj_lookup_interface_type);
+	set_entity_visibility(gcj_lookup_interface_entity, ir_visibility_external);
+
+	// gcji_instanceof
+	ir_type *gcj_instanceof_type = new_type_method(2,1);
+	set_method_param_type(gcj_instanceof_type, 0, type_reference);
+	set_method_param_type(gcj_instanceof_type, 1, type_reference);
+	set_method_res_type(gcj_instanceof_type, 0, type_int);
+	gcj_instanceof_entity = new_entity(glob, new_id_from_str("_Jv_IsInstanceOf"), gcj_instanceof_type);
+	set_entity_visibility(gcj_instanceof_entity, ir_visibility_external);
+
+	// gcji_checkcast
+	ir_type *gcj_checkcast_type = new_type_method(2,0);
+	set_method_param_type(gcj_checkcast_type, 0, type_reference);
+	set_method_param_type(gcj_checkcast_type, 1, type_reference);
+	gcj_checkcast_entity = new_entity(glob, new_id_from_str("_Jv_CheckCast"), gcj_checkcast_type);
+	set_entity_visibility(gcj_checkcast_entity, ir_visibility_external);
+
+	// gcji_get_array_class
+	ir_type *gcj_get_array_class_type = new_type_method(2,1);
+	set_method_param_type(gcj_get_array_class_type, 0, type_reference);
+	set_method_param_type(gcj_get_array_class_type, 1, type_reference);
+	set_method_res_type(gcj_get_array_class_type, 0, type_reference);
+	gcj_get_array_class_entity = new_entity(glob, new_id_from_str("_Z17_Jv_GetArrayClassPN4java4lang5ClassEPNS0_11ClassLoaderE"), gcj_get_array_class_type);
+	set_entity_visibility(gcj_get_array_class_entity, ir_visibility_external);
+
+	// gcji_new_multi_array
+	ir_type *gcj_new_multiarray_type = new_type_method(3,1);
+	set_method_param_type(gcj_new_multiarray_type, 0, type_reference);
+	set_method_param_type(gcj_new_multiarray_type, 1, type_int);
+	set_method_param_type(gcj_new_multiarray_type, 2, type_reference); // XXX: actually int[]
+	set_method_res_type(gcj_new_multiarray_type, 0, type_reference);
+	gcj_new_multiarray_entity = new_entity(glob, new_id_from_str("_Z17_Jv_NewMultiArrayPN4java4lang5ClassEiPi"), gcj_new_multiarray_type);
+	set_entity_visibility(gcj_new_multiarray_entity, ir_visibility_external);
+
+	// primitive classes
+	gcj_boolean_rtti_entity= new_entity(glob, new_id_from_str("_Jv_booleanClass"), type_reference);
+	gcj_byte_rtti_entity   = new_entity(glob, new_id_from_str("_Jv_byteClass"), type_reference);
+	gcj_char_rtti_entity   = new_entity(glob, new_id_from_str("_Jv_charClass"), type_reference);
+	gcj_short_rtti_entity  = new_entity(glob, new_id_from_str("_Jv_shortClass"), type_reference);
+	gcj_int_rtti_entity    = new_entity(glob, new_id_from_str("_Jv_intClass"), type_reference);
+	gcj_long_rtti_entity   = new_entity(glob, new_id_from_str("_Jv_longClass"), type_reference);
+	gcj_float_rtti_entity  = new_entity(glob, new_id_from_str("_Jv_floatClass"), type_reference);
+	gcj_double_rtti_entity = new_entity(glob, new_id_from_str("_Jv_doubleClass"), type_reference);
+	set_entity_visibility(gcj_boolean_rtti_entity, ir_visibility_external);
+	set_entity_visibility(gcj_byte_rtti_entity, ir_visibility_external);
+	set_entity_visibility(gcj_char_rtti_entity, ir_visibility_external);
+	set_entity_visibility(gcj_short_rtti_entity, ir_visibility_external);
+	set_entity_visibility(gcj_int_rtti_entity, ir_visibility_external);
+	set_entity_visibility(gcj_long_rtti_entity, ir_visibility_external);
+	set_entity_visibility(gcj_float_rtti_entity, ir_visibility_external);
+	set_entity_visibility(gcj_double_rtti_entity, ir_visibility_external);
+
+	mode_ushort = new_int_mode("US", irma_twos_complement, 16, 0, 16);
+	type_ushort = new_type_primitive(mode_ushort);
+
+	cpset_init(&scp, scp_hash, scp_cmp);
+
+	type_method_desc = create_method_desc_type();
+	type_field_desc  = create_field_desc_type();
+	type_utf8_const  = create_utf8_const_type();
+
+	subobject_ident  = new_id_from_str("@base");
+
+	ddispatch_set_vtable_layout(2, 4, 2, setup_vtable);
+	ddispatch_set_abstract_method_ident(new_id_from_str("_Jv_ThrowAbstractMethodError"));
+	ddispatch_set_interface_lookup_constructor(gcji_lookup_interface);
+
+	/* we construct rtti right away */
+	rtti_set_runtime_typeinfo_constructor(dummy);
+	rtti_set_instanceof_constructor(gcji_instanceof);
+
+	dmemory_set_allocation_methods(gcji_get_arraylength);
+}
+
+void gcji_deinit()
+{
+	cpset_iterator_t iter;
+	cpset_iterator_init(&iter, &scp);
+
+	scp_entry *cur_scpe;
+	while ( (cur_scpe = (scp_entry*)cpset_iterator_next(&iter)) != NULL) {
+		free_scpe(cur_scpe);
+	}
+
+	cpset_destroy(&scp);
 }
