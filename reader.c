@@ -2177,15 +2177,18 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				args[i]           = val;
 			}
 
-			ir_node *callee   = new_Sel(new_NoMem(), args[0], 0, NULL, entity);
+			ir_node *mem     = get_store();
+			ir_node *sel     = new_MethodSel(mem, args[0], entity);
+			ir_node *sel_mem = new_Proj(sel, mode_M, pn_MethodSel_M);
+			ir_node *callee  = new_Proj(sel, mode_reference, pn_MethodSel_res);
 
 #ifdef EXCEPTIONS
+			set_store(sel_mem);
 			ir_node *call     = eh_new_Call(callee, n_args, args, type);
 #else
-			ir_node *cur_mem  = get_store();
-			ir_node *call     = new_Call(cur_mem, callee, n_args, args, type);
-			cur_mem = new_Proj(call, mode_M, pn_Call_M);
-			set_store(cur_mem);
+			ir_node *call     = new_Call(sel_mem, callee, n_args, args, type);
+			ir_node *call_mem = new_Proj(call, mode_M, pn_Call_M);
+			set_store(call_mem);
 #endif
 
 			int n_res = get_method_n_ress(type);
@@ -2306,15 +2309,19 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 					val = new_Conv(val, mode);
 				args[i]           = val;
 			}
-			ir_node *callee  = new_Sel(new_NoMem(), args[0], 0, NULL, entity);
+
+			ir_node *mem     = get_store();
+			ir_node *sel     = new_MethodSel(mem, args[0], entity);
+			ir_node *sel_mem = new_Proj(sel, mode_M, pn_MethodSel_M);
+			ir_node *callee  = new_Proj(sel, mode_reference, pn_MethodSel_res);
 
 #ifdef EXCEPTIONS
+			set_store(sel_mem);
 			ir_node *call     = eh_new_Call(callee, n_args, args, type);
 #else
-			ir_node *cur_mem  = get_store();
-			ir_node *call     = new_Call(cur_mem, callee, n_args, args, type);
-			cur_mem = new_Proj(call, mode_M, pn_Call_M);
-			set_store(cur_mem);
+			ir_node *call     = new_Call(sel_mem, callee, n_args, args, type);
+			ir_node *call_mem = new_Proj(call, mode_M, pn_Call_M);
+			set_store(call_mem);
 #endif
 
 			int n_res = get_method_n_ress(type);
