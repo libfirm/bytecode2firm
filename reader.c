@@ -1124,7 +1124,7 @@ static void construct_array_load(ir_type *array_type)
 
 	ir_node   *in[1]     = { index };
 	ir_entity *entity    = get_array_element_entity(array_type);
-	ir_node   *addr      = new_Sel(new_NoMem(), base_addr, 1, in, entity);
+	ir_node   *addr      = new_Sel(base_addr, 1, in, entity);
 
 	ir_node   *mem       = get_store();
 	ir_type   *type      = get_entity_type(entity);
@@ -1152,7 +1152,7 @@ static void construct_array_store(ir_type *array_type)
 	           base_addr = new_Add(base_addr, new_Const_long(mode_reference, GCJI_DATA_OFFSET), mode_reference); // skip the j.l.Object subobject and the length field.
 
 	ir_node   *in[1]     = { index };
-	ir_node   *addr      = new_Sel(new_NoMem(), base_addr, 1, in, entity);
+	ir_node   *addr      = new_Sel(base_addr, 1, in, entity);
 
 	ir_node   *mem       = get_store();
 	ir_node   *store     = new_Store(mem, addr, value, cons_none);
@@ -2139,7 +2139,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				addr = new_Address(entity);
 			} else {
 				ir_node  *object = symbolic_pop(mode_reference);
-				addr             = new_simpleSel(new_NoMem(), object, entity);
+				addr             = new_simpleSel(object, entity);
 			}
 
 			if (opcode == OPC_GETSTATIC || opcode == OPC_GETFIELD) {

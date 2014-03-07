@@ -327,10 +327,8 @@ ir_node *gcji_new_string(ir_entity *bytes, ir_graph *irg, ir_node *block, ir_nod
 ir_node *gcji_get_arraylength(dbg_info *dbgi, ir_node *block, ir_node *arrayref,
                               ir_node **mem)
 {
-	ir_graph *irg       = get_irn_irg(block);
 	ir_node  *cur_mem   = *mem;
-	ir_node  *addr      = new_r_simpleSel(block, get_irg_no_mem(irg),
-	                                        arrayref, gcj_array_length);
+	ir_node  *addr      = new_r_simpleSel(block, arrayref, gcj_array_length);
 	ir_node  *load      = new_rd_Load(dbgi, block, cur_mem, addr, mode_int,
 	                                  cons_none);
 	ir_node  *load_mem  = new_r_Proj(load, mode_M, pn_Load_M);
@@ -916,7 +914,7 @@ ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface, ir_entity *metho
 	// we need the reference to the object's class$ field
 	// first, dereference the vptr in order to get the vtable address.
 	ir_entity *vptr_entity   = get_vptr_entity();
-	ir_node   *vptr_addr     = new_r_Sel(block, new_r_NoMem(irg), objptr, 0, NULL, vptr_entity);
+	ir_node   *vptr_addr     = new_r_Sel(block, objptr, 0, NULL, vptr_entity);
 	ir_node   *vptr_load     = new_r_Load(block, cur_mem, vptr_addr, mode_reference, cons_none);
 	ir_node   *vtable_addr   = new_r_Proj(vptr_load, mode_reference, pn_Load_res);
 	           cur_mem       = new_r_Proj(vptr_load, mode_M, pn_Load_M);
@@ -1004,7 +1002,7 @@ static ir_node *alloc_dims_array(unsigned dims, ir_node **sizes, ir_graph *irg, 
 	for (unsigned d = 0; d < dims; d++) {
 		ir_node *index_const = new_r_Const_long(irg, mode_int, d);
 		ir_node *in[] = { index_const };
-		ir_node *sel = new_r_Sel(block, new_r_NoMem(irg), arr, 1, in, elem_ent);
+		ir_node *sel = new_r_Sel(block, arr, 1, in, elem_ent);
 		ir_node *store = new_r_Store(block, cur_mem, sel, sizes[d], cons_none);
 		cur_mem = new_r_Proj(store, mode_M, pn_Store_M);
 	}
