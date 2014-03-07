@@ -171,8 +171,6 @@ static constant_t *read_constant(void)
 	panic("Unknown constant type %d in classfile", kind);
 }
 
-
-
 static attribute_t *read_attribute(void);
 
 static attribute_unknown_t *read_attribute_unknown(uint16_t name_index)
@@ -241,8 +239,6 @@ static attribute_t *read_attribute(void)
 		return (attribute_t*) read_attribute_unknown(name_index);
 	}
 }
-
-
 
 static field_t *read_field(void)
 {

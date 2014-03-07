@@ -87,7 +87,6 @@ ir_mode *mode_long;
 ir_mode *mode_float;
 ir_mode *mode_double;
 ir_mode *mode_reference;
-ir_mode *mode_size_t;
 
 ir_type *type_byte;
 ir_type *type_char;
@@ -108,7 +107,6 @@ ir_type *type_array_float;
 ir_type *type_array_double;
 ir_type *type_array_reference;
 
-static ir_entity *calloc_entity;
 static ir_entity *abort_entity;
 static ir_mode   *mode_float_arithmetic;
 
@@ -151,7 +149,7 @@ static void init_types(void)
 	mode_long
 		= new_int_mode("J", irma_twos_complement, 64, 1, 64);
 	type_long = new_type_primitive(mode_long);
-	//	set_type_alignment_bytes(type_long, 4); // Setting this creates an object layout equivalent to gcj. (but breaks other things)
+	set_type_alignment_bytes(type_long, 4);
 
 	ir_mode *mode_boolean = mode_byte;
 	type_boolean = new_type_primitive(mode_boolean);
@@ -166,7 +164,7 @@ static void init_types(void)
 	mode_double
 		= new_float_mode("D", irma_ieee754, 11, 52, ir_overflow_min_max);
 	type_double = new_type_primitive(mode_double);
-	// set_type_alignment_bytes(type_double, 4); // Setting this creates an object layout equivalent to gcj. (but breaks other things)
+	set_type_alignment_bytes(type_double, 4);
 
 	mode_reference = mode_P;
 
@@ -200,17 +198,6 @@ static void init_types(void)
 	type_array_reference    = new_type_array(1, type_reference);
 	set_array_lower_bound_int(type_array_reference, 0, 0);
 	set_type_state(type_array_reference, layout_fixed);
-
-	const size_t size_bits    = get_mode_size_bits(mode_P);
-	const size_t modulo_shift = get_mode_modulo_shift(mode_P);
-	mode_size_t = new_int_mode("size_t", irma_twos_complement, size_bits, 0, modulo_shift);
-	ir_type *size_t_type = get_type_for_mode(mode_size_t);
-	ir_type *calloc_type = new_type_method(2, 1);
-	set_method_param_type(calloc_type, 0, size_t_type);
-	set_method_param_type(calloc_type, 1, size_t_type);
-	set_method_res_type(calloc_type, 0, get_type_for_mode(mode_P));
-	ident *calloc_id = new_id_from_str("calloc");
-	calloc_entity = create_compilerlib_entity(calloc_id, calloc_type);
 
 	ident *abort_id = new_id_from_str("abort");
 	ir_type *abort_type = new_type_method(0, 0);
@@ -435,19 +422,13 @@ static void set_local(uint16_t n, ir_node *node)
 
 static ir_node *get_local(uint16_t n, ir_mode *mode)
 {
-	// the Bad nodes can mystically become Phi nodes...
-//	if (needs_two_slots(mode)) {
-//		assert(n+1 < max_locals);
-//		ir_node *dummy = get_value(code->max_stack + n+1, mode);
-//		(void) dummy;
-//		assert(is_Bad(dummy));
-//	}
 	assert(n < max_locals);
 	assert(mode == NULL || mode == get_arith_mode(mode));
 	return get_value(code->max_stack + n, mode);
 }
 
-static ir_entity *find_entity(ir_type *classtype, const char *name, const char *desc)
+static ir_entity *find_entity(ir_type *classtype, const char *name,
+                              const char *desc)
 {
 	assert(is_Class_type(classtype));
 
@@ -506,7 +487,8 @@ static ir_entity *find_entity(ir_type *classtype, const char *name, const char *
 	return entity;
 }
 
-static ir_type *find_entity_defining_class(ir_type *classtype, const char *name, const char *desc)
+static ir_type *find_entity_defining_class(ir_type *classtype, const char *name,
+                                           const char *desc)
 {
 	assert(is_Class_type(classtype));
 
@@ -578,7 +560,8 @@ static ir_entity *get_method_entity(uint16_t index)
 		finalize_class_type(classtype);
 
 		if (!is_Class_type(classtype)) {
-			// semantically, this is correct (array types support the methods of j.l.Object.
+			// semantically, this is correct (array types support the methods
+			// of java.lang.Object.
 			// We might need real array types for type info stuff later.
 			classtype = get_class_type("java/lang/Object");
 		}
@@ -616,7 +599,8 @@ static ir_type *get_method_defining_class(uint16_t index)
 	  = get_classref_type(methodref->methodref.class_index);
 
 	if (!is_Class_type(classtype)) {
-		// semantically, this is correct (array types support the methods of j.l.Object.
+		// semantically, this is correct (array types support the methods of
+		// java.lang.Object.
 		// We might need real array types for type info stuff later.
 		classtype = get_class_type("java/lang/Object");
 	}
@@ -1254,15 +1238,6 @@ static void sort_exceptions(exception_t *excptns, size_t n)
 	// Example: B extends A, try { ... } catch (B b) {} catch (A a) {}
 }
 
-#if 0
-static void print_exception(exception_t *excptns, size_t n)
-{
-	for (size_t i = 0; i < n; i++) {
-		fprintf(stderr, "%d: (%d : %d) -> %d [%s]\n", i, excptns[i].start_pc, excptns[i].end_pc, excptns[i].handler_pc, get_class_name(get_classref_type(excptns[i].catch_type)));
-	}
-}
-#endif
-
 static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 {
 	code = new_code;
@@ -1467,7 +1442,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		}
 
 		case OPC_TABLESWITCH: {
-			// i points to the instruction after the opcode. That instruction should be on a index that is a multiple of 4.
+			// i points to the instruction after the opcode. That instruction
+			// should be on a index that is a multiple of 4.
 			uint32_t tswitch_index = i-1;
 			uint8_t  padding = (4 - (i % 4)) % 4;
 			switch (padding) {
@@ -1517,7 +1493,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		}
 
 		case OPC_LOOKUPSWITCH: {
-			// i points to the instruction after the opcode. That instruction should be on a index that is a multiple of 4.
+			// i points to the instruction after the opcode. That instruction
+			// should be on a index that is a multiple of 4.
 			uint32_t lswitch_index = i-1;
 			uint8_t  padding = (4 - (i % 4)) % 4;
 			switch (padding) {
@@ -2324,10 +2301,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			(void) count;
 			assert(code->code[i++] == 0);
 			ir_entity *entity = get_interface_entity(index);
-
 			ir_type   *type   = get_entity_type(entity);
 			unsigned   n_args = get_method_n_params(type);
-			//assert(n_args == count); // Wrong assertion. Count is the # of slots needed for the params, e.g. double contributes 2 to this value.
 			ir_node   *args[n_args];
 
 			for (int i = n_args-1; i >= 0; --i) {
@@ -2370,7 +2345,6 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node  *mem       = get_store();
 			ir_node  *block     = get_cur_block();
 			ir_node  *result    = gcji_allocate_object(classtype, block, &mem);
-			//ddispatch_prepare_new_instance(NULL, block, result, &mem, classtype);
 			set_store(mem);
 			symbolic_push(result);
 			continue;
@@ -2416,14 +2390,12 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		}
 
 		case OPC_CHECKCAST: {
-			// FIXME: as long as the exception handling does not work correctly, a failed CHECKCAST results in a scruffy abortion.
-			uint16_t   index     = get_16bit_arg(&i);
-			ir_node   *addr      = symbolic_pop(mode_reference);
-
-			ir_type   *type      = get_classref_type(index);
+			uint16_t index = get_16bit_arg(&i);
+			ir_node *addr  = symbolic_pop(mode_reference);
+			ir_type *type  = get_classref_type(index);
 			finalize_type(type);
 
-			ir_node   *cur_mem   = get_store();
+			ir_node *cur_mem = get_store();
 			gcji_checkcast(type, addr, irg, get_cur_block(), &cur_mem);
 			set_store(cur_mem);
 
@@ -2471,22 +2443,21 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 		case OPC_MULTIANEWARRAY: {
-			// XXX: create an Alloc node and lower it in liboo would be cleaner.
-			uint16_t index        = get_16bit_arg(&i);
-			uint8_t  dims         = code->code[i++];
-
-			ir_node *block        = get_cur_block();
-			ir_node *cur_mem      = get_store();
-
-			ir_type *array_type   = get_classref_type(index);
-			ir_node *array_class_ref = gcji_get_runtime_classinfo(array_type, irg, block, &cur_mem);
+			uint16_t index      = get_16bit_arg(&i);
+			uint8_t  dims       = code->code[i++];
+			ir_node *block      = get_cur_block();
+			ir_node *cur_mem    = get_store();
+			ir_type *array_type = get_classref_type(index);
+			ir_node *array_class_ref
+				= gcji_get_runtime_classinfo(array_type, irg, block, &cur_mem);
 			ir_node **sizes = XMALLOCN(ir_node *, dims);
 
 			for (int ci = dims-1; ci >= 0; ci--) {
 				sizes[ci] = symbolic_pop(mode_int);
 			}
 
-			ir_node *marray = gcji_new_multiarray(array_class_ref, dims, sizes, irg, block, &cur_mem);
+			ir_node *marray = gcji_new_multiarray(array_class_ref, dims, sizes,
+			                                      irg, block, &cur_mem);
 			set_store(cur_mem);
 
 			xfree(sizes);
@@ -2496,7 +2467,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		}
 
 		case OPC_TABLESWITCH: {
-			// i points to the instruction after the opcode. That instruction should be on a index that is a multiple of 4.
+			// i points to the instruction after the opcode. That instruction
+			// should be on a index that is a multiple of 4.
 			const uint32_t tswitch_index = i - 1;
 			const uint8_t  padding       = (4 - (i % 4)) % 4;
 			switch (padding) {
@@ -2543,7 +2515,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		}
 
 		case OPC_LOOKUPSWITCH: {
-			// i points to the instruction after the opcode. That instruction should be on a index that is a multiple of 4.
+			// i points to the instruction after the opcode. That instruction
+			// should be on a index that is a multiple of 4.
 			const uint32_t lswitch_index = i - 1;
 			const uint8_t  padding       = (4 - (i % 4)) % 4;
 			switch (padding) {
@@ -2725,29 +2698,6 @@ static void create_method_code(ir_entity *entity)
 	}
 }
 
-#if 0
-static void link_methods_from_supertype(ir_type *type)
-{
-	if (get_class_n_supertypes(type) == 0)
-		return;
-	assert(get_class_n_supertypes(type) == 1);
-	ir_type *super = get_class_supertype(type, 0);
-
-	for (size_t i = 0, n = get_class_n_members(super); i < n; ++i) {
-		ir_entity *member = get_class_member(super, i);
-		ident     *name   = get_entity_ident(member);
-		ir_entity *new    = get_class_member_by_name(type, name);
-		if (new == NULL) {
-			ir_type *member_type = get_entity_type(member);
-			new = new_entity(type, name, member_type);
-			/* link to real implementation */
-			set_atomic_ent_value(new, get_atomic_ent_value(member));
-			add_entity_overwrites(new, member);
-		}
-	}
-}
-#endif
-
 static ir_type *get_class_type(const char *name)
 {
 	ir_type *existing_type = class_registry_get(name);
@@ -2887,7 +2837,6 @@ static void finalize_class_type(ir_type *type)
 		method_t *method = class_file->methods[m];
 		create_method_entity(method, type);
 	}
-	//link_methods_from_supertype(type);
 
 	for (size_t i = 0; i < (size_t) class_file->n_interfaces; ++i) {
 		ir_type *iface = get_classref_type(class_file->interfaces[i]);
@@ -2953,7 +2902,8 @@ static void link_interface_method_recursive(ir_type *klass, ir_entity *interface
 		// find the implementation
 		while (!impl) {
 			cur_class = oo_get_class_superclass(cur_class);
-			assert(cur_class); // we assert that there will be superclasses as long as we haven't found an impl.
+			assert(cur_class); // we assert that there will be superclasses as
+			                   // long as we haven't found an impl.
 			impl = get_class_member_by_name(cur_class, method_id);
 		}
 
@@ -2988,8 +2938,8 @@ static void link_interface_methods(ir_type *klass, void *env)
 	if (!oo_get_class_is_interface(klass))
 		return;
 
-
-	// don't need to iterate the class_t structure, as we are only interested in non-static methods
+	// don't need to iterate the class_t structure, as we are only interested
+	// in non-static methods
 	size_t n_subclasses = get_class_n_subtypes(klass);
 	if (n_subclasses == 0)
 		return;
@@ -3009,7 +2959,8 @@ static void link_interface_methods(ir_type *klass, void *env)
 
 static void link_methods(void)
 {
-	 // handle the interfaces first, because it might be required to copy method entities to implementing classes.
+	 // handle the interfaces first, because it might be required to copy
+	 // method entities to implementing classes.
 	 // (see example in link_interface_method_recursive)
 	class_walk_super2sub(link_interface_methods, NULL, NULL);
 }
@@ -3148,7 +3099,6 @@ int main(int argc, char **argv)
 	if (verbose)
 		fprintf(stderr, "===> Optimization & backend\n");
 
-	// we had to get the class$ above, because calling gcji_get_class_dollar_field after the class has been lowered (e.g. now) would create a new entity.
 	ir_entity *main_rtti = gcji_get_rtti_entity(main_class);
 	assert(main_rtti && is_entity(main_rtti));
 	const char *main_rtti_ldname = get_entity_ld_name(main_rtti);

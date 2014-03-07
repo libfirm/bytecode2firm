@@ -119,9 +119,6 @@ typedef union constant_t {
 	constant_name_and_type_t       name_and_type;
 } constant_t;
 
-
-
-
 typedef enum attribute_kind_t {
 	ATTRIBUTE_CUSTOM,
 	ATTRIBUTE_CODE
@@ -165,8 +162,6 @@ union attribute_t {
 	attribute_unknown_t unknown;
 	attribute_code_t    code;
 };
-
-
 
 typedef struct field_t {
 	uint16_t      access_flags;
