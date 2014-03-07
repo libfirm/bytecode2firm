@@ -152,7 +152,7 @@ typedef enum access_flags_t {
 
 extern java_lang_Class objarray_class;
 
-void init_prim_rtti();
+void init_prim_rtti(void);
 jobject _Jv_AllocObjectNoFinalizer(java_lang_Class *type);
 jv_method *get_method(java_lang_Class *cls, const utf8_const *name,
                       const utf8_const *signature);
