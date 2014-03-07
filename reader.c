@@ -37,12 +37,7 @@
 #include <liboo/nodes.h>
 #include <liboo/eh.h>
 
-//#define OOO
 //#define EXCEPTIONS
-
-#ifdef OOO
-#include <liboo/ooopt.h>
-#endif
 
 #ifndef CLASSPATH_GCJ
 #define CLASSPATH_GCJ "build/gcj"
@@ -3143,16 +3138,6 @@ int main(int argc, char **argv)
 	irp_finalize_cons();
 
 	link_methods();
-
-#ifdef OOO
-	if (verbose)
-		fprintf(stderr, "===> Performing EXPERIMENTAL object-orientated optimizations\n");
-	int n_irgs = get_irp_n_irgs();
-	for (int p = 0; p < n_irgs; ++p) {
-		ir_graph *irg = get_irp_irg(p);
-		oo_devirtualize_local(irg);
-	}
-#endif
 
 	oo_lower();
 	/* kinda hacky: we remove vtables for external classes now
