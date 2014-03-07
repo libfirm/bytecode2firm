@@ -17,7 +17,9 @@ INSTALL      ?= /usr/bin/install
 BUILDDIR      = build
 GOAL          = $(BUILDDIR)/bytecode2firm
 CPPFLAGS      = -I. $(FIRM_CFLAGS) $(LIBOO_CFLAGS)
-CFLAGS        = -Wall -Wextra -Wstrict-prototypes -Wmissing-prototypes -Wunreachable-code -Wlogical-op -Werror -O0 -g3 -std=c99 -pedantic
+CFLAGS        = -Wall -Wextra -Werror -Wunreachable-code -Wlogical-op -O0 -g3 -std=c99
+# TODO fix simplert to also use CFLAGS_GOOD
+CFLAGS_GOOD   = $(CFLAGS) -pedantic -Wmissing-prototypes -Wstrict-prototypes
 LFLAGS        = $(LIBOO_LIBS) $(FIRM_LIBS) -lm
 SOURCES       = $(wildcard *.c) $(wildcard adt/*.c) $(wildcard driver/*.c)
 DEPS          = $(addprefix $(BUILDDIR)/, $(addsuffix .d, $(basename $(SOURCES))))
@@ -70,18 +72,18 @@ $(GOAL): $(OBJECTS) $(FIRM_FILE) $(LIBOO_FILE)
 
 $(BUILDDIR)/%.o: %.c
 	@echo '===> CC $<'
-	$(Q)$(CC) $(CPPFLAGS) $(CFLAGS) -MP -MMD -c -o $@ $<
+	$(Q)$(CC) $(CPPFLAGS) $(CFLAGS_GOOD) -MP -MMD -c -o $@ $<
 
 $(SIMPLERT_so): $(SIMPLERT_C_SOURCES) $(SIMPLERT_HEADERS)
 	@echo '===> CC $@'
 	$(Q)mkdir -p $(SIMPLERT_DIR)
-	$(Q)$(CC) -std=c99 -Wall -W -m32 -g3 -shared $(SIMPLERT_C_SOURCES) -lm -o $@
+	$(Q)$(CC) $(CFLAGS) -W -m32 -shared $(SIMPLERT_C_SOURCES) -lm -o $@
 
 SIMPLERT_SOURCES_ABS=$(abspath $(SIMPLERT_C_SOURCES))
 $(SIMPLERT_a): $(SIMPLERT_C_SOURCES) $(SIMPLERT_HEADERS)
 	@echo '===> CC+AR $@'
 	$(Q)mkdir -p $(SIMPLERT_DIR)
-	$(Q)cd $(SIMPLERT_DIR) && $(CC) -std=c99 -Wall -W -m32 -g3 -c $(SIMPLERT_SOURCES_ABS)
+	$(Q)cd $(SIMPLERT_DIR) && $(CC) $(CFLAGS) -W -m32 -c $(SIMPLERT_SOURCES_ABS)
 	$(Q)ar rcs $@ $(SIMPLERT_DIR)/*.o
 
 $(SIMPLERT_CLASSES): $(SIMPLERT_JAVA_SOURCES)
