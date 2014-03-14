@@ -3041,6 +3041,14 @@ int main(int argc, char **argv)
 	finalize_class_type(java_lang_class);
 	irp_finalize_cons();
 
+	/* verify the constructed graphs, entities and types */
+	for (size_t i = 0, n = get_irp_n_irgs(); i < n; ++i) {
+		ir_graph *irg = get_irp_irg(i);
+		irg_assert_verify(irg);
+	}
+	int res = tr_verify();
+	assert(res != 0);
+
 	oo_lower();
 	/* kinda hacky: we remove vtables for external classes now
 	 * (we constructed them in the first places because we needed the vtable_ids
