@@ -2596,6 +2596,16 @@ static ir_entity *get_class_member_by_name(ir_type *cls, ident *ident)
 	return NULL;
 }
 
+static ir_entity *find_class_member_in_hierarchy(ir_type *cls, ident *ident)
+{
+	for (ir_type *t = cls; t != NULL; t = oo_get_class_superclass(t)) {
+		ir_entity *entity = get_class_member_by_name(t, ident);
+		if (entity != NULL)
+			return entity;
+	}
+	return NULL;
+}
+
 static void create_method_entity(method_t *method, ir_type *owner)
 {
 	const char *name         = get_constant_string(method->name_index);
@@ -2627,23 +2637,15 @@ static void create_method_entity(method_t *method, ir_type *owner)
 		ir_entity *abstract_method = gcji_get_abstract_method_entity();
 		ir_node   *addr            = new_r_Address(get_const_code_irg(), abstract_method);
 		set_atomic_ent_value(entity, addr);
-	} else {
-		// see if we overwrite entities in the superclass
-		ir_type *cls = owner;
-		while (get_class_n_supertypes(cls) > 0) {
-			ir_type *superclass = oo_get_class_superclass(cls);
-			if (superclass == NULL)
-				break;
-
-			ir_entity *overwritten
-				= get_class_member_by_name(superclass, mangled_id);
-			if (overwritten != NULL) {
-				add_entity_overwrites(entity, overwritten);
-				oo_set_method_is_inherited(entity, true);
-				overwrites_something = true;
-				break;
-			}
-			cls = superclass;
+	} else if (get_class_n_supertypes(owner) > 0) {
+		// see if we overwrite an entity in a superclass
+		ir_type   *superclass  = oo_get_class_superclass(owner);
+		ir_entity *overwritten
+			= find_class_member_in_hierarchy(superclass, mangled_id);
+		if (overwritten != NULL) {
+			add_entity_overwrites(entity, overwritten);
+			oo_set_method_is_inherited(entity, true);
+			overwrites_something = true;
 		}
 	}
 
@@ -2777,6 +2779,53 @@ static ir_type *construct_class_methods(ir_type *type)
 	return type;
 }
 
+/**
+ * If an interface gets implemented, then we replicate all methods in the class
+ * type. Note that we even do this for missing methods in abstract classes
+ * implementing an interface.
+ */
+static void link_interface_methods(ir_type *cls, ir_type *interface)
+{
+	assert(oo_get_class_is_interface(interface));
+	if (oo_get_class_is_interface(cls))
+		return;
+
+	for (size_t m = 0, n = get_class_n_members(interface); n < m; ++m) {
+		ir_entity *method = get_class_member(interface, m);
+		assert(is_method_entity(method));
+		assert(!oo_get_method_exclude_from_vtable(method));
+		ident     *ident          = get_entity_ident(method);
+		ir_entity *implementation = find_class_member_in_hierarchy(cls, ident);
+		// find the implementation of the method (or return abstract_method)
+		bool add_overwrites = true;
+		if (implementation == NULL) {
+			if (!oo_get_class_is_abstract(cls)) {
+				panic("%s: implementation of method %s from interface %s missing in non-abstract class\n", get_class_name(cls), get_id_str(ident), get_class_name(interface));
+			} else {
+				implementation = gcji_get_abstract_method_entity();
+				add_overwrites = false;
+			}
+		}
+		// create proxy entity in cls if necessary
+		if (get_entity_owner(implementation) != cls) {
+			ir_type   *type = get_entity_type(method);
+			ir_entity *proxy = new_entity(cls, ident, type);
+			set_entity_ld_ident(proxy, id_mangle3("inh__", get_entity_ld_ident(implementation), ""));
+			set_entity_visibility(proxy, ir_visibility_private);
+			oo_copy_entity_info(implementation, proxy);
+
+			set_atomic_ent_value(proxy, get_atomic_ent_value(implementation));
+			if (add_overwrites) {
+				oo_set_method_is_inherited(proxy, true);
+				add_entity_overwrites(proxy, implementation);
+			}
+			implementation = proxy;
+		}
+
+		add_entity_overwrites(implementation, method);
+	}
+}
+
 static void enqueue_class(ir_type *type)
 {
 	class_t *cls = (class_t*)oo_get_type_link(type);
@@ -2840,6 +2889,8 @@ static void finalize_class_type(ir_type *type)
 		ir_type *iface = get_classref_type(class_file->interfaces[i]);
 		finalize_class_type(iface);
 		add_class_supertype(type, iface);
+
+		link_interface_methods(type, iface);
 	}
 
 	default_layout_compound_type(type);
@@ -2866,101 +2917,6 @@ static void finalize_type(ir_type *type)
 	} else if (is_Array_type(type)) {
 		finalize_type(get_array_element_type(type));
 	}
-}
-
-static void link_interface_method_recursive(ir_type *klass, ir_entity *interface_method)
-{
-	assert(is_Class_type(klass));
-	assert(is_method_entity(interface_method));
-	assert(oo_get_class_is_interface(get_entity_owner(interface_method)));
-
-	ident *method_id = get_entity_ident(interface_method);
-	ir_entity *m = get_class_member_by_name(klass, method_id);
-	if (m) {
-		if (get_entity_overwrites_index(m, interface_method) == INVALID_MEMBER_INDEX)
-			add_entity_overwrites(m, interface_method);
-		return;
-	}
-
-	if (!(oo_get_class_is_abstract(klass) || oo_get_class_is_interface(klass))) {
-		/*
-		 * this means there must be an implementation in a superclass
-		 *
-		 * Class C [foo()]      Interface I [foo()]
-		 *     \                      /
-		 *      \_________  ........./
-		 *                \/
-		 *            Class Sub []
-		 *
-		 */
-
-		ir_entity *impl = NULL;
-		ir_type   *cur_class = klass;
-
-		// find the implementation
-		while (!impl) {
-			cur_class = oo_get_class_superclass(cur_class);
-			assert(cur_class); // we assert that there will be superclasses as
-			                   // long as we haven't found an impl.
-			impl = get_class_member_by_name(cur_class, method_id);
-		}
-
-		// copy the method into the interface's implementor
-		ir_type   *impl_type = get_entity_type(impl);
-		ir_entity *impl_copy = new_entity(klass, method_id, impl_type);
-		set_entity_ld_ident(impl_copy, id_mangle3("inh__", get_entity_ld_ident(impl), ""));
-		set_entity_visibility(impl_copy, ir_visibility_private);
-		oo_copy_entity_info(impl, impl_copy);
-		oo_set_method_is_inherited(impl_copy, true);
-
-		set_atomic_ent_value(impl_copy, get_atomic_ent_value(impl));
-
-		add_entity_overwrites(impl_copy, impl);
-		add_entity_overwrites(impl_copy, interface_method);
-
-		return;
-	}
-
-	size_t n_subclasses = get_class_n_subtypes(klass);
-	for (size_t i = 0; i < n_subclasses; i++) {
-		ir_type *subclass = get_class_subtype(klass, i);
-		link_interface_method_recursive(subclass, interface_method);
-	}
-}
-
-static void link_interface_methods(ir_type *klass, void *env)
-{
-	(void) env;
-
-	assert(is_Class_type(klass));
-	if (!oo_get_class_is_interface(klass))
-		return;
-
-	// don't need to iterate the class_t structure, as we are only interested
-	// in non-static methods
-	size_t n_subclasses = get_class_n_subtypes(klass);
-	if (n_subclasses == 0)
-		return;
-
-	size_t n_member = get_class_n_members(klass);
-	for (size_t m = 0; m < n_member; m++) {
-		ir_entity *member = get_class_member(klass, m);
-		if (!is_method_entity(member) || oo_get_method_exclude_from_vtable(member))
-			continue;
-
-		for (size_t sc = 0; sc < n_subclasses; sc++) {
-			ir_type *subclass = get_class_subtype(klass, sc);
-			link_interface_method_recursive(subclass, member);
-		}
-	}
-}
-
-static void link_methods(void)
-{
-	 // handle the interfaces first, because it might be required to copy
-	 // method entities to implementing classes.
-	 // (see example in link_interface_method_recursive)
-	class_walk_super2sub(link_interface_methods, NULL, NULL);
 }
 
 static void remove_external_vtable(ir_type *type, void *env)
@@ -3084,8 +3040,6 @@ int main(int argc, char **argv)
 	 */
 	finalize_class_type(java_lang_class);
 	irp_finalize_cons();
-
-	link_methods();
 
 	oo_lower();
 	/* kinda hacky: we remove vtables for external classes now
