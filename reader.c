@@ -2790,9 +2790,9 @@ static void link_interface_methods(ir_type *cls, ir_type *interface)
 	if (oo_get_class_is_interface(cls))
 		return;
 
-	for (size_t m = 0, n = get_class_n_members(interface); n < m; ++m) {
+	for (size_t m = 0, n = get_class_n_members(interface); m < n; ++m) {
 		ir_entity *method = get_class_member(interface, m);
-		assert(is_method_entity(method));
+		if (!is_method_entity(method)) continue;
 		assert(!oo_get_method_exclude_from_vtable(method));
 		ident     *ident          = get_entity_ident(method);
 		ir_entity *implementation = find_class_member_in_hierarchy(cls, ident);
