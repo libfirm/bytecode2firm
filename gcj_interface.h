@@ -31,4 +31,9 @@ void       gcji_add_java_lang_class_fields(ir_type *type);
 void       gcji_create_array_type(void);
 ir_entity *gcji_get_abstract_method_entity(void);
 
+void       init_rta_callbacks(void);
+void       deinit_rta_callbacks(void);
+ir_type   *detect_creation(ir_node *call);
+ir_entity *detect_call(ir_node *call);
+
 #endif
