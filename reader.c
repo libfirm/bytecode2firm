@@ -3049,10 +3049,13 @@ int main(int argc, char **argv)
 		}
 	}
 	// run rapid type analysis
+	init_rta_callbacks();
+	rta_set_detection_callbacks(&detect_creation, &detect_call);
 	ir_entity *entry_points[] = { javamain, NULL };
 	ir_type *initial_live_classes[] = { class_registry_get("java/lang/Class"), class_registry_get("java/lang/String"), NULL };
 	if (javamain)
 		rta_optimization(entry_points, initial_live_classes);
+	deinit_rta_callbacks();
 
 	//dump_all_ir_graphs("-after-rta");
 
