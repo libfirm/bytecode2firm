@@ -1,3 +1,5 @@
+// There was a Bug in liboo that produced linker errors with this example.
+
 
 interface Foobar {
 	void foo();
@@ -22,7 +24,7 @@ class C extends B
 	public void bar() {}
 }
 
-public class TestEntityOverwrites2 {
+public class EntityCopies {
 	public static void main(String[] args) {
 		new C().foo();
 	}
