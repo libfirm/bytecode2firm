@@ -7,7 +7,11 @@ from sisyphus.test.checks import check_retcode_zero, create_check_reference_outp
 
 def step_compile_java(environment):
 	"""Compile java file with java compiler"""
-	cmd = "%(javac)s %(testname)s" % environment
+	testname = environment.testname
+	assert testname.endswith(".java")
+	environment.classname = testname[:-5]
+	ensure_dir("%(builddir)s/%(classname)s" % environment)
+	cmd = "%(javac)s %(testname)s -d %(builddir)s/%(classname)s" % environment
 	return execute(environment, cmd, timeout=240)
 
 def step_compile_class(environment):
@@ -17,7 +21,7 @@ def step_compile_class(environment):
 	environment.classname = testname[:-5]
 	environment.executable = "%(builddir)s/%(classname)s.exe" % environment
 	ensure_dir(os.path.dirname(environment.executable))
-	cmd = "%(bc2firm)s -cp . %(classname)s %(bc2firmflags)s -o %(executable)s" % environment
+	cmd = "%(bc2firm)s -cp %(builddir)s/%(classname)s %(classname)s %(bc2firmflags)s -o %(executable)s" % environment
 	return execute(environment, cmd, timeout=240)
 
 def make_bc2firm_test(filename):
