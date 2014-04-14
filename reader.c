@@ -2792,7 +2792,7 @@ static void link_interface_methods(ir_type *cls, ir_type *interface)
 
 	for (size_t m = 0, n = get_class_n_members(interface); m < n; ++m) {
 		ir_entity *method = get_class_member(interface, m);
-		if (!is_method_entity(method)) continue;
+		assert(is_method_entity(method));
 		assert(!oo_get_method_exclude_from_vtable(method));
 		ident     *ident          = get_entity_ident(method);
 		ir_entity *implementation = find_class_member_in_hierarchy(cls, ident);
@@ -2853,9 +2853,10 @@ static void finalize_class_type(ir_type *type)
 		finalize_class_type(supertype);
 
 		add_class_supertype(type, supertype);
-		/* the supertype data is contained in the object so we create a field
-		 * that contains this data */
-		new_entity(type, superobject_ident, supertype);
+		if (!oo_get_class_is_interface(type)) {
+			/* the superobject field contains the data of the supertype */
+			new_entity(type, superobject_ident, supertype);
+		}
 
 		/* use the same vptr field as our superclass */
 		ir_entity *vptr = oo_get_class_vptr_entity(supertype);
