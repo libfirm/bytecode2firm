@@ -2855,7 +2855,7 @@ static void finalize_class_type(ir_type *type)
 		add_class_supertype(type, supertype);
 		/* the supertype data is contained in the object so we create a field
 		 * that contains this data */
-		new_entity(type, subobject_ident, supertype);
+		new_entity(type, superobject_ident, supertype);
 
 		/* use the same vptr field as our superclass */
 		ir_entity *vptr = oo_get_class_vptr_entity(supertype);

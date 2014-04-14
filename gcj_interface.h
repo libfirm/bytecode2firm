@@ -7,7 +7,7 @@
 #define GCJI_LENGTH_OFFSET 4
 #define GCJI_DATA_OFFSET   8
 
-extern ident *subobject_ident;
+extern ident *superobject_ident;
 
 void       gcji_init(void);
 void       gcji_deinit(void);

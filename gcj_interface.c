@@ -47,7 +47,7 @@ static ir_type *type_utf8_const;
 static ir_type *type_java_lang_object;
 static ir_type *type_java_lang_class;
 
-ident *subobject_ident;
+ident *superobject_ident;
 
 extern char* strdup(const char* s);
 static ir_entity *do_emit_utf8_const(const char *bytes, size_t len);
@@ -152,7 +152,7 @@ void gcji_create_array_type(void)
 	ident   *id   = new_id_from_str("array");
 	ir_type *type = new_type_class(id);
 	assert(type_java_lang_object != NULL);
-	add_compound_member(type, subobject_ident, type_java_lang_object);
+	add_compound_member(type, superobject_ident, type_java_lang_object);
 	ident *length_id = new_id_from_str("length");
 	gcj_array_length = add_compound_member(type, length_id, type_int);
 
@@ -1163,7 +1163,7 @@ void gcji_init()
 	type_field_desc  = create_field_desc_type();
 	type_utf8_const  = create_utf8_const_type();
 
-	subobject_ident  = new_id_from_str("@base");
+	superobject_ident  = new_id_from_str("@base");
 
 	ddispatch_set_vtable_layout(2, 4, 2, setup_vtable);
 	ddispatch_set_abstract_method_ident(new_id_from_str("_Jv_ThrowAbstractMethodError"));
