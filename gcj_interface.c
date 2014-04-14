@@ -328,7 +328,7 @@ ir_node *gcji_get_arraylength(dbg_info *dbgi, ir_node *block, ir_node *arrayref,
                               ir_node **mem)
 {
 	ir_node  *cur_mem   = *mem;
-	ir_node  *addr      = new_r_simpleSel(block, arrayref, gcj_array_length);
+	ir_node  *addr      = new_r_Member(block, arrayref, gcj_array_length);
 	ir_node  *load      = new_rd_Load(dbgi, block, cur_mem, addr, mode_int,
 	                                  cons_none);
 	ir_node  *load_mem  = new_r_Proj(load, mode_M, pn_Load_M);
@@ -706,7 +706,8 @@ static ir_node *get_vtable_ref(ir_type *type)
 	ir_node  *addr  = new_r_Address(ccode, cls_vtable);
 	unsigned offset
 		= ddispatch_get_vptr_points_to_index() * get_mode_size_bytes(mode_reference);
-	ir_node *cnst  = new_r_Const_long(ccode, mode_reference, offset);
+	ir_mode *offset_mode = get_reference_mode_unsigned_eq(mode_reference);
+	ir_node *cnst  = new_r_Const_long(ccode, offset_mode, offset);
 	ir_node *block = get_r_cur_block(ccode);
 	ir_node *add   = new_r_Add(block, addr, cnst, mode_reference);
 	return add;
@@ -914,7 +915,7 @@ ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface, ir_entity *metho
 	// we need the reference to the object's class$ field
 	// first, dereference the vptr in order to get the vtable address.
 	ir_entity *vptr_entity   = get_vptr_entity();
-	ir_node   *vptr_addr     = new_r_Sel(block, objptr, 0, NULL, vptr_entity);
+	ir_node   *vptr_addr     = new_r_Member(block, objptr, vptr_entity);
 	ir_node   *vptr_load     = new_r_Load(block, cur_mem, vptr_addr, mode_reference, cons_none);
 	ir_node   *vtable_addr   = new_r_Proj(vptr_load, mode_reference, pn_Load_res);
 	           cur_mem       = new_r_Proj(vptr_load, mode_M, pn_Load_M);
@@ -997,12 +998,9 @@ static ir_node *alloc_dims_array(unsigned dims, ir_node **sizes, ir_graph *irg, 
 	ir_node *arr   = new_r_Proj(alloc, mode_reference, pn_Alloc_res);
 	cur_mem = new_r_Proj(alloc, mode_M, pn_Alloc_M);
 
-	ir_entity *elem_ent = get_array_element_entity(type_array_int);
-
 	for (unsigned d = 0; d < dims; d++) {
 		ir_node *index_const = new_r_Const_long(irg, mode_int, d);
-		ir_node *in[] = { index_const };
-		ir_node *sel = new_r_Sel(block, arr, 1, in, elem_ent);
+		ir_node *sel = new_r_Sel(block, arr, index_const, type_array_int);
 		ir_node *store = new_r_Store(block, cur_mem, sel, sizes[d], cons_none);
 		cur_mem = new_r_Proj(store, mode_M, pn_Store_M);
 	}

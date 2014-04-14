@@ -1116,22 +1116,29 @@ static void construct_xcmp(ir_mode *mode, ir_relation rel_1, ir_relation rel_2)
 	symbolic_push(res);
 }
 
+/**
+ * Returns the offset into the data for an array object.
+ */
+static ir_node *get_array_data_base(ir_node *addr)
+{
+	ir_mode *mode        = get_irn_mode(addr);
+	ir_mode *mode_offset = get_reference_mode_unsigned_eq(mode);
+	ir_node *offset      = new_Const_long(mode_offset, GCJI_DATA_OFFSET);
+	return new_Add(addr, offset, mode);
+}
+
 static void construct_array_load(ir_type *array_type)
 {
-	ir_node   *index     = symbolic_pop(mode_int);
-	ir_node   *base_addr = symbolic_pop(mode_reference);
-	           base_addr = new_Add(base_addr, new_Const_long(mode_reference, GCJI_DATA_OFFSET), mode_reference); // skip the j.l.Object subobject and the length field.
-
-	ir_node   *in[1]     = { index };
-	ir_entity *entity    = get_array_element_entity(array_type);
-	ir_node   *addr      = new_Sel(base_addr, 1, in, entity);
-
-	ir_node   *mem       = get_store();
-	ir_type   *type      = get_entity_type(entity);
-	ir_mode   *mode      = get_type_mode(type);
-	ir_node   *load      = new_Load(mem, addr, mode, cons_none);
-	ir_node   *new_mem   = new_Proj(load, mode_M, pn_Load_M);
-	ir_node   *value     = new_Proj(load, mode, pn_Load_res);
+	ir_node *index     = symbolic_pop(mode_int);
+	ir_node *arr_addr  = symbolic_pop(mode_reference);
+	ir_node *base_addr = get_array_data_base(arr_addr);
+	ir_node *addr      = new_Sel(base_addr, index, array_type);
+	ir_node *mem       = get_store();
+	ir_type *type      = get_array_element_type(array_type);
+	ir_mode *mode      = get_type_mode(type);
+	ir_node *load      = new_Load(mem, addr, mode, cons_none);
+	ir_node *new_mem   = new_Proj(load, mode_M, pn_Load_M);
+	ir_node *value     = new_Proj(load, mode, pn_Load_res);
 	set_store(new_mem);
 
 	value = get_arith_value(value);
@@ -1140,23 +1147,18 @@ static void construct_array_load(ir_type *array_type)
 
 static void construct_array_store(ir_type *array_type)
 {
-	ir_entity *entity    = get_array_element_entity(array_type);
-	ir_type   *type      = get_entity_type(entity);
-	ir_mode   *mode      = get_type_mode(type);
-	ir_mode   *arith_mode= get_arith_mode(mode);
-
-	ir_node   *op        = symbolic_pop(arith_mode); // need to pop the operand as 32 bit value, but...
-	ir_node   *value     = new_Conv(op, mode);       // ... obey the real type when writing to memory.
-	ir_node   *index     = symbolic_pop(mode_int);
-	ir_node   *base_addr = symbolic_pop(mode_reference);
-	           base_addr = new_Add(base_addr, new_Const_long(mode_reference, GCJI_DATA_OFFSET), mode_reference); // skip the j.l.Object subobject and the length field.
-
-	ir_node   *in[1]     = { index };
-	ir_node   *addr      = new_Sel(base_addr, 1, in, entity);
-
-	ir_node   *mem       = get_store();
-	ir_node   *store     = new_Store(mem, addr, value, cons_none);
-	ir_node   *new_mem   = new_Proj(store, mode_M, pn_Store_M);
+	ir_type *type       = get_array_element_type(array_type);
+	ir_mode *mode       = get_type_mode(type);
+	ir_mode *arith_mode = get_arith_mode(mode);
+	ir_node *op         = symbolic_pop(arith_mode); // need to pop the operand as 32 bit value, but...
+	ir_node *value      = new_Conv(op, mode);       // ... obey the real type when writing to memory.
+	ir_node *index      = symbolic_pop(mode_int);
+	ir_node *arr_addr   = symbolic_pop(mode_reference);
+	ir_node *base_addr  = get_array_data_base(arr_addr);
+	ir_node *addr       = new_Sel(base_addr, index, array_type);
+	ir_node *mem        = get_store();
+	ir_node *store      = new_Store(mem, addr, value, cons_none);
+	ir_node *new_mem    = new_Proj(store, mode_M, pn_Store_M);
 	set_store(new_mem);
 }
 
@@ -2139,7 +2141,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				addr = new_Address(entity);
 			} else {
 				ir_node  *object = symbolic_pop(mode_reference);
-				addr             = new_simpleSel(object, entity);
+				addr             = new_Member(object, entity);
 			}
 
 			if (opcode == OPC_GETSTATIC || opcode == OPC_GETFIELD) {
