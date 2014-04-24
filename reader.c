@@ -35,6 +35,7 @@
 #include <liboo/rtti.h>
 #include <liboo/nodes.h>
 #include <liboo/eh.h>
+#include <liboo/opt.h>
 
 //#define EXCEPTIONS
 
@@ -2926,6 +2927,7 @@ int main(int argc, char **argv)
 	const char *output_name   = NULL;
 	bool        save_temps    = false;
 	bool        static_stdlib = false;
+	bool        optimize      = false;
 	enum {
 		RUNTIME_GCJ,
 		RUNTIME_SIMPLERT
@@ -2962,6 +2964,8 @@ int main(int argc, char **argv)
 			runtime_type = RUNTIME_SIMPLERT;
 		} else if (EQUALS("--gcj")) {
 			runtime_type = RUNTIME_GCJ;
+		} else if (EQUALS("-O")) {
+			optimize = true;
 		} else {
 			main_class_name = argv[curarg];
 		}
@@ -3026,6 +3030,14 @@ int main(int argc, char **argv)
 	int res = tr_verify();
 	assert(res != 0);
 
+	/* optimize */
+	if (optimize) {
+		oo_register_opt_funcs();
+		for (size_t i = 0, n = get_irp_n_irgs(); i < n; ++i) {
+			ir_graph *irg = get_irp_irg(i);
+			optimize_graph_df(irg);
+		}
+	}
 	oo_lower();
 	/* kinda hacky: we remove vtables for external classes now
 	 * (we constructed them in the first places because we needed the vtable_ids
