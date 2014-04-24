@@ -8,6 +8,7 @@
 #include <liboo/ddispatch.h>
 #include <liboo/rtti.h>
 #include <liboo/dmemory.h>
+#include <liboo/nodes.h>
 #include "adt/cpset.h"
 #include "mangle.h"
 #include "adt/obst.h"
@@ -47,6 +48,7 @@ static ir_type *type_field_desc;
 static ir_type *type_utf8_const;
 static ir_type *type_java_lang_object;
 static ir_type *type_java_lang_class;
+static ir_type *type_jarray;
 
 ident *superobject_ident;
 
@@ -150,20 +152,21 @@ static ir_type *create_utf8_const_type(void)
 
 void gcji_create_array_type(void)
 {
-	ident   *id   = new_id_from_str("array");
-	ir_type *type = new_type_class(id);
+	ident *id = new_id_from_str("array");
+	type_jarray = new_type_class(id);
 	assert(type_java_lang_object != NULL);
-	add_compound_member(type, superobject_ident, type_java_lang_object);
+	add_class_supertype(type_jarray, type_java_lang_object);
+	add_compound_member(type_jarray, superobject_ident, type_java_lang_object);
 	ident *length_id = new_id_from_str("length");
-	gcj_array_length = add_compound_member(type, length_id, type_int);
+	gcj_array_length = add_compound_member(type_jarray, length_id, type_int);
 
 	ir_type *data_array = new_type_array(type_byte);
 	set_array_variable_size(data_array, 1);
 	ident *data_id = new_id_from_str("data");
-	add_compound_member(type, data_id, data_array);
-	set_compound_variable_size(type, 1);
+	add_compound_member(type_jarray, data_id, data_array);
+	set_compound_variable_size(type_jarray, 1);
 
-	default_layout_compound_type(type);
+	default_layout_compound_type(type_jarray);
 }
 
 ir_entity *gcji_get_abstract_method_entity(void)
@@ -264,8 +267,13 @@ ir_node *gcji_allocate_object(ir_type *type)
     ir_node *new_mem   = new_Proj(call, mode_M, pn_Call_M);
 	ir_node *ress      = new_Proj(call, mode_T, pn_Call_T_result);
 	ir_node *res       = new_Proj(ress, mode_reference, 0);
-	set_store(new_mem);
-	return res;
+
+	ir_node *assure_vptr = new_VptrIsSet(new_mem, res, type);
+	ir_node *new_mem2    = new_Proj(assure_vptr, mode_M, pn_VptrIsSet_M);
+	ir_node *res2        = new_Proj(assure_vptr, mode_reference,
+	                                pn_VptrIsSet_res);
+	set_store(new_mem2);
+	return res2;
 }
 
 ir_node *gcji_allocate_array(ir_type *eltype, ir_node *count)
@@ -295,8 +303,13 @@ ir_node *gcji_allocate_array(ir_type *eltype, ir_node *count)
 		new_mem = new_Proj(call, mode_M, pn_Call_M);
 		res     = new_Proj(ress, mode_reference, 0);
 	}
-	set_store(new_mem);
-	return res;
+
+	ir_node *assure_vptr = new_VptrIsSet(new_mem, res, type_jarray);
+	ir_node *new_mem2    = new_Proj(assure_vptr, mode_M, pn_VptrIsSet_M);
+	ir_node *res2        = new_Proj(assure_vptr, mode_reference,
+	                                pn_VptrIsSet_res);
+	set_store(new_mem2);
+	return res2;
 }
 
 ir_node *gcji_new_string(ir_entity *bytes)
@@ -312,6 +325,9 @@ ir_node *gcji_new_string(ir_entity *bytes)
 	ir_node *ress        = new_Proj(call, mode_T, pn_Call_T_result);
 	ir_node *res         = new_Proj(ress, mode_reference, 0);
 	set_store(new_mem);
+
+	// TODO: get type for java.lang.String from somewhere and use VptrIsSet
+	// on the result
 	return res;
 }
 
