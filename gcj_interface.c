@@ -11,6 +11,7 @@
 #include "adt/cpset.h"
 #include "mangle.h"
 #include "adt/obst.h"
+#include "adt/util.h"
 
 #include <assert.h>
 #include <string.h>
@@ -236,122 +237,110 @@ void gcji_set_java_lang_object(ir_type *type)
 	type_java_lang_object = type;
 }
 
-void gcji_class_init(ir_type *type, ir_node *block, ir_node **mem)
+void gcji_class_init(ir_type *type)
 {
 	assert(is_Class_type(type));
 
-	ir_graph *irg         = get_irn_irg(block);
-	ir_node  *init_callee = new_r_Address(irg, gcj_init_entity);
-
-	ir_node *cur_mem        = *mem;
-	ir_node *jclass         = gcji_get_runtime_classinfo(type, irg, block, &cur_mem);
-	ir_node *init_args[1]   = { jclass };
-	ir_type *init_call_type = get_entity_type(gcj_init_entity);
-	ir_node *init_call      = new_r_Call(block, *mem, init_callee, 1, init_args, init_call_type);
-	         cur_mem        = new_r_Proj(init_call, mode_M, pn_Call_M);
-
-	*mem = cur_mem;
+	ir_node *addr      = new_Address(gcj_init_entity);
+	ir_node *jclass    = gcji_get_runtime_classinfo(type);
+	ir_node *args[]    = { jclass };
+	ir_type *call_type = get_entity_type(gcj_init_entity);
+	ir_node *mem       = get_store();
+	ir_node *call      = new_Call(mem, addr, ARRAY_SIZE(args), args, call_type);
+	ir_node *new_mem   = new_Proj(call, mode_M, pn_Call_M);
+	set_store(new_mem);
 }
 
-ir_node *gcji_allocate_object(ir_type *type, ir_node *block, ir_node **mem)
+ir_node *gcji_allocate_object(ir_type *type)
 {
 	assert(is_Class_type(type));
 
-	ir_node *cur_mem = *mem;
-
-	ir_graph *irg          = get_irn_irg(block);
-	ir_node  *alloc_callee = new_r_Address(irg, gcj_alloc_entity);
-
-	ir_node *jclass          = gcji_get_runtime_classinfo(type, irg, block, &cur_mem);
-	ir_node *alloc_args[1]   = { jclass };
-	ir_type *alloc_call_type = get_entity_type(gcj_alloc_entity);
-	ir_node *alloc_call      = new_r_Call(block, cur_mem, alloc_callee, 1, alloc_args, alloc_call_type);
-             cur_mem         = new_r_Proj(alloc_call, mode_M, pn_Call_M);
-	ir_node *ress            = new_r_Proj(alloc_call, mode_T, pn_Call_T_result);
-	ir_node *res             = new_r_Proj(ress, mode_reference, 0);
-
-	*mem = cur_mem;
+	ir_node *addr      = new_Address(gcj_alloc_entity);
+	ir_node *jclass    = gcji_get_runtime_classinfo(type);
+	ir_node *args[]    = { jclass };
+	ir_type *call_type = get_entity_type(gcj_alloc_entity);
+	ir_node *mem       = get_store();
+	ir_node *call      = new_Call(mem, addr, ARRAY_SIZE(args), args, call_type);
+    ir_node *new_mem   = new_Proj(call, mode_M, pn_Call_M);
+	ir_node *ress      = new_Proj(call, mode_T, pn_Call_T_result);
+	ir_node *res       = new_Proj(ress, mode_reference, 0);
+	set_store(new_mem);
 	return res;
 }
 
-ir_node *gcji_allocate_array(ir_type *eltype, ir_node *count, ir_graph *irg, ir_node *block, ir_node **mem)
+ir_node *gcji_allocate_array(ir_type *eltype, ir_node *count)
 {
-	ir_node   *res        = NULL;
-	ir_node   *cur_mem    = *mem;
-
+	ir_node *jclass = gcji_get_runtime_classinfo(eltype);
+	ir_node *res;
+	ir_node *new_mem;
 	if (is_Primitive_type(eltype)) {
-		ir_node *callee = new_r_Address(irg, gcj_new_prim_array_entity);
-
-		ir_node *jclass      = gcji_get_runtime_classinfo(eltype, irg, block, &cur_mem);
-		ir_node *args[2]     = { jclass, count };
-		ir_type *callee_type = get_entity_type(gcj_new_prim_array_entity);
-		ir_node *call        = new_r_Call(block, cur_mem, callee, 2, args, callee_type);
-		         cur_mem     = new_r_Proj(call, mode_M, pn_Call_M);
-		ir_node *ress        = new_r_Proj(call, mode_T, pn_Call_T_result);
-		         res         = new_r_Proj(ress, mode_reference, 0);
+		ir_node *addr      = new_Address(gcj_new_prim_array_entity);
+		ir_node *args[]    = { jclass, count };
+		ir_type *call_type = get_entity_type(gcj_new_prim_array_entity);
+		ir_node *mem       = get_store();
+		ir_node *call      = new_Call(mem, addr, ARRAY_SIZE(args), args,
+		                              call_type);
+		ir_node *ress      = new_Proj(call, mode_T, pn_Call_T_result);
+		new_mem = new_Proj(call, mode_M, pn_Call_M);
+		res     = new_r_Proj(ress, mode_reference, 0);
 	} else {
-		ir_node *callee = new_r_Address(irg, gcj_new_object_array_entity);
-
-		ir_node *jclass      = gcji_get_runtime_classinfo(eltype, irg, block, &cur_mem);
-		ir_node *nullptr     = new_r_Const_long(irg, mode_reference, 0);
-		ir_node *args[3]     = { count, jclass, nullptr };
-		ir_type *callee_type = get_entity_type(gcj_new_object_array_entity);
-		ir_node *call        = new_r_Call(block, cur_mem, callee, 3, args, callee_type);
-		         cur_mem     = new_r_Proj(call, mode_M, pn_Call_M);
-		ir_node *ress        = new_r_Proj(call, mode_T, pn_Call_T_result);
-		         res         = new_r_Proj(ress, mode_reference, 0);
+		ir_node *addr      = new_Address(gcj_new_object_array_entity);
+		ir_node *null      = new_Const(get_mode_null(mode_reference));
+		ir_node *args[]    = { count, jclass, null };
+		ir_type *call_type = get_entity_type(gcj_new_object_array_entity);
+		ir_node *mem       = get_store();
+		ir_node *call      = new_Call(mem, addr, ARRAY_SIZE(args), args,
+		                              call_type);
+		ir_node *ress      = new_Proj(call, mode_T, pn_Call_T_result);
+		new_mem = new_Proj(call, mode_M, pn_Call_M);
+		res     = new_Proj(ress, mode_reference, 0);
 	}
-
-	*mem = cur_mem;
+	set_store(new_mem);
 	return res;
 }
 
-ir_node *gcji_new_string(ir_entity *bytes, ir_graph *irg, ir_node *block, ir_node **mem)
+ir_node *gcji_new_string(ir_entity *bytes)
 {
-	ir_node *callee      = new_r_Address(irg, gcj_new_string_entity);
-	ir_node *string_symc = new_r_Address(irg, bytes);
-
-	ir_node *args[1] = { string_symc };
-
-	ir_node *cur_mem     = *mem;
-	ir_type *callee_type = get_entity_type(gcj_new_string_entity);
-	ir_node *call        = new_r_Call(block, cur_mem, callee, 1, args, callee_type);
-	         cur_mem     = new_r_Proj(call, mode_M, pn_Call_M);
-	ir_node *ress        = new_r_Proj(call, mode_T, pn_Call_T_result);
-	ir_node *res         = new_r_Proj(ress, mode_reference, 0);
-
-	*mem = cur_mem;
+	ir_node *addr        = new_Address(gcj_new_string_entity);
+	ir_node *string_symc = new_Address(bytes);
+	ir_node *args[]      = { string_symc };
+	ir_node *mem         = get_store();
+	ir_type *call_type   = get_entity_type(gcj_new_string_entity);
+	ir_node *call        = new_Call(mem, addr, ARRAY_SIZE(args), args,
+	                                call_type);
+	ir_node *new_mem     = new_Proj(call, mode_M, pn_Call_M);
+	ir_node *ress        = new_Proj(call, mode_T, pn_Call_T_result);
+	ir_node *res         = new_Proj(ress, mode_reference, 0);
+	set_store(new_mem);
 	return res;
 }
 
-ir_node *gcji_get_arraylength(dbg_info *dbgi, ir_node *block, ir_node *arrayref,
-                              ir_node **mem)
+static ir_node *gcji_get_arraylength(dbg_info *dbgi, ir_node *block,
+                                     ir_node *arrayref, ir_node **mem)
 {
-	ir_node  *cur_mem   = *mem;
-	ir_node  *addr      = new_r_Member(block, arrayref, gcj_array_length);
-	ir_node  *load      = new_rd_Load(dbgi, block, cur_mem, addr, mode_int,
-	                                  cons_none);
-	ir_node  *load_mem  = new_r_Proj(load, mode_M, pn_Load_M);
-	ir_node  *res       = new_r_Proj(load, mode_int, pn_Load_res);
-
-	*mem = load_mem;
+	ir_node  *addr    = new_r_Member(block, arrayref, gcj_array_length);
+	ir_node  *load    = new_rd_Load(dbgi, block, *mem, addr, mode_int,
+	                                cons_none);
+	ir_node  *new_mem = new_r_Proj(load, mode_M, pn_Load_M);
+	ir_node  *res     = new_r_Proj(load, mode_int, pn_Load_res);
+	*mem = new_mem;
 	return res;
 }
 
-ir_node *gcji_get_arrayclass(ir_node *array_class_ref, ir_graph *irg, ir_node *block, ir_node **mem)
+static ir_node *gcji_get_arrayclass(ir_node *block, ir_node **mem,
+                                    ir_node *array_class_ref)
 {
-	ir_node *cur_mem = *mem;
-
-	ir_node *callee      = new_r_Address(irg, gcj_get_array_class_entity);
-
-	ir_node *args[]      = { array_class_ref, new_r_Const_long(irg, mode_reference, 0) };
-	ir_type *callee_type = get_entity_type(gcj_get_array_class_entity);
-	ir_node *call        = new_r_Call(block, cur_mem, callee, 2, args, callee_type);
-	         cur_mem     = new_r_Proj(call, mode_M, pn_Call_M);
-	ir_node *ress        = new_r_Proj(call, mode_T, pn_Call_T_result);
-	ir_node *res         = new_r_Proj(ress, mode_reference, 0);
-
-	*mem = cur_mem;
+	ir_graph *irg      = get_Block_irg(block);
+	ir_node *addr      = new_r_Address(irg, gcj_get_array_class_entity);
+	ir_node *null      = new_r_Const(irg, get_mode_null(mode_reference));
+	ir_node *args[]    = { array_class_ref, null };
+	ir_type *call_type = get_entity_type(gcj_get_array_class_entity);
+	ir_node *call      = new_r_Call(block, *mem, addr, ARRAY_SIZE(args), args,
+	                                call_type);
+	ir_node *new_mem   = new_Proj(call, mode_M, pn_Call_M);
+	ir_node *ress      = new_Proj(call, mode_T, pn_Call_T_result);
+	ir_node *res       = new_Proj(ress, mode_reference, 0);
+	*mem = new_mem;
 	return res;
 }
 
@@ -860,12 +849,13 @@ static ir_entity *emit_type_signature(ir_type *type)
 	return res;
 }
 
-ir_node *gcji_get_runtime_classinfo(ir_type *type, ir_graph *irg, ir_node *block, ir_node **mem)
+static ir_node *gcji_get_runtime_classinfo_(ir_node *block, ir_node **mem,
+                                            ir_type *type)
 {
 	ir_entity *rtti_entity = gcji_get_rtti_entity(type);
-	if (rtti_entity != NULL) {
+	ir_graph  *irg         = get_Block_irg(block);
+	if (rtti_entity != NULL)
 		return new_r_Address(irg, rtti_entity);
-	}
 
 	/* Arrays are represented as pointer types. We extract the base type,
 	 * get its classinfo and let gcj give the array type for that.
@@ -878,27 +868,32 @@ ir_node *gcji_get_runtime_classinfo(ir_type *type, ir_graph *irg, ir_node *block
 	assert(is_Pointer_type(type));
 
 	unsigned n_pointer_levels = 0;
-	ir_type *eltype = type;
+	ir_type *eltype           = type;
 	while (is_Pointer_type(eltype)) {
-		n_pointer_levels++;
+		++n_pointer_levels;
 		eltype = get_pointer_points_to_type(eltype);
 	}
 
-	if (!is_Primitive_type(eltype)) n_pointer_levels--;
+	if (!is_Primitive_type(eltype))
+		--n_pointer_levels;
 
 	ir_entity *elem_cdf = gcji_get_rtti_entity(eltype);
 	assert(elem_cdf != NULL);
+
 	ir_node *array_class_ref = new_r_Address(irg, elem_cdf);
-
-	ir_node *cur_mem = *mem;
-
 	for (unsigned d = 0; d < n_pointer_levels; d++) {
-		array_class_ref = gcji_get_arrayclass(array_class_ref, irg, block, &cur_mem);
+		array_class_ref = gcji_get_arrayclass(block, mem, array_class_ref);
 	}
-
-	*mem = cur_mem;
-
 	return array_class_ref;
+}
+
+ir_node *gcji_get_runtime_classinfo(ir_type *type)
+{
+	ir_node *block = get_cur_block();
+	ir_node *mem   = get_store();
+	ir_node *res   = gcji_get_runtime_classinfo_(block, &mem, type);
+	set_store(mem);
+	return res;
 }
 
 static ir_entity *get_vptr_entity(void)
@@ -908,7 +903,9 @@ static ir_entity *get_vptr_entity(void)
 	return oo_get_class_vptr_entity(type);
 }
 
-ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface, ir_entity *method, ir_graph *irg, ir_node *block, ir_node **mem)
+ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface,
+                               ir_entity *method, ir_graph *irg,
+                               ir_node *block, ir_node **mem)
 {
 	ir_node   *cur_mem       = *mem;
 
@@ -951,79 +948,72 @@ ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface, ir_entity *metho
 	return res;
 }
 
-ir_node *gcji_instanceof(ir_node *objptr, ir_type *classtype, ir_graph *irg, ir_node *block, ir_node **mem)
+static ir_node *gcji_instanceof(ir_node *objptr, ir_type *classtype,
+                                ir_graph *irg, ir_node *block, ir_node **mem)
 {
-	ir_node   *cur_mem = *mem;
-	ir_node   *jclass = gcji_get_runtime_classinfo(classtype, irg, block, &cur_mem);
-
-	ir_type   *instanceof_type = get_entity_type(gcj_instanceof_entity);
-	ir_node   *callee = new_r_Address(irg, gcj_instanceof_entity);
-	ir_node   *args[] = { objptr, jclass };
-
-	ir_node   *call = new_r_Call(block, cur_mem, callee, 2, args, instanceof_type);
-	           cur_mem = new_r_Proj(call, mode_M, pn_Call_M);
-	ir_node   *ress = new_r_Proj(call, mode_T, pn_Call_T_result);
-	ir_node   *call_res = new_r_Proj(ress, mode_int, 0);
-	ir_node   *zero = new_r_Const(irg, get_mode_null(mode_int));
-	ir_node   *res  = new_r_Cmp(block, call_res, zero, ir_relation_less_greater);
-
-	*mem = cur_mem;
+	ir_node *jclass    = gcji_get_runtime_classinfo_(block, mem, classtype);
+	ir_node *addr      = new_r_Address(irg, gcj_instanceof_entity);
+	ir_node *args[]    = { objptr, jclass };
+	ir_type *call_type = get_entity_type(gcj_instanceof_entity);
+	ir_node *call      = new_r_Call(block, *mem, addr, ARRAY_SIZE(args), args,
+	                                call_type);
+	ir_node *new_mem   = new_r_Proj(call, mode_M, pn_Call_M);
+	ir_node *ress      = new_r_Proj(call, mode_T, pn_Call_T_result);
+	ir_node *call_res  = new_r_Proj(ress, mode_int, 0);
+	ir_node *zero      = new_r_Const(irg, get_mode_null(mode_int));
+	ir_node *res       = new_r_Cmp(block, call_res, zero,
+	                               ir_relation_less_greater);
+	*mem = new_mem;
 	return res;
 }
 
-void gcji_checkcast(ir_type *classtype, ir_node *objptr, ir_graph *irg, ir_node *block, ir_node **mem)
+void gcji_checkcast(ir_type *classtype, ir_node *objptr)
 {
-	ir_node   *cur_mem = *mem;
-	ir_node   *jclass = gcji_get_runtime_classinfo(classtype, irg, block, &cur_mem);
-
-	ir_type   *instanceof_type = get_entity_type(gcj_checkcast_entity);
-	ir_node   *callee = new_r_Address(irg, gcj_checkcast_entity);
-	ir_node   *args[] = { jclass, objptr };
-
-	ir_node   *call = new_r_Call(block, cur_mem, callee, 2, args, instanceof_type);
-	cur_mem = new_r_Proj(call, mode_M, pn_Call_M);
-
-	*mem = cur_mem;
+	ir_node *jclass    = gcji_get_runtime_classinfo(classtype);
+	ir_node *addr      = new_Address(gcj_checkcast_entity);
+	ir_type *call_type = get_entity_type(gcj_checkcast_entity);
+	ir_node *args[]    = { jclass, objptr };
+	ir_node *mem       = get_store();
+	ir_node *call      = new_Call(mem, addr, ARRAY_SIZE(args), args, call_type);
+	ir_node *new_mem   = new_Proj(call, mode_M, pn_Call_M);
+	set_store(new_mem);
 }
 
-static ir_node *alloc_dims_array(unsigned dims, ir_node **sizes, ir_graph *irg, ir_node *block, ir_node **mem)
+static ir_node *alloc_dims_array(unsigned dims, ir_node **sizes)
 {
-	ir_node *cur_mem = *mem;
-
-	ir_mode        *dim_mode = mode_ushort;
-	const unsigned  bytes    = dims * (get_mode_size_bits(dim_mode) / 8);
-
-	ir_node *dims_const = new_r_Const_long(irg, dim_mode, bytes);
-	ir_node *alloc = new_r_Alloc(block, cur_mem, dims_const, 1);
-	ir_node *arr   = new_r_Proj(alloc, mode_reference, pn_Alloc_res);
-	cur_mem = new_r_Proj(alloc, mode_M, pn_Alloc_M);
+	ir_mode *dim_mode   = mode_ushort;
+	unsigned bytes      = dims * (get_mode_size_bits(dim_mode) / 8);
+	ir_node *dims_const = new_Const_long(dim_mode, bytes);
+	ir_node *mem        = get_store();
+	ir_node *alloc      = new_Alloc(mem, dims_const, 1);
+	ir_node *arr        = new_Proj(alloc, mode_reference, pn_Alloc_res);
+	ir_node *new_mem    = new_Proj(alloc, mode_M, pn_Alloc_M);
 
 	for (unsigned d = 0; d < dims; d++) {
-		ir_node *index_const = new_r_Const_long(irg, mode_int, d);
-		ir_node *sel = new_r_Sel(block, arr, index_const, type_array_int);
-		ir_node *store = new_r_Store(block, cur_mem, sel, sizes[d], cons_none);
-		cur_mem = new_r_Proj(store, mode_M, pn_Store_M);
+		ir_node *index_const = new_Const_long(mode_int, d);
+		ir_node *sel         = new_Sel(arr, index_const, type_array_int);
+		ir_node *store       = new_Store(new_mem, sel, sizes[d], cons_none);
+		new_mem = new_Proj(store, mode_M, pn_Store_M);
 	}
 
-	*mem = cur_mem;
-
+	set_store(new_mem);
 	return arr;
 }
 
-ir_node *gcji_new_multiarray(ir_node *array_class_ref, unsigned dims, ir_node **sizes, ir_graph *irg, ir_node *block, ir_node **mem)
+ir_node *gcji_new_multiarray(ir_node *array_class_ref, unsigned dims,
+                             ir_node **sizes)
 {
-	ir_node *cur_mem = *mem;
-
-	ir_node *callee      = new_r_Address(irg, gcj_new_multiarray_entity);
-	ir_node *dims_arr    = alloc_dims_array(dims, sizes, irg, block, &cur_mem);
-	ir_node *args[]      = { array_class_ref, new_r_Const_long(irg, mode_int, dims), dims_arr };
-	ir_type *callee_type = get_entity_type(gcj_new_multiarray_entity);
-	ir_node *call        = new_r_Call(block, cur_mem, callee, 3, args, callee_type);
-	         cur_mem     = new_r_Proj(call, mode_M, pn_Call_M);
-	ir_node *ress        = new_r_Proj(call, mode_T, pn_Call_T_result);
-	ir_node *res         = new_r_Proj(ress, mode_reference, 0);
-
-	*mem = cur_mem;
+	ir_node *addr      = new_Address(gcj_new_multiarray_entity);
+	ir_node *dims_arr  = alloc_dims_array(dims, sizes);
+	ir_node *cnst      = new_Const_long(mode_int, dims);
+	ir_node *args[]    = { array_class_ref, cnst, dims_arr };
+	ir_type *call_type = get_entity_type(gcj_new_multiarray_entity);
+	ir_node *mem       = get_store();
+	ir_node *call      = new_Call(mem, addr, ARRAY_SIZE(args), args, call_type);
+	ir_node *new_mem   = new_Proj(call, mode_M, pn_Call_M);
+	ir_node *ress      = new_Proj(call, mode_T, pn_Call_T_result);
+	ir_node *res       = new_Proj(ress, mode_reference, 0);
+	set_store(new_mem);
 	return res;
 }
 

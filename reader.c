@@ -879,15 +879,9 @@ static void push_load_const(uint16_t index)
 		break;
 	}
 	case CONSTANT_STRING: {
-		constant_t *utf8_const = get_constant(constant->string.string_index);
-
-		ir_entity *string_const = gcji_emit_utf8_const(utf8_const, 0);
-		ir_graph  *irg          = get_current_ir_graph();
-		ir_node   *block        = get_r_cur_block(irg);
-		ir_node   *mem          = get_store();
-		ir_node   *res          = gcji_new_string(string_const, irg, block, &mem);
-		set_store(mem);
-
+		constant_t *utf8_const   = get_constant(constant->string.string_index);
+		ir_entity  *string_const = gcji_emit_utf8_const(utf8_const, 0);
+		ir_node    *res          = gcji_new_string(string_const);
 		symbolic_push(res);
 		break;
 	}
@@ -1164,13 +1158,9 @@ static void construct_array_store(ir_type *array_type)
 
 static void construct_new_array(ir_type *array_type, ir_node *count)
 {
-	ir_node  *mem       = get_store();
 	ir_type  *elem_type = get_array_element_type(array_type);
-	ir_node  *block     = get_cur_block();
-	ir_graph *irg       = get_irn_irg(block);
 	ir_node  *count_u   = new_Conv(count, mode_Iu);
-	ir_node  *res       = gcji_allocate_array(elem_type, count_u, irg, block, &mem);
-	set_store(mem);
+	ir_node  *res       = gcji_allocate_array(elem_type, count_u);
 	symbolic_push(res);
 }
 
@@ -1247,9 +1237,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	method_t *method = oo_get_entity_link(entity);
 	if (method->access_flags & ACCESS_FLAG_STATIC) {
 		ir_type *owner = (ir_type*)class_file->link;
-		ir_node *cur_mem = get_store();
-		gcji_class_init(owner, get_cur_block(), &cur_mem);
-		set_store(cur_mem);
+		gcji_class_init(owner);
 	}
 
 	/* arguments become local variables */
@@ -2123,7 +2111,6 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node   *value   = NULL;
 			ir_node   *addr;
 
-			ir_node *cur_mem = get_store();
 			ir_type *type    = get_entity_type(entity);
 			ir_mode *mode    = get_type_mode(type);
 			ir_mode *arith_mode = get_arith_mode(mode);
@@ -2136,28 +2123,29 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				ir_type *owner = get_field_defining_class(index);
 				finalize_class_type(owner);
 
-				ir_node  *block  = get_cur_block();
-				gcji_class_init(owner, block, &cur_mem);
+				gcji_class_init(owner);
 				addr = new_Address(entity);
 			} else {
 				ir_node  *object = symbolic_pop(mode_reference);
 				addr             = new_Member(object, entity);
 			}
 
+			ir_node *new_mem;
 			if (opcode == OPC_GETSTATIC || opcode == OPC_GETFIELD) {
-				ir_node *load    = new_Load(cur_mem, addr, mode, cons_none);
-				         cur_mem = new_Proj(load, mode_M, pn_Load_M);
+				ir_node *mem     = get_store();
+				ir_node *load    = new_Load(mem, addr, mode, cons_none);
 				ir_node *result  = new_Proj(load, mode, pn_Load_res);
-				set_store(cur_mem);
-				result = get_arith_value(result);
+				new_mem = new_Proj(load, mode_M, pn_Load_M);
+				result  = get_arith_value(result);
 				symbolic_push(result);
 			} else {
 				assert(opcode == OPC_PUTSTATIC || opcode == OPC_PUTFIELD);
 				value = new_Conv(value, mode);
-				ir_node *store   = new_Store(cur_mem, addr, value, cons_none);
-				         cur_mem = new_Proj(store, mode_M, pn_Store_M);
-				set_store(cur_mem);
+				ir_node *mem     = get_store();
+				ir_node *store   = new_Store(mem, addr, value, cons_none);
+				new_mem = new_Proj(store, mode_M, pn_Store_M);
 			}
+			set_store(new_mem);
 			continue;
 		}
 
@@ -2225,18 +2213,15 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 					val = new_Conv(val, mode);
 				args[i]           = val;
 			}
-			ir_node *cur_mem = get_store();
-			ir_node *block = get_r_cur_block(irg);
-			gcji_class_init(owner, block, &cur_mem);
-			set_store(cur_mem);
+			gcji_class_init(owner);
 
 #ifdef EXCEPTIONS
 			ir_node *call     = eh_new_Call(callee, n_args, args, type);
 #else
-			cur_mem  = get_store();
-			ir_node *call     = new_Call(cur_mem, callee, n_args, args, type);
-			cur_mem = new_Proj(call, mode_M, pn_Call_M);
-			set_store(cur_mem);
+			ir_node *mem     = get_store();
+			ir_node *call    = new_Call(mem, callee, n_args, args, type);
+			ir_node *new_mem = new_Proj(call, mode_M, pn_Call_M);
+			set_store(new_mem);
 #endif
 
 			int n_res = get_method_n_ress(type);
@@ -2343,10 +2328,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			uint16_t  index     = get_16bit_arg(&i);
 			ir_type  *classtype = get_classref_type(index);
 			finalize_class_type(classtype);
-			ir_node  *mem       = get_store();
-			ir_node  *block     = get_cur_block();
-			ir_node  *result    = gcji_allocate_object(classtype, block, &mem);
-			set_store(mem);
+			ir_node  *result    = gcji_allocate_object(classtype);
 			symbolic_push(result);
 			continue;
 		}
@@ -2395,9 +2377,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_type *type  = get_classref_type(index);
 			finalize_type(type);
 
-			ir_node *cur_mem = get_store();
-			gcji_checkcast(type, addr, irg, get_cur_block(), &cur_mem);
-			set_store(cur_mem);
+			gcji_checkcast(type, addr);
 
 			symbolic_push(addr);
 			continue;
@@ -2443,23 +2423,17 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			continue;
 		}
 		case OPC_MULTIANEWARRAY: {
-			uint16_t index      = get_16bit_arg(&i);
-			uint8_t  dims       = code->code[i++];
-			ir_node *block      = get_cur_block();
-			ir_node *cur_mem    = get_store();
-			ir_type *array_type = get_classref_type(index);
-			ir_node *array_class_ref
-				= gcji_get_runtime_classinfo(array_type, irg, block, &cur_mem);
-			ir_node **sizes = XMALLOCN(ir_node *, dims);
+			uint16_t  index           = get_16bit_arg(&i);
+			uint8_t   dims            = code->code[i++];
+			ir_type  *array_type      = get_classref_type(index);
+			ir_node  *array_class_ref = gcji_get_runtime_classinfo(array_type);
+			ir_node **sizes           = XMALLOCN(ir_node *, dims);
 
 			for (int ci = dims-1; ci >= 0; ci--) {
 				sizes[ci] = symbolic_pop(mode_int);
 			}
 
-			ir_node *marray = gcji_new_multiarray(array_class_ref, dims, sizes,
-			                                      irg, block, &cur_mem);
-			set_store(cur_mem);
-
+			ir_node *marray = gcji_new_multiarray(array_class_ref, dims, sizes);
 			xfree(sizes);
 
 			symbolic_push(marray);
