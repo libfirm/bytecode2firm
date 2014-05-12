@@ -45,6 +45,9 @@
 #ifndef CLASSPATH_SIMPLERT
 #define CLASSPATH_SIMPLERT "build/simplert"
 #endif
+#ifndef LIBOO_RT_PATH
+#define LIBOO_RT_PATH "liboo/build/i686-pc-linux-gnu"
+#endif
 
 extern FILE *fdopen (int __fd, __const char *__modes);
 extern int mkstemp (char *__template);
@@ -3160,13 +3163,13 @@ int main(int argc, char **argv)
 	char cmd_buffer[1024];
 	if (runtime_type == RUNTIME_GCJ) {
 		/* libgcj */
-		sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -lgcj -lstdc++ -o %s", asm_file, startup_file, output_name);
+		sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -lgcj -lstdc++ -L%s -Wl,-R%s -loo_rt -o %s", asm_file, startup_file, LIBOO_RT_PATH, LIBOO_RT_PATH, output_name);
 	} else {
 		/* simplert */
 		if (static_stdlib) {
-			sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none %s/simplert.a -o %s", asm_file, startup_file, CLASSPATH_SIMPLERT, output_name);
+			sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none %s/simplert.a -L%s -Wl,-R%s -loo_rt -o %s", asm_file, startup_file, CLASSPATH_SIMPLERT, LIBOO_RT_PATH, LIBOO_RT_PATH, output_name);
 		} else {
-			sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -L%s -lsimplert -Wl,-R%s -o %s", asm_file, startup_file, CLASSPATH_SIMPLERT, CLASSPATH_SIMPLERT, output_name);
+			sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -L%s -lsimplert -Wl,-R%s -L%s -Wl,-R%s -loo_rt -o %s", asm_file, startup_file, CLASSPATH_SIMPLERT, CLASSPATH_SIMPLERT, LIBOO_RT_PATH, LIBOO_RT_PATH, output_name);
 		}
 	}
 

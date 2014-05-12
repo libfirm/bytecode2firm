@@ -39,7 +39,8 @@ UNUSED := $(shell mkdir -p $(BUILDDIR) $(BUILDDIR)/adt $(BUILDDIR)/driver)
 
 CLASSPATH_SIMPLERT ?= -DCLASSPATH_SIMPLERT=\"$(abspath $(SIMPLERT_DIR))\"
 CLASSPATH_GCJ ?= -DCLASSPATH_GCJ=\"$(abspath $(GCJ_DIR))\"
-CPPFLAGS += $(CLASSPATH_SIMPLERT) $(CLASSPATH_GCJ)
+LIBOO_RT_PATH ?= -DLIBOO_RT_PATH=\"$(abspath $(LIBOO_BUILD)/i686-pc-linux-gnu)\"
+CPPFLAGS += $(CLASSPATH_SIMPLERT) $(CLASSPATH_GCJ) $(LIBOO_RT_PATH)
 
 # This hides the noisy commandline outputs. Show them with "make V=1"
 ifneq ($(V),1)
