@@ -1209,7 +1209,7 @@ static void walk_classes_and_collect_rtti(ir_type *klass, void* environment) {
 
 	ir_entity *rtti_entity = oo_get_class_rtti_entity(klass);
 	if (rtti_entity) {
-		printf(" %s -> %s\n", get_entity_name(rtti_entity), gdb_node_helper(klass));
+		//printf(" %s -> %s\n", get_entity_name(rtti_entity), gdb_node_helper(klass));
 		cpmap_set(&rtti2class, rtti_entity, klass);
 	}
 }
@@ -1265,7 +1265,7 @@ void init_rta_callbacks() {
 			char *classname = read_classname_from_clinit_ldname(get_entity_ld_name(entity));
 			ir_type *klass = class_registry_get(classname);
 			assert(klass);
-			printf(" %s -> %s (%s)\n", get_class_name(klass), get_entity_name(entity), get_entity_ld_name(entity));
+			//printf(" %s -> %s (%s)\n", get_class_name(klass), get_entity_name(entity), get_entity_ld_name(entity));
 			cpmap_set(&class2init, klass, entity);
 			free(classname);
 		}

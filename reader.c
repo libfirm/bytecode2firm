@@ -3080,7 +3080,7 @@ int main(int argc, char **argv)
 		assert(is_entity(entity));
 		const char *name = get_entity_name(entity);
 		if (is_method_entity(entity) && strcmp(name, "main.([Ljava/lang/String;)V") == 0) {
-			printf("%s %s\n", name, gdb_node_helper(entity));
+			//printf("%s %s\n", name, gdb_node_helper(entity));
 			javamain = entity;
 			break;
 		}
