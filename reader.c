@@ -2909,6 +2909,27 @@ static void remove_external_vtable(ir_type *type, void *env)
 	}
 }
 
+static ir_entity *find_method_entity(char* classname, char* methodname)
+{
+	ir_entity *result = NULL;
+
+	ir_type *klass = class_registry_get(classname);
+	assert(klass);
+	class_t *cls = oo_get_type_link(klass); //???
+	assert(cls);
+	for (uint16_t i=0; i<cls->n_methods; i++) {
+		method_t *m = cls->methods[i];
+		constant_t *c = cls->constants[m->name_index];
+		assert(c->kind == CONSTANT_UTF8_STRING);
+		if (strncmp(c->utf8_string.bytes, methodname, c->utf8_string.length) == 0) {
+			result = m->link;
+			break;
+		}
+	}
+
+	return result;
+}
+
 int main(int argc, char **argv)
 {
 	gen_firm_init();
@@ -3067,7 +3088,8 @@ int main(int argc, char **argv)
 	// run rapid type analysis
 	init_rta_callbacks();
 	rta_set_detection_callbacks(&detect_creation, &detect_call);
-	ir_entity *entry_points[] = { javamain, NULL };
+	//TODO check all for != NULL
+	ir_entity *entry_points[] = { javamain, find_method_entity("java/lang/Class", "<init>.()V"), find_method_entity("java/lang/String", "<init>.()V"), find_method_entity("java/lang/Class", "<clinit.()V"), find_method_entity("java/lang/String", "<clinit.()V"), NULL }; //TODO add constructors and clinits of Class and String
 	ir_type *initial_live_classes[] = { class_registry_get("java/lang/Class"), class_registry_get("java/lang/String"), NULL };
 	if (javamain)
 		rta_optimization(entry_points, initial_live_classes);
