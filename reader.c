@@ -3088,9 +3088,20 @@ int main(int argc, char **argv)
 	// run rapid type analysis
 	init_rta_callbacks();
 	rta_set_detection_callbacks(&detect_creation, &detect_call);
+	ir_entity **entry_points;
+	ir_type **initial_live_classes;
+	ir_entity *entry_points_gcj[] = { javamain, NULL };
+	ir_type *initial_live_classes_gcj[] = { class_registry_get("java/lang/Class"), class_registry_get("java/lang/String"), NULL };
 	//TODO check all for != NULL
-	ir_entity *entry_points[] = { javamain, find_method_entity("java/lang/Class", "<init>.()V"), find_method_entity("java/lang/String", "<init>.()V"), find_method_entity("java/lang/Class", "<clinit.()V"), find_method_entity("java/lang/String", "<clinit.()V"), NULL }; //TODO add constructors and clinits of Class and String
-	ir_type *initial_live_classes[] = { class_registry_get("java/lang/Class"), class_registry_get("java/lang/String"), NULL };
+	ir_entity *entry_points_simplert[] = { javamain, find_method_entity("java/lang/Class", "<init>.()V"), find_method_entity("java/lang/String", "<init>.()V"), find_method_entity("java/lang/Class", "<clinit.()V"), /*find_method_entity("java/lang/String", "<clinit.()V"),*/ NULL }; //TODO add constructors and clinits of Class and String (-> but String has no clinit at the moment in case of simplert!)
+	ir_type *initial_live_classes_simplert[] = { class_registry_get("java/lang/Class"), class_registry_get("java/lang/String"), NULL };
+	if (runtime_type == RUNTIME_GCJ) {
+		entry_points = entry_points_gcj;
+		initial_live_classes = initial_live_classes_gcj;
+	} else {
+		entry_points = entry_points_simplert;
+		initial_live_classes = initial_live_classes_simplert;
+	}
 	if (javamain)
 		rta_optimization(entry_points, initial_live_classes);
 	deinit_rta_callbacks();
