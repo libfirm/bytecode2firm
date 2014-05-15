@@ -1277,36 +1277,6 @@ void deinit_rta_callbacks() {
 	cpmap_destroy(&class2init);
 }
 
-ir_type *detect_creation(ir_node* call) {
-	assert(is_Call(call));
-
-	ir_node *callee = get_irn_n(call, 1);
-	if (is_Address(callee)) {
-		ir_entity *entity = get_Address_entity(callee);
-		if (entity == gcj_alloc_entity) {
-			assert(get_irn_arity(call) == 3);
-			ir_node *arg = get_irn_n(call, 2);
-			assert(is_Address(arg));
-			ir_entity *rtti = get_Address_entity(arg);
-			ir_type *klass = cpmap_find(&rtti2class, rtti);
-			assert(klass);
-			return klass;
-		} else if (entity == gcj_new_object_array_entity) {
-			assert(get_irn_arity(call) == 5);
-			ir_node *arg2 = get_irn_n(call, 3);
-			assert(is_Address(arg2));
-			ir_entity *rtti = get_Address_entity(arg2);
-			ir_type *klass = cpmap_find(&rtti2class, rtti);
-			assert(klass);
-			return klass;
-		} // else if (entity == ...)
-
-	} else
-		assert(false);
-
-	return NULL;
-}
-
 ir_entity *detect_call(ir_node* call) {
 	assert(is_Call(call));
 
