@@ -3071,7 +3071,7 @@ int main(int argc, char **argv)
 	}
 	// run rapid type analysis
 	init_rta_callbacks();
-	rta_set_detection_callbacks(&detect_creation, &detect_call);
+	rta_set_detection_callbacks(&detect_call);
 	ir_entity **entry_points;
 	ir_type **initial_live_classes;
 	ir_entity *entry_points_gcj[] = { javamain, NULL };
