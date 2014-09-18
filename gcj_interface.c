@@ -346,7 +346,7 @@ static ir_node *gcji_get_arraylength(dbg_info *dbgi, ir_node *block,
 static ir_node *gcji_get_arrayclass(ir_node *block, ir_node **mem,
                                     ir_node *array_class_ref)
 {
-	ir_graph *irg      = get_Block_irg(block);
+	ir_graph *irg      = get_irn_irg(block);
 	ir_node *addr      = new_r_Address(irg, gcj_get_array_class_entity);
 	ir_node *null      = new_r_Const(irg, get_mode_null(mode_reference));
 	ir_node *args[]    = { array_class_ref, null };
@@ -869,7 +869,7 @@ static ir_node *gcji_get_runtime_classinfo_(ir_node *block, ir_node **mem,
                                             ir_type *type)
 {
 	ir_entity *rtti_entity = gcji_get_rtti_entity(type);
-	ir_graph  *irg         = get_Block_irg(block);
+	ir_graph  *irg         = get_irn_irg(block);
 	if (rtti_entity != NULL)
 		return new_r_Address(irg, rtti_entity);
 

@@ -2472,8 +2472,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				const uint32_t index  = ((int32_t)tswitch_index) + offset;
 				assert(index < code->code_length);
 
-				const long  pn       = pn_Switch_max + 1 + (long)case_index;
-				ir_tarval  *case_num = new_tarval_from_long(entry, mode_Is);
+				const unsigned pn       = pn_Switch_max + 1 + case_index;
+				ir_tarval     *case_num = new_tarval_from_long(entry, mode_Is);
 				ir_switch_table_set(table, case_index, case_num, case_num, pn);
 
 				ir_node *proj  = new_Proj(switch_node, mode_X, pn);
@@ -2518,8 +2518,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				const uint32_t index  = ((int32_t)lswitch_index) + offset;
 				assert(index < code->code_length);
 
-				const long  pn       = pn_Switch_max + 1 + (long)pair;
-				ir_tarval  *case_num = new_tarval_from_long(match, mode_Is);
+				const unsigned pn       = pn_Switch_max + 1 + (unsigned)pair;
+				ir_tarval     *case_num = new_tarval_from_long(match, mode_Is);
 				ir_switch_table_set(table, case_index, case_num, case_num, pn);
 
 				ir_node *proj  = new_Proj(switch_node, mode_X, pn);
