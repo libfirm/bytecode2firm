@@ -336,7 +336,7 @@ static ir_node *gcji_get_arraylength(dbg_info *dbgi, ir_node *block,
 {
 	ir_node  *addr    = new_r_Member(block, arrayref, gcj_array_length);
 	ir_node  *load    = new_rd_Load(dbgi, block, *mem, addr, mode_int,
-	                                cons_none);
+	                                get_type_for_mode(mode_int), cons_none);
 	ir_node  *new_mem = new_r_Proj(load, mode_M, pn_Load_M);
 	ir_node  *res     = new_r_Proj(load, mode_int, pn_Load_res);
 	*mem = new_mem;
@@ -928,13 +928,14 @@ ir_node *gcji_lookup_interface(ir_node *objptr, ir_type *iface,
 	// we need the reference to the object's class$ field
 	// first, dereference the vptr in order to get the vtable address.
 	ir_entity *vptr_entity   = get_vptr_entity();
+	ir_type   *vptr_type     = get_entity_type(vptr_entity);
 	ir_node   *vptr_addr     = new_r_Member(block, objptr, vptr_entity);
-	ir_node   *vptr_load     = new_r_Load(block, cur_mem, vptr_addr, mode_reference, cons_none);
+	ir_node   *vptr_load     = new_r_Load(block, cur_mem, vptr_addr, mode_reference, vptr_type, cons_none);
 	ir_node   *vtable_addr   = new_r_Proj(vptr_load, mode_reference, pn_Load_res);
 	           cur_mem       = new_r_Proj(vptr_load, mode_M, pn_Load_M);
 
 	// second, dereference vtable_addr (it points to the slot where the address of the class$ field is stored).
-	ir_node   *cd_load       = new_r_Load(block, cur_mem, vtable_addr, mode_reference, cons_none);
+	ir_node   *cd_load       = new_r_Load(block, cur_mem, vtable_addr, mode_reference, vptr_type, cons_none);
 	ir_node   *cd_ref        = new_r_Proj(cd_load, mode_reference, pn_Load_res);
 	           cur_mem       = new_r_Proj(cd_load, mode_M, pn_Load_M);
 
@@ -1008,7 +1009,7 @@ static ir_node *alloc_dims_array(unsigned dims, ir_node **sizes)
 	for (unsigned d = 0; d < dims; d++) {
 		ir_node *index_const = new_Const_long(mode_int, d);
 		ir_node *sel         = new_Sel(arr, index_const, type_array_int);
-		ir_node *store       = new_Store(new_mem, sel, sizes[d], cons_none);
+		ir_node *store       = new_Store(new_mem, sel, sizes[d], type_array_int, cons_none);
 		new_mem = new_Proj(store, mode_M, pn_Store_M);
 	}
 

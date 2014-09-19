@@ -1131,7 +1131,7 @@ static void construct_array_load(ir_type *array_type)
 	ir_node *mem       = get_store();
 	ir_type *type      = get_array_element_type(array_type);
 	ir_mode *mode      = get_type_mode(type);
-	ir_node *load      = new_Load(mem, addr, mode, cons_none);
+	ir_node *load      = new_Load(mem, addr, mode, type, cons_none);
 	ir_node *new_mem   = new_Proj(load, mode_M, pn_Load_M);
 	ir_node *value     = new_Proj(load, mode, pn_Load_res);
 	set_store(new_mem);
@@ -1152,7 +1152,7 @@ static void construct_array_store(ir_type *array_type)
 	ir_node *base_addr  = get_array_data_base(arr_addr);
 	ir_node *addr       = new_Sel(base_addr, index, array_type);
 	ir_node *mem        = get_store();
-	ir_node *store      = new_Store(mem, addr, value, cons_none);
+	ir_node *store      = new_Store(mem, addr, value, type, cons_none);
 	ir_node *new_mem    = new_Proj(store, mode_M, pn_Store_M);
 	set_store(new_mem);
 }
@@ -2134,7 +2134,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			ir_node *new_mem;
 			if (opcode == OPC_GETSTATIC || opcode == OPC_GETFIELD) {
 				ir_node *mem     = get_store();
-				ir_node *load    = new_Load(mem, addr, mode, cons_none);
+				ir_node *load    = new_Load(mem, addr, mode, type, cons_none);
 				ir_node *result  = new_Proj(load, mode, pn_Load_res);
 				new_mem = new_Proj(load, mode_M, pn_Load_M);
 				result  = get_arith_value(result);
@@ -2143,7 +2143,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				assert(opcode == OPC_PUTSTATIC || opcode == OPC_PUTFIELD);
 				value = new_Conv(value, mode);
 				ir_node *mem     = get_store();
-				ir_node *store   = new_Store(mem, addr, value, cons_none);
+				ir_node *store   = new_Store(mem, addr, value, type, cons_none);
 				new_mem = new_Proj(store, mode_M, pn_Store_M);
 			}
 			set_store(new_mem);
