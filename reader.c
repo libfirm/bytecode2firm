@@ -3049,7 +3049,6 @@ int main(int argc, char **argv)
 		fprintf(stderr, "===> Optimization & backend\n");
 
 	ir_entity *main_rtti = gcji_get_rtti_entity(main_class);
-	assert(main_rtti && is_entity(main_rtti));
 	const char *main_rtti_ldname = get_entity_ld_name(main_rtti);
 
 	char startup_file[] = "bc2firm_startup_XXXXXX";

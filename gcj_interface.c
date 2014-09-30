@@ -456,7 +456,6 @@ static ir_entity *do_emit_utf8_const(const char *bytes, size_t len)
 	scp_entry *found_scpe = cpset_find(&scp, &test_scpe);
 	if (found_scpe != NULL) {
 		ir_entity *utf8const = found_scpe->utf8c;
-		assert(is_entity(utf8const));
 		return utf8const;
 	}
 
