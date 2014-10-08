@@ -3061,7 +3061,7 @@ int main(int argc, char **argv)
 	ir_type *global_type = get_glob_type();
 	for (size_t i=0; i<get_compound_n_members(global_type); i++) {
 		ir_entity *entity = get_compound_member(global_type, i);
-		assert(is_entity(entity));
+		assert(entity);
 		const char *name = get_entity_name(entity);
 		if (is_method_entity(entity) && strcmp(name, "main.([Ljava/lang/String;)V") == 0) {
 			//printf("%s %s\n", name, gdb_node_helper(entity));
