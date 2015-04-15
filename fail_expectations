@@ -3,6 +3,8 @@ Arrays.java                              ok
 Classes.java                             ok
 ControlFlow.java                         ok
 CreateObject.java                        ok
+Empty.java                               ok
+EntityCopies.java                        ok
 Exceptions.java                          compile_class: SIGABRT
 HelloWorld42.java                        ok
 InstanceOf.java                          ok
