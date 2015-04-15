@@ -21,6 +21,10 @@ Then you can do the usual
 
 This builds bytecode2firm along with our simple testing runtime.
 
+To run the testsuite for regressions:
+
+	$ make test
+
 3. libgcj runtime
 -----------------
 

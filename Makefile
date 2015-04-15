@@ -41,12 +41,14 @@ CLASSPATH_SIMPLERT ?= -DCLASSPATH_SIMPLERT=\"$(abspath $(SIMPLERT_DIR))\"
 CLASSPATH_GCJ ?= -DCLASSPATH_GCJ=\"$(abspath $(GCJ_DIR))\"
 CPPFLAGS += $(CLASSPATH_SIMPLERT) $(CLASSPATH_GCJ)
 
+TESTDIR = testsuite
+
 # This hides the noisy commandline outputs. Show them with "make V=1"
 ifneq ($(V),1)
 Q ?= @
 endif
 
-.PHONY: all libfirm liboo clean distclean
+.PHONY: all libfirm liboo clean distclean test
 
 all: $(GOAL) $(SIMPLERT_so) $(SIMPLERT_a) $(SIMPLERT_CLASSES)
 
@@ -97,3 +99,9 @@ clean:
 distclean: clean
 	$(Q)$(MAKE) -C $(FIRM_HOME) clean
 	$(Q)$(MAKE) -C $(LIBOO_HOME) clean
+
+$(TESTDIR)/.git/config:
+	$(Q)git clone http://pp.ipd.kit.edu/git/bytecode2firm-testsuite/ $(TESTDIR) --recursive
+
+test: $(GOAL) $(TESTDIR)/.git/config
+	$(Q)cd $(TESTDIR); sisyphus/sis --bc2firm ../$(GOAL) --expect fail_expectations
