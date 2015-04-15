@@ -1,0 +1,3 @@
+[submodule "sisyphus"]
+	path = sisyphus
+	url = http://pp.ipd.kit.edu/git/sisyphus.git
