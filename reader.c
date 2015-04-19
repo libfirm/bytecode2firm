@@ -2932,7 +2932,8 @@ int main(int argc, char **argv)
 	const char *output_name   = NULL;
 	bool        save_temps    = false;
 	bool        static_stdlib = false;
-	bool        optimize      = false;
+	bool        optimize_devirt = false;
+	bool        optimize_rta  = false;
 	enum {
 		RUNTIME_GCJ,
 		RUNTIME_SIMPLERT
@@ -2969,8 +2970,10 @@ int main(int argc, char **argv)
 			runtime_type = RUNTIME_SIMPLERT;
 		} else if (EQUALS("--gcj")) {
 			runtime_type = RUNTIME_GCJ;
-		} else if (EQUALS("-O")) {
-			optimize = true;
+		} else if (EQUALS("-Odevirt")) {
+			optimize_devirt = true;
+		} else if (EQUALS("-Orta")) {
+			optimize_rta = true;
 		} else {
 			main_class_name = argv[curarg];
 		}
@@ -3036,7 +3039,7 @@ int main(int argc, char **argv)
 	assert(res != 0);
 
 	/* optimize */
-	if (optimize) {
+	if (optimize_devirt) {
 		oo_register_opt_funcs();
 		for (size_t i = 0, n = get_irp_n_irgs(); i < n; ++i) {
 			ir_graph *irg = get_irp_irg(i);
@@ -3044,53 +3047,56 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if (optimize_rta) {
 
-/*	FILE *cgfile = fopen("callgraph.vcg", "w");
-	dump_callgraph(cgfile);
-	fclose(cgfile);
-*//*	FILE *tgfile = fopen("typegraph.vcg", "w");
-	dump_typegraph(tgfile);
-	fclose(tgfile);
+/*		FILE *cgfile = fopen("callgraph.vcg", "w");
+		dump_callgraph(cgfile);
+		fclose(cgfile);
+*//*		FILE *tgfile = fopen("typegraph.vcg", "w");
+		dump_typegraph(tgfile);
+		fclose(tgfile);
 */
 
-	//dump_all_ir_graphs("-after-construction");
+		//dump_all_ir_graphs("-after-construction");
 
 
-	// find main //TODO in a better way?
-	ir_entity *javamain = NULL;
-	ir_type *global_type = get_glob_type();
-	for (size_t i=0; i<get_compound_n_members(global_type); i++) {
-		ir_entity *entity = get_compound_member(global_type, i);
-		assert(entity);
-		const char *name = get_entity_name(entity);
-		if (is_method_entity(entity) && strcmp(name, "main.([Ljava/lang/String;)V") == 0) {
-			//printf("%s %s\n", name, gdb_node_helper(entity));
-			javamain = entity;
-			break;
+		// find main //TODO in a better way?
+		ir_entity *javamain = NULL;
+		ir_type *global_type = get_glob_type();
+		for (size_t i=0; i<get_compound_n_members(global_type); i++) {
+			ir_entity *entity = get_compound_member(global_type, i);
+			assert(entity);
+			const char *name = get_entity_name(entity);
+			if (is_method_entity(entity) && strcmp(name, "main.([Ljava/lang/String;)V") == 0) {
+				//printf("%s %s\n", name, gdb_node_helper(entity));
+				javamain = entity;
+				break;
+			}
 		}
-	}
-	// run rapid type analysis
-	init_rta_callbacks();
-	rta_set_detection_callbacks(&detect_call);
-	ir_entity **entry_points;
-	ir_type **initial_live_classes;
-	ir_entity *entry_points_gcj[] = { javamain, NULL };
-	ir_type *initial_live_classes_gcj[] = { class_registry_get("java/lang/Class"), class_registry_get("java/lang/String"), NULL };
-	//TODO check all for != NULL
-	ir_entity *entry_points_simplert[] = { javamain, find_method_entity("java/lang/Class", "<init>.()V"), find_method_entity("java/lang/String", "<init>.()V"), find_method_entity("java/lang/Class", "<clinit.()V"), /*find_method_entity("java/lang/String", "<clinit.()V"),*/ NULL }; //TODO add constructors and clinits of Class and String (-> but String has no clinit at the moment in case of simplert!)
-	ir_type *initial_live_classes_simplert[] = { class_registry_get("java/lang/Class"), class_registry_get("java/lang/String"), NULL };
-	if (runtime_type == RUNTIME_GCJ) {
-		entry_points = entry_points_gcj;
-		initial_live_classes = initial_live_classes_gcj;
-	} else {
-		entry_points = entry_points_simplert;
-		initial_live_classes = initial_live_classes_simplert;
-	}
-	if (javamain)
-		rta_optimization(entry_points, initial_live_classes);
-	deinit_rta_callbacks();
+		// run rapid type analysis
+		init_rta_callbacks();
+		rta_set_detection_callbacks(&detect_call);
+		ir_entity **entry_points;
+		ir_type **initial_live_classes;
+		ir_entity *entry_points_gcj[] = { javamain, NULL };
+		ir_type *initial_live_classes_gcj[] = { class_registry_get("java/lang/Class"), class_registry_get("java/lang/String"), NULL };
+		//TODO check all for != NULL
+		ir_entity *entry_points_simplert[] = { javamain, find_method_entity("java/lang/Class", "<init>.()V"), find_method_entity("java/lang/String", "<init>.()V"), find_method_entity("java/lang/Class", "<clinit.()V"), /*find_method_entity("java/lang/String", "<clinit.()V"),*/ NULL }; //TODO add constructors and clinits of Class and String (-> but String has no clinit at the moment in case of simplert!)
+		ir_type *initial_live_classes_simplert[] = { class_registry_get("java/lang/Class"), class_registry_get("java/lang/String"), NULL };
+		if (runtime_type == RUNTIME_GCJ) {
+			entry_points = entry_points_gcj;
+			initial_live_classes = initial_live_classes_gcj;
+		} else {
+			entry_points = entry_points_simplert;
+			initial_live_classes = initial_live_classes_simplert;
+		}
+		if (javamain)
+			rta_optimization(entry_points, initial_live_classes);
+		deinit_rta_callbacks();
 
-	//dump_all_ir_graphs("-after-rta");
+		//dump_all_ir_graphs("-after-rta");
+
+	}
 
 
 	oo_lower();
