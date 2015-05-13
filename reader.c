@@ -838,6 +838,12 @@ static void push_const_tarval(ir_tarval *tv)
 	symbolic_push(cnst);
 }
 
+static void push_constf(ir_mode *mode, double val)
+{
+	ir_tarval* tv = new_tarval_from_double(val, mode);
+	push_const_tarval(tv);
+}
+
 static void push_local(int idx, ir_mode *mode)
 {
 	ir_node *value = get_local(idx, mode);
@@ -1782,11 +1788,11 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 		case OPC_ICONST_5:    push_const(mode_int,       5); continue;
 		case OPC_LCONST_0:    push_const(mode_long,      0); continue;
 		case OPC_LCONST_1:    push_const(mode_long,      1); continue;
-		case OPC_FCONST_0:    push_const(mode_float,     0); continue;
-		case OPC_FCONST_1:    push_const(mode_float,     1); continue;
-		case OPC_FCONST_2:    push_const(mode_float,     2); continue;
-		case OPC_DCONST_0:    push_const(mode_double,    0); continue;
-		case OPC_DCONST_1:    push_const(mode_double,    1); continue;
+		case OPC_FCONST_0:    push_constf(mode_float,     0.); continue;
+		case OPC_FCONST_1:    push_constf(mode_float,     1.); continue;
+		case OPC_FCONST_2:    push_constf(mode_float,     2.); continue;
+		case OPC_DCONST_0:    push_constf(mode_double,    0.); continue;
+		case OPC_DCONST_1:    push_constf(mode_double,    1.); continue;
 		case OPC_BIPUSH:      push_const(mode_int, (int8_t) code->code[i++]); continue;
 		case OPC_SIPUSH:
 			push_const(mode_int, (int16_t) get_16bit_arg(&i));
@@ -2591,7 +2597,7 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	ident      *descriptorid = new_id_from_str(descriptor);
 	ir_type    *type         = method_descriptor_to_type(descriptor, owner,
 	                                                     method->access_flags);
-	ident      *mangled_id   = id_mangle_dot(id, descriptorid);
+	ident      *mangled_id   = new_id_fmt("%s.%s", id, descriptorid);
 	ir_entity  *entity       = NULL;
 
 	if (method->access_flags & ACCESS_FLAG_STATIC)
@@ -2610,11 +2616,8 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	// determine if we overwrite something
 	uint16_t access_flags         = method->access_flags;
 	bool     overwrites_something = false;
-	if (access_flags & ACCESS_FLAG_ABSTRACT) {
-		ir_entity *abstract_method = gcji_get_abstract_method_entity();
-		ir_node   *addr            = new_r_Address(get_const_code_irg(), abstract_method);
-		set_atomic_ent_value(entity, addr);
-	} else if (get_class_n_supertypes(owner) > 0) {
+	if (!(access_flags & ACCESS_FLAG_ABSTRACT) &&
+	    (get_class_n_supertypes(owner) > 0)) {
 		// see if we overwrite an entity in a superclass
 		ir_type   *superclass  = oo_get_class_superclass(owner);
 		ir_entity *overwritten
@@ -2774,32 +2777,13 @@ static void link_interface_methods(ir_type *cls, ir_type *interface)
 		ident     *ident          = get_entity_ident(method);
 		ir_entity *implementation = find_class_member_in_hierarchy(cls, ident);
 		// find the implementation of the method (or return abstract_method)
-		bool add_overwrites = true;
 		if (implementation == NULL) {
 			if (!oo_get_class_is_abstract(cls)) {
 				panic("%s: implementation of method %s from interface %s missing in non-abstract class\n", get_class_name(cls), get_id_str(ident), get_class_name(interface));
 			} else {
 				implementation = gcji_get_abstract_method_entity();
-				add_overwrites = false;
 			}
 		}
-		// create proxy entity in cls if necessary
-		if (get_entity_owner(implementation) != cls) {
-			ir_type   *type = get_entity_type(method);
-			ir_entity *proxy = new_entity(cls, ident, type);
-			set_entity_ld_ident(proxy, id_mangle3("inh__", get_entity_ld_ident(implementation), ""));
-			set_entity_visibility(proxy, ir_visibility_private);
-			oo_copy_entity_info(implementation, proxy);
-
-			set_atomic_ent_value(proxy, get_atomic_ent_value(implementation));
-			if (add_overwrites) {
-				oo_set_method_is_inherited(proxy, true);
-				add_entity_overwrites(proxy, implementation);
-			}
-			implementation = proxy;
-		}
-
-		add_entity_overwrites(implementation, method);
 	}
 }
 
@@ -3020,11 +3004,11 @@ int main(int argc, char **argv)
 	 * produces instances of it
 	 */
 	finalize_class_type(java_lang_class);
-	irp_finalize_cons();
 
 	/* verify the constructed graphs, entities and types */
 	for (size_t i = 0, n = get_irp_n_irgs(); i < n; ++i) {
 		ir_graph *irg = get_irp_irg(i);
+		irg_finalize_cons(irg);
 		irg_assert_verify(irg);
 	}
 	int res = tr_verify();

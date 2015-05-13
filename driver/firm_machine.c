@@ -25,7 +25,7 @@ static ident *compilerlib_name_mangle_default(ident *id, ir_type *mt)
 static ident *compilerlib_name_mangle_underscore(ident *id, ir_type *mt)
 {
 	(void)mt;
-	return id_mangle3("_", id, "");
+	return new_id_fmt("_%s", "_", id);
 }
 
 bool firm_is_unixish_os(const machine_triple_t *machine)
