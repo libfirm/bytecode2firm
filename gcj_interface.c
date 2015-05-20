@@ -1192,3 +1192,111 @@ void gcji_deinit()
 
 	cpset_destroy(&scp);
 }
+
+
+#include "adt/cpmap.h"
+#include "adt/hashptr.h"
+
+static cpmap_t rtti2class;
+static cpmap_t class2init;
+
+static int ptr_equals(const void *pt1, const void *pt2) { // missing default pointer compare function
+	return pt1 == pt2;
+}
+
+static void walk_classes_and_collect_rtti(ir_type *klass, void* environment) {
+	(void)environment;
+
+	ir_entity *rtti_entity = oo_get_class_rtti_entity(klass);
+	if (rtti_entity) {
+		//printf(" %s -> %s\n", get_entity_name(rtti_entity), gdb_node_helper(klass));
+		cpmap_set(&rtti2class, rtti_entity, klass);
+	}
+}
+
+static char *read_classname_from_clinit_ldname(const char* ldname) {
+	assert(ldname);
+	assert(strstr(ldname, "__U3c_clinit__U3e_") != NULL);
+
+	size_t len = strlen(ldname);
+	char *classname = malloc(len+1);
+	char *p = (char*)ldname + 3; // skip leading "_ZN"
+	size_t i = 0;
+	char buffer[6]; // max 65536 needed !?
+	while (true) {
+		// read numbers
+		size_t j = 0;
+		while (*p >= '0' && *p <= '9') {
+			buffer[j] = *p;
+			j++;
+			p++;
+			assert(j <= 6);
+		}
+		buffer[j] = '\0';
+		// convert
+		size_t count = (size_t)strtol(buffer, NULL, 10);
+		// check for termination
+		if (count == 18 && strspn(p, "__U3c_clinit__U3e_") == 18)
+			break;
+		// copy to classname
+		strncpy(classname+i, p, count);
+		i += count;
+		p += count;
+		classname[i] = '/';
+		i++;
+		assert(i <= len);
+	}
+	classname[--i] = '\0';
+
+	return classname;
+}
+
+void init_rta_callbacks() {
+	// collect rtti entities
+	cpmap_init(&rtti2class, hash_ptr, ptr_equals);
+	class_walk_super2sub(NULL, walk_classes_and_collect_rtti, NULL);
+
+	// collect clinit entities
+	cpmap_init(&class2init, hash_ptr, ptr_equals);
+	ir_type *glob = get_glob_type();
+	for (size_t i=0; i<get_class_n_members(glob); i++) {
+		ir_entity *entity = get_class_member(glob, i);
+		if (is_method_entity(entity) && strcmp(get_entity_name(entity), "<clinit>.()V") == 0) {
+			char *classname = read_classname_from_clinit_ldname(get_entity_ld_name(entity));
+			ir_type *klass = class_registry_get(classname);
+			assert(klass);
+			//printf(" %s -> %s (%s)\n", get_class_name(klass), get_entity_name(entity), get_entity_ld_name(entity));
+			cpmap_set(&class2init, klass, entity);
+			free(classname);
+		}
+	}
+}
+
+void deinit_rta_callbacks() {
+	cpmap_destroy(&rtti2class);
+	cpmap_destroy(&class2init);
+}
+
+ir_entity *detect_call(ir_node* call) {
+	assert(is_Call(call));
+
+	ir_node *callee = get_irn_n(call, 1);
+	if (is_Address(callee)) {
+		ir_entity *entity = get_Address_entity(callee);
+		if (entity == gcj_init_entity) {
+			assert(get_irn_arity(call) == 3);
+			ir_node *arg = get_irn_n(call, 2);
+			assert(is_Address(arg));
+			ir_entity *rtti = get_Address_entity(arg);
+			ir_type *klass = cpmap_find(&rtti2class, rtti);
+			assert(klass);
+			ir_entity *init_method = cpmap_find(&class2init, klass);
+			//assert(init_method); // _Jv_InitClass calls can be there although class has no clinit
+			return init_method;
+		} // else if (entity == ...)
+
+	} else
+		assert(false);
+
+	return NULL;
+}

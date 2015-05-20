@@ -2893,6 +2893,30 @@ static void remove_external_vtable(ir_type *type, void *env)
 	}
 }
 
+static ir_entity *find_method_entity(const char* classname, const char* methodname)
+{
+	assert(methodname);
+
+	ir_entity *result = NULL;
+
+	ir_type *klass = get_glob_type();
+	if (classname != NULL)
+		klass = class_registry_get(classname);
+	assert(klass);
+	ident *method_ident = new_id_from_str(methodname);
+	size_t n = get_compound_n_members(klass);
+	for (size_t i=0; i<n; i++) {
+		ir_entity *member = get_compound_member(klass, i);
+		if (!is_method_entity(member)) continue;
+		if (get_entity_ident(member) == method_ident) {
+			result = member;
+			break;
+		}
+	}
+
+	return result;
+}
+
 int main(int argc, char **argv)
 {
 	gen_firm_init();
@@ -2912,6 +2936,7 @@ int main(int argc, char **argv)
 	bool        save_temps    = false;
 	bool        static_stdlib = false;
 	bool        optimize      = false;
+	bool        optimize_rta  = false;
 	enum {
 		RUNTIME_GCJ,
 		RUNTIME_SIMPLERT
@@ -2950,6 +2975,8 @@ int main(int argc, char **argv)
 			runtime_type = RUNTIME_GCJ;
 		} else if (EQUALS("-O")) {
 			optimize = true;
+		} else if (EQUALS("-Orta")) {
+			optimize_rta = true;
 		} else {
 			main_class_name = argv[curarg];
 		}
@@ -3022,12 +3049,61 @@ int main(int argc, char **argv)
 			optimize_graph_df(irg);
 		}
 	}
+
+	if (optimize_rta) {
+		//dump_all_ir_graphs("-before-rta");
+
+
+		// run rapid type analysis
+		ir_type *jl_class = class_registry_get("java/lang/Class");
+		ir_type *jl_string = class_registry_get("java/lang/String");
+
+		ir_entity *javamain = find_method_entity(NULL, "main.([Ljava/lang/String;)V"); //TODO Why not use C-Main?
+		assert(javamain);
+		init_rta_callbacks();
+		rta_set_detection_callbacks(&detect_call);
+
+		ir_entity **entry_points;
+		ir_type **initial_live_classes;
+
+		ir_entity *class_constr = find_method_entity("java/lang/Class", "<init>.()V");
+		assert(class_constr);
+		ir_entity *string_constr = find_method_entity("java/lang/String", "<init>.()V");
+		assert(string_constr);
+/*		ir_entity *class_clinit = find_method_entity("java/lang/Class", "<clinit>.()V");
+		assert(class_clinit);
+		ir_entity *string_clinit = find_method_entity("java/lang/String", "<clinit>.()V");
+		assert(string_clinit);
+*/
+		ir_entity* entry_points_gcj[] = { javamain, NULL };
+		ir_type* initial_live_classes_gcj[] = { jl_class, jl_string, NULL };
+		ir_entity* entry_points_simplert[] = { javamain, class_constr, string_constr/*, class_clinit , string_clinit*/, NULL }; //TODO add constructors and clinits of Class and String (-> but String has no clinit at the moment in case of simplert!)
+		ir_type* initial_live_classes_simplert[] = { jl_class, jl_string, NULL };
+
+		if (runtime_type == RUNTIME_GCJ) {
+			entry_points = entry_points_gcj;
+			initial_live_classes = initial_live_classes_gcj;
+		} else {
+			entry_points = entry_points_simplert;
+			initial_live_classes = initial_live_classes_simplert;
+		}
+		if (javamain)
+			rta_optimization(entry_points, initial_live_classes);
+
+		deinit_rta_callbacks();
+
+
+		//dump_all_ir_graphs("-after-rta");
+	}
+
+
 	oo_lower();
 	/* kinda hacky: we remove vtables for external classes now
 	 * (we constructed them in the first places because we needed the vtable_ids
 	 *  for the methods in non-external subclasses)
 	 */
 	class_walk_super2sub(remove_external_vtable, NULL, NULL);
+
 
 	if (verbose)
 		fprintf(stderr, "===> Optimization & backend\n");
