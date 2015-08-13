@@ -2946,6 +2946,8 @@ int main(int argc, char **argv)
 #define EQUALS(x)             (strcmp(x, argv[curarg]) == 0)
 #define EQUALS_AND_HAS_ARG(x) ((strcmp(x, argv[curarg]) == 0 && (curarg+1) < argc))
 #define ARG_PARAM             (argv[++curarg])
+#define WARN(...)             fprintf(stderr, "Warning: " __VA_ARGS__)
+#define FATAL(...)            do { fprintf(stderr, "Error: " __VA_ARGS__); return 1; } while (0)
 	while (curarg < argc) {
 		if (EQUALS_AND_HAS_ARG("-cp") || EQUALS_AND_HAS_ARG("--classpath")) {
 			classpath_prepend(ARG_PARAM, false);
@@ -2960,11 +2962,11 @@ int main(int argc, char **argv)
 		} else if (EQUALS_AND_HAS_ARG("-f")) {
 			const char *param = ARG_PARAM;
 			if (!firm_option(param))
-				fprintf(stderr, "Warning: '%s' is not a valid Firm option - ignoring.\n", param);
+				WARN("'%s' is not a valid Firm option - ignoring.\n", param);
 		} else if (EQUALS_AND_HAS_ARG("-b")) {
 			const char *param = ARG_PARAM;
 			if (!be_parse_arg(param))
-				fprintf(stderr, "Warning: '%s' is not a valid backend option - ignoring.\n", param);
+				WARN("'%s' is not a valid backend option - ignoring.\n", param);
 		} else if (EQUALS("-save-temps")) {
 			save_temps = true;
 		} else if (EQUALS("-v")) {
@@ -2978,7 +2980,12 @@ int main(int argc, char **argv)
 		} else if (EQUALS("-Orta")) {
 			optimize_rta = true;
 		} else {
-			main_class_name = argv[curarg];
+			if (main_class_name == NULL) {
+				main_class_name = argv[curarg];
+			} else {
+				FATAL("Duplicate value for class_file: '%s' and '%s'\n", argv[curarg], main_class_name);
+				return 1;
+			}
 		}
 		curarg++;
 	}
@@ -2986,6 +2993,8 @@ int main(int argc, char **argv)
 #undef EQUALS_AND_HAS_ARG
 #undef EQUALS
 #undef SINGLE_OPTION
+#undef WARN
+#undef FATAL
 
 	if (main_class_name == NULL) {
 		fprintf(stderr, "No main class specified!\n");
