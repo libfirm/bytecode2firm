@@ -12,7 +12,7 @@ extern java_lang_Class _ZN4java4lang6String6class$E;
 
 void JvRunMain(java_lang_Class *cls, int argc, const char **argv)
 {
-	// initialize runtime
+	/* Initialize runtime */
 	init_prim_rtti();
 
 	jv_method *mainm = get_method(cls, &main_name, &main_sig);
@@ -22,12 +22,16 @@ void JvRunMain(java_lang_Class *cls, int argc, const char **argv)
 	}
 	void (*mainmethod)(jarray) = mainm->code;
 
-	// construct array with commandline arguments
-	java_lang_Class *string = &_ZN4java4lang6String6class$E;
-	jarray           args   = _Jv_NewObjectArray(argc, string, NULL);
-	java_lang_String **data = get_array_data(java_lang_String*, args);
-	for (int i = 0; i < argc; ++i) {
-		const char       *arg    = argv[i];
+	/* Construct array with commandline arguments */
+	/* Skip program name */
+	const int    java_argc = argc - 1;
+	const char **java_argv = &argv[1];
+
+	java_lang_Class   *string    = &_ZN4java4lang6String6class$E;
+	jarray             args      = _Jv_NewObjectArray(java_argc, string, NULL);
+	java_lang_String **data      = get_array_data(java_lang_String*, args);
+	for (int i = 0; i < java_argc; ++i) {
+		const char       *arg    = java_argv[i];
 		size_t            len    = strlen(arg);
 		java_lang_String *string = string_from_c_chars(arg, len);
 		data[i] = string;
