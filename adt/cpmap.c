@@ -59,7 +59,7 @@ cpmap_entry_t *cpmap_find_(const cpmap_t *map, const void *key);
 #define hashset_iterator_next   cpmap_iterator_next
 #define hashset_remove_iterator cpmap_remove_iterator
 
-#include "hashset.c"
+#include "hashset.c.h"
 
 void cpmap_init(cpmap_t *map, cpmap_hash_function hash_function,
                 cpmap_cmp_function cmp_function)

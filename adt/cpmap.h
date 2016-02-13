@@ -146,7 +146,7 @@ void cpmap_iterator_init(cpmap_iterator_t *iterator, const cpmap_t *cpmap);
  * @param iterator  Pointer to the cpmap iterator.
  * @returns         Next element in the cpmap or NULL
  */
-cpmap_entry_t *cpmap_iterator_next(cpmap_iterator_t *iterator);
+cpmap_entry_t cpmap_iterator_next(cpmap_iterator_t *iterator);
 
 /**
  * Removed the element the iterator currently points to
