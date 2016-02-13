@@ -13,6 +13,7 @@
 #include "mangle.h"
 #include "adt/obst.h"
 #include "adt/util.h"
+#include "adt/error.h"
 
 #include <assert.h>
 #include <string.h>
@@ -539,18 +540,6 @@ static ir_entity *emit_method_table(ir_type *classtype)
 	return mt_ent;
 }
 
-#define MUX_PRIM_TYPES(typevar, action_boolean, action_byte, action_char, action_short, action_int, action_long, action_float, action_double) \
-		do { \
-	      if (typevar == type_boolean) { action_boolean; } \
-		  else if (typevar == type_byte) { action_byte; } \
-		  else if (typevar == type_char) { action_char; } \
-		  else if (typevar == type_short) { action_short; } \
-		  else if (typevar == type_int) { action_int; } \
-		  else if (typevar == type_long) { action_long; } \
-		  else if (typevar == type_float) { action_float; } \
-		  else if (typevar == type_double) { action_double; } \
-		} while (0);
-
 ir_entity *gcji_get_rtti_entity(ir_type *type)
 {
 	if (is_Pointer_type(type)) {
@@ -559,16 +548,23 @@ ir_entity *gcji_get_rtti_entity(ir_type *type)
 			return oo_get_class_rtti_entity(points_to);
 		return NULL;
 	} else if (is_Primitive_type(type)) {
-		MUX_PRIM_TYPES(type,
-				return gcj_boolean_rtti_entity,
-				return gcj_byte_rtti_entity,
-				return gcj_char_rtti_entity,
-				return gcj_short_rtti_entity,
-				return gcj_int_rtti_entity,
-				return gcj_long_rtti_entity,
-				return gcj_float_rtti_entity,
-				return gcj_double_rtti_entity);
-		return NULL;
+		if (type == type_boolean)
+			return gcj_boolean_rtti_entity;
+		if (type == type_byte)
+			return gcj_byte_rtti_entity;
+		if (type == type_char)
+			return gcj_char_rtti_entity;
+		if (type == type_short)
+			return gcj_short_rtti_entity;
+		if (type == type_int)
+			return gcj_int_rtti_entity;
+		if (type == type_long)
+			return gcj_long_rtti_entity;
+		if (type == type_float)
+			return gcj_float_rtti_entity;
+		if (type == type_double)
+			return gcj_double_rtti_entity;
+		panic("unexpected type");
 	} else {
 		return oo_get_class_rtti_entity(type);
 	}
@@ -824,6 +820,27 @@ void gcji_setup_rtti_entity(class_t *cls, ir_type *type)
 	add_pointer_in_jcr_segment(rtti_entity);
 }
 
+static char get_prim_type_char(ir_type const *const type)
+{
+	if (type == type_boolean)
+		return 'Z';
+	if (type == type_byte)
+		return 'B';
+	if (type == type_char)
+		return 'C';
+	if (type == type_short)
+		return 'S';
+	if (type == type_int)
+		return 'I';
+	if (type == type_long)
+		return 'J';
+	if (type == type_float)
+		return 'F';
+	if (type == type_double)
+		return 'D';
+	panic("unexpected type");
+}
+
 static ir_entity *emit_type_signature(ir_type *type)
 {
 	ir_type *curtype = type;
@@ -846,8 +863,7 @@ static ir_entity *emit_type_signature(ir_type *type)
 	}
 
 	if (is_Primitive_type(curtype)) {
-		char c;
-		MUX_PRIM_TYPES(curtype, c='Z', c='B', c='C', c='S', c='I', c='J', c='F', c='D');
+		char c = get_prim_type_char(curtype);
 		obstack_1grow(&obst, c);
 	} else {
 		assert(is_Class_type(curtype));
