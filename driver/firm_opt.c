@@ -516,10 +516,8 @@ static void enable_safe_defaults(void)
 
 /**
  * run all the Firm optimizations
- *
- * @param input_filename     the name of the (main) source file
  */
-static void do_firm_optimizations(const char *input_filename)
+static void do_firm_optimizations(void)
 {
 	size_t   i;
 
@@ -631,17 +629,12 @@ static void do_firm_optimizations(const char *input_filename)
 	}
 
 	dump_all("opt");
-
-	if (firm_dump.statistic & STAT_AFTER_OPT)
-		stat_dump_snapshot(input_filename, "opt");
 }
 
 /**
  * do Firm lowering
- *
- * @param input_filename  the name of the (main) source file
  */
-static void do_firm_lowering(const char *input_filename)
+static void do_firm_lowering(void)
 {
 	int i;
 
@@ -657,9 +650,6 @@ static void do_firm_lowering(const char *input_filename)
 	}
 
 	do_irp_opt("target-lowering");
-
-	if (firm_dump.statistic & STAT_AFTER_LOWER)
-		stat_dump_snapshot(input_filename, "low");
 
 	for (i = get_irp_n_irgs() - 1; i >= 0; --i) {
 		ir_graph *irg = get_irp_irg(i);
@@ -700,10 +690,6 @@ static void do_firm_lowering(const char *input_filename)
 	do_irp_opt("remove-unused");
 	do_irp_opt("opt-cc");
 	dump_all("low-opt");
-
-	if (firm_dump.statistic & STAT_FINAL) {
-		stat_dump_snapshot(input_filename, "final");
-	}
 }
 
 /**
@@ -742,7 +728,6 @@ void generate_code(FILE *out, const char *input_filename)
 	/* initialize implicit opts, just to be sure because really the frontend
 	 * should have called it already before starting graph construction */
 	init_implicit_optimizations();
-	firm_init_stat();
 
 	/* the general for dumping option must be set, or the others will not work*/
 	firm_dump.ir_graph = (bool) (firm_dump.ir_graph | firm_dump.all_phases);
@@ -776,25 +761,15 @@ void generate_code(FILE *out, const char *input_filename)
 		do_irg_opt(irg, "control-flow");
 	}
 
-	if (firm_dump.statistic & STAT_BEFORE_OPT) {
-		stat_dump_snapshot(input_filename, "noopt");
-	}
-
-	do_firm_optimizations(input_filename);
-	do_firm_lowering(input_filename);
+	do_firm_optimizations();
+	do_firm_lowering();
 
 	timer_stop(t_all_opt);
-
-	if (firm_dump.statistic & STAT_FINAL_IR)
-		stat_dump_snapshot(input_filename, "final-ir");
 
 	/* run the code generator */
 	timer_start(t_backend);
 	be_main(out, input_filename);
 	timer_stop(t_backend);
-
-	if (firm_dump.statistic & STAT_FINAL)
-		stat_dump_snapshot(input_filename, "final");
 }
 
 void gen_firm_finish(void)

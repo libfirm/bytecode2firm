@@ -169,9 +169,6 @@ static void init_types(void)
 
 	mode_reference = mode_P;
 
-	const backend_params *params = be_get_backend_param();
-	mode_float_arithmetic = params->mode_float_arithmetic;
-
 	type_array_byte_boolean = new_type_array(type_byte);
 	set_type_state(type_array_byte_boolean, layout_fixed);
 	type_array_short        = new_type_array(type_short);
@@ -1122,7 +1119,7 @@ static void construct_xcmp(ir_mode *mode, ir_relation rel_1, ir_relation rel_2)
 static ir_node *get_array_data_base(ir_node *addr)
 {
 	ir_mode *mode        = get_irn_mode(addr);
-	ir_mode *mode_offset = get_reference_mode_unsigned_eq(mode);
+	ir_mode *mode_offset = get_reference_offset_mode(mode);
 	ir_node *offset      = new_Const_long(mode_offset, GCJI_DATA_OFFSET);
 	return new_Add(addr, offset, mode);
 }
@@ -3011,10 +3008,23 @@ int main(int argc, char **argv)
 	if (verbose)
 		classpath_print(stderr);
 
+	/* Initialize backend */
+#ifdef EXCEPTIONS
+	be_parse_arg("omitfp=false");
+	be_parse_arg("ia32-emit_cfi_directives");
+#endif
+#ifdef __APPLE__
+	be_parse_arg("objectformat=mach-o");
+#endif
+	const backend_params *params = be_get_backend_param();
+	mode_float_arithmetic = params->mode_float_arithmetic;
+	be_dwarf_set_source_language(DW_LANG_Java);
+
 	mangle_init();
 	init_types();
 	oo_init();
 	gcji_init();
+
 	worklist = new_pdeq();
 
 	/* read java.lang.Class first - this type is needed to construct RTTI
@@ -3131,12 +3141,6 @@ int main(int argc, char **argv)
 	int asm_fd = mkstemp(asm_file);
 	FILE *asm_out = fdopen(asm_fd, "w");
 
-#ifdef EXCEPTIONS
-	be_parse_arg("omitfp=false");
-	be_parse_arg("ia32-emit_cfi_directives");
-#endif
-
-	be_dwarf_set_source_language(DW_LANG_Java);
 	generate_code(asm_out, main_class_name);
 
 	gen_firm_finish();

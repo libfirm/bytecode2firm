@@ -690,7 +690,6 @@ static void add_pointer_in_jcr_segment(ir_entity *entity)
 	ir_node   *val = new_r_Address(irg, entity);
 
 	set_entity_ld_ident(ptr, new_id_from_chars("", 0));
-	set_entity_compiler_generated(ptr, 1);
 	set_entity_visibility(ptr, ir_visibility_private);
 	set_entity_linkage(ptr, IR_LINKAGE_CONSTANT|IR_LINKAGE_HIDDEN_USER);
 	set_entity_alignment(ptr, 1);
@@ -706,7 +705,7 @@ static ir_node *get_vtable_ref(ir_type *type)
 	ir_node  *addr  = new_r_Address(ccode, cls_vtable);
 	unsigned offset
 		= ddispatch_get_vptr_points_to_index() * get_mode_size_bytes(mode_reference);
-	ir_mode *offset_mode = get_reference_mode_unsigned_eq(mode_reference);
+	ir_mode *offset_mode = get_reference_offset_mode(mode_reference);
 	ir_node *cnst  = new_r_Const_long(ccode, offset_mode, offset);
 	ir_node *block = get_r_cur_block(ccode);
 	ir_node *add   = new_r_Add(block, addr, cnst, mode_reference);
