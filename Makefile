@@ -17,7 +17,7 @@ INSTALL      ?= /usr/bin/install
 BUILDDIR      = build
 GOAL          = $(BUILDDIR)/bytecode2firm
 CPPFLAGS      = -I. $(FIRM_CFLAGS) $(LIBOO_CFLAGS)
-CFLAGS        = -Wall -Wextra -Werror -Wunreachable-code -Wstrict-prototypes -Wlogical-op -O0 -g3 -std=c99
+CFLAGS        = -Wall -Wextra -Werror -Wunreachable-code -Wstrict-prototypes -O0 -g3 -std=c99
 # TODO fix simplert to also use CFLAGS_GOOD
 CFLAGS_GOOD   = $(CFLAGS) -pedantic -Wmissing-prototypes
 LFLAGS        = $(LIBOO_LIBS) $(FIRM_LIBS) -lm
