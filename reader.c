@@ -2926,7 +2926,9 @@ static int link_executable(const char *startup_file, const char *asm_file,
 			obstack_printf(&obst, " %s/libsimplert.a", CLASSPATH_SIMPLERT);
 		} else {
 			obstack_printf(&obst, " -L%s -lsimplert", CLASSPATH_SIMPLERT);
+#ifndef __APPLE__
 			obstack_printf(&obst, " -Wl,-R%s", CLASSPATH_SIMPLERT);
+#endif
 		}
 	}
 	obstack_printf(&obst, " -o %s", output_name);
@@ -3044,6 +3046,7 @@ int main(int argc, char **argv)
 #endif
 #ifdef __APPLE__
 	be_parse_arg("objectformat=mach-o");
+	be_parse_arg("pic=mach-o");
 #endif
 	const backend_params *params = be_get_backend_param();
 	mode_float_arithmetic = params->mode_float_arithmetic;
@@ -3157,6 +3160,11 @@ int main(int argc, char **argv)
 
 	ir_entity *main_rtti = gcji_get_rtti_entity(main_class);
 	const char *main_rtti_ldname = get_entity_ld_name(main_rtti);
+#ifdef __APPLE__
+	// Skip _ prefix on the C side...
+	assert(main_rtti_ldname[0] == '_' && main_rtti_ldname[1] == '_');
+	main_rtti_ldname = main_rtti_ldname+1;
+#endif
 
 	char startup_file[] = "bc2firm_startup_XXXXXX";
 	int startup_fd = mkstemp(startup_file);
