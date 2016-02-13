@@ -32,6 +32,8 @@ SIMPLERT_HEADERS = $(shell find simplert/c -name "*.h")
 SIMPLERT_DIR = $(BUILDDIR)/simplert
 SIMPLERT_so = $(SIMPLERT_DIR)/libsimplert.so
 SIMPLERT_a = $(SIMPLERT_DIR)/libsimplert.a
+SIMPLERT_CFLAGS ?= -m32 -W
+SIMPLERT_LINKFLAGS ?= -shared -lm
 
 GCJ_DIR = $(BUILDDIR)/gcj
 
@@ -79,13 +81,13 @@ $(BUILDDIR)/%.o: %.c
 $(SIMPLERT_so): $(SIMPLERT_C_SOURCES) $(SIMPLERT_HEADERS)
 	@echo '===> CC $@'
 	$(Q)mkdir -p $(SIMPLERT_DIR)
-	$(Q)$(CC) $(CFLAGS) -W -m32 -shared $(SIMPLERT_C_SOURCES) -lm -o $@
+	$(Q)$(CC) $(CFLAGS) $(SIMPLERT_CFLAGS) $(SIMPLERT_C_SOURCES) $(SIMPLERT_LINKFLAGS) -o $@
 
 SIMPLERT_SOURCES_ABS=$(abspath $(SIMPLERT_C_SOURCES))
 $(SIMPLERT_a): $(SIMPLERT_C_SOURCES) $(SIMPLERT_HEADERS)
 	@echo '===> CC+AR $@'
 	$(Q)mkdir -p $(SIMPLERT_DIR)
-	$(Q)cd $(SIMPLERT_DIR) && $(CC) $(CFLAGS) -W -m32 -c $(SIMPLERT_SOURCES_ABS)
+	$(Q)cd $(SIMPLERT_DIR) && $(CC) $(CFLAGS) $(SIMPLERT_CFLAGS) -c $(SIMPLERT_SOURCES_ABS)
 	$(Q)ar rcs $@ $(SIMPLERT_DIR)/*.o
 
 $(SIMPLERT_CLASSES): $(SIMPLERT_JAVA_SOURCES)
