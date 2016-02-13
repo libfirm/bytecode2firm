@@ -3155,7 +3155,7 @@ int main(int argc, char **argv)
 	} else {
 		/* simplert */
 		if (static_stdlib) {
-			sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none %s/simplert.a -o %s", asm_file, startup_file, CLASSPATH_SIMPLERT, output_name);
+			sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none %s/libsimplert.a -o %s", asm_file, startup_file, CLASSPATH_SIMPLERT, output_name);
 		} else {
 			sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -L%s -lsimplert -Wl,-R%s -o %s", asm_file, startup_file, CLASSPATH_SIMPLERT, CLASSPATH_SIMPLERT, output_name);
 		}
