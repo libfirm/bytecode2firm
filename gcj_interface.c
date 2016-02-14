@@ -1185,7 +1185,7 @@ void gcji_init()
 	superobject_ident  = new_id_from_str("@base");
 
 	ddispatch_set_vtable_layout(2, 4, 2, setup_vtable);
-	ddispatch_set_abstract_method_ident(new_id_from_str("_Jv_ThrowAbstractMethodError"));
+	ddispatch_set_abstract_method_entity(gcj_abstract_method_entity);
 	ddispatch_set_interface_lookup_constructor(gcji_lookup_interface);
 
 	/* we construct rtti right away */
