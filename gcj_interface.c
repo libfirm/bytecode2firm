@@ -166,8 +166,8 @@ void gcji_create_array_type(void)
 	gcj_array_length = add_compound_member(type_jarray, length_id, type_int);
 
 	default_layout_compound_type(type_jarray);
-	array_header_size      = get_type_size_bytes(type_jarray);
-	array_header_end_align = get_type_alignment_bytes(type_int);
+	array_header_size      = get_type_size(type_jarray);
+	array_header_end_align = get_type_alignment(type_int);
 }
 
 ir_entity *gcji_get_abstract_method_entity(void)
@@ -522,8 +522,8 @@ static ir_entity *emit_method_table(ir_type *classtype)
 
 	ir_type *array_type = new_type_array(type_method_desc);
 	set_array_size_int(array_type, n_methods);
-	unsigned size = n_methods * get_type_size_bytes(type_method_desc);
-	set_type_size_bytes(array_type, size);
+	unsigned size = n_methods * get_type_size(type_method_desc);
+	set_type_size(array_type, size);
 
 	ir_initializer_t *cinit = create_initializer_compound(n_methods);
 	for (uint16_t i = 0; i < n_methods; i++) {
@@ -621,8 +621,8 @@ static ir_entity *emit_field_table(ir_type *classtype)
 
 	ir_type *type_array = new_type_array(type_field_desc);
 	set_array_size_int(type_array, n_fields);
-	unsigned size = n_fields * get_type_size_bytes(type_field_desc);
-	set_type_size_bytes(type_array, size);
+	unsigned size = n_fields * get_type_size(type_field_desc);
+	set_type_size(type_array, size);
 
 	ir_initializer_t *init = create_initializer_compound(n_fields);
 	for (uint16_t i = 0; i < n_fields; i++) {
@@ -648,8 +648,8 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 
 	ir_type *type_array = new_type_array(type_reference);
 	set_array_size_int(type_array, n_interfaces);
-	unsigned size = n_interfaces * get_type_size_bytes(type_reference);
-	set_type_size_bytes(type_array, size);
+	unsigned size = n_interfaces * get_type_size(type_reference);
+	set_type_size(type_array, size);
 
 	ir_initializer_t *init = create_initializer_compound(n_interfaces);
 	for (uint16_t i = 0; i < n_interfaces; i++) {

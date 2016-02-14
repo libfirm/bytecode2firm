@@ -155,7 +155,7 @@ static void init_types(void)
 	mode_long
 		= new_int_mode("J", irma_twos_complement, 64, 1, 64);
 	type_long = new_type_primitive(mode_long);
-	set_type_alignment_bytes(type_long, 4);
+	set_type_alignment(type_long, 4);
 
 	ir_mode *mode_boolean = mode_byte;
 	type_boolean = new_type_primitive(mode_boolean);
@@ -170,7 +170,7 @@ static void init_types(void)
 	mode_double
 		= new_float_mode("D", irma_ieee754, 11, 52, ir_overflow_min_max);
 	type_double = new_type_primitive(mode_double);
-	set_type_alignment_bytes(type_double, 4);
+	set_type_alignment(type_double, 4);
 
 	mode_reference = mode_P;
 
@@ -2554,8 +2554,8 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	DEL_ARR_F(basic_blocks);
 
 	ir_type *frame_type = get_irg_frame_type(current_ir_graph);
-	set_type_size_bytes(frame_type, 0);
-	set_type_alignment_bytes(frame_type, 4);
+	set_type_size(frame_type, 0);
+	set_type_alignment(frame_type, 4);
 	set_type_state(frame_type, layout_fixed);
 }
 
