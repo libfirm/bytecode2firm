@@ -53,7 +53,12 @@ static pdeq    *worklist;
 static class_t *class_file;
 static const char *main_class_name;
 static const char *main_class_name_short;
-static bool     verbose;
+static bool        verbose;
+static bool        static_stdlib;
+static enum {
+	RUNTIME_GCJ,
+	RUNTIME_SIMPLERT
+} runtime_type = RUNTIME_SIMPLERT;
 
 static constant_t *get_constant(uint16_t index)
 {
@@ -2913,6 +2918,38 @@ static ir_entity *find_method_entity(const char* classname, const char* methodna
 	return result;
 }
 
+static int link_executable(const char *startup_file, const char *asm_file,
+                           const char *output_name)
+{
+	struct obstack obst;
+	obstack_init(&obst);
+
+	obstack_printf(&obst, "gcc -g");
+	obstack_printf(&obst, " -m32");
+	obstack_printf(&obst, " -x c %s", startup_file);
+	obstack_printf(&obst, " -x assembler %s", asm_file);
+
+	obstack_printf(&obst, " -x none");
+	if (runtime_type == RUNTIME_GCJ) {
+		obstack_printf(&obst, "-x none -lgcj -lstdc++");
+	} else {
+		assert(runtime_type == RUNTIME_SIMPLERT);
+		if (static_stdlib) {
+			obstack_printf(&obst, " %s/libsimplert.a", CLASSPATH_SIMPLERT);
+		} else {
+			obstack_printf(&obst, " -L%s -lsimplert", CLASSPATH_SIMPLERT);
+			obstack_printf(&obst, " -Wl,-R%s", CLASSPATH_SIMPLERT);
+		}
+	}
+	obstack_printf(&obst, " -o %s", output_name);
+	obstack_1grow(&obst, '\0');
+
+	const char *cmd = obstack_finish(&obst);
+	if (verbose)
+		fprintf(stderr, "===> Assembling & linking (%s)\n", cmd);
+	return system(cmd);
+}
+
 int main(int argc, char **argv)
 {
 	gen_firm_init();
@@ -2926,13 +2963,8 @@ int main(int argc, char **argv)
 
 	const char *output_name   = NULL;
 	bool        save_temps    = false;
-	bool        static_stdlib = false;
 	bool        optimize      = false;
 	bool        optimize_rta  = false;
-	enum {
-		RUNTIME_GCJ,
-		RUNTIME_SIMPLERT
-	} runtime_type = RUNTIME_SIMPLERT;
 
 	int curarg = 1;
 #define EQUALS(x)             (strcmp(x, argv[curarg]) == 0)
@@ -3154,23 +3186,7 @@ int main(int argc, char **argv)
 	oo_deinit();
 	mangle_deinit();
 
-	char cmd_buffer[1024];
-	if (runtime_type == RUNTIME_GCJ) {
-		/* libgcj */
-		sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -lgcj -lstdc++ -o %s", asm_file, startup_file, output_name);
-	} else {
-		/* simplert */
-		if (static_stdlib) {
-			sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none %s/libsimplert.a -o %s", asm_file, startup_file, CLASSPATH_SIMPLERT, output_name);
-		} else {
-			sprintf(cmd_buffer, "gcc -m32 -g -x assembler %s -x c %s -x none -L%s -lsimplert -Wl,-R%s -o %s", asm_file, startup_file, CLASSPATH_SIMPLERT, CLASSPATH_SIMPLERT, output_name);
-		}
-	}
-
-	if (verbose)
-		fprintf(stderr, "===> Assembling & linking (%s)\n", cmd_buffer);
-
-	int retval = system(cmd_buffer);
+	int retval = link_executable(startup_file, asm_file, output_name);
 
 	if (!save_temps) {
 		remove(startup_file);
