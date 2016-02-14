@@ -8,10 +8,7 @@ bytecode2firm is a compiler that translates java bytecode to machine code. Code 
 It is a static (ahead of time) compiler.
 
 It also includes "simplert" a minimal runtime library.
-This is partially implemented as a shared library
-and partially as java files.
-We use a shared library to link them,
-which prevents building on OSX (and Windows?) at the moment.
+This is partially implemented as a shared library and partially as java files.
 
 2. Building
 -----------
