@@ -12,6 +12,7 @@ static const char *mangle_prefix = "_";
 static const char *mangle_prefix = "";
 #endif
 
+static struct obstack mobst;
 static const char *base36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 static char *duplicate_string_n(const char* s, size_t n)
@@ -339,14 +340,21 @@ static void mangle_types(const char *desc, struct obstack *obst, compression_tab
 	}
 }
 
+static ident *make_ident(void)
+{
+	size_t  result_len    = obstack_object_size(&mobst);
+	char   *result_string = obstack_finish(&mobst);
+	ident  *result        = new_id_from_chars(result_string, result_len);
+	obstack_free(&mobst, result_string);
+	return result;
+}
+
 ident *mangle_member_name(const char *defining_class, const char *member_name, const char *member_signature)
 {
-	struct obstack mobst;
-	obstack_init(&mobst);
-
 	compression_table_t ct;
 	mangle_ct_init(&ct);
 
+	assert(obstack_object_size(&mobst) == 0);
 	obstack_grow(&mobst, mangle_prefix, strlen(mangle_prefix));
 	obstack_grow(&mobst, "_Z", 2);
 
@@ -388,25 +396,17 @@ ident *mangle_member_name(const char *defining_class, const char *member_name, c
 		free((char*)params);
 	}
 
-name_finished: ;
-	size_t  result_len    = obstack_object_size(&mobst);
-	char   *result_string = obstack_finish(&mobst);
-	ident  *result        = new_id_from_chars(result_string, result_len);
-	obstack_free(&mobst, result_string);
-
+name_finished:
 	mangle_ct_flush(&ct);
-
-	return result;
+	return make_ident();
 }
 
 ident *mangle_vtable_name(const char *classname)
 {
-	struct obstack mobst;
-	obstack_init(&mobst);
-
 	compression_table_t ct;
 	mangle_ct_init(&ct);
 
+	assert(obstack_object_size(&mobst) == 0);
 	obstack_grow(&mobst, mangle_prefix, strlen(mangle_prefix));
 	obstack_grow(&mobst, "_ZTV", 4);
 
@@ -415,18 +415,21 @@ ident *mangle_vtable_name(const char *classname)
 
 	obstack_1grow(&mobst, 'E');
 
-	size_t  result_len    = obstack_object_size(&mobst);
-	char   *result_string = obstack_finish(&mobst);
-	ident  *result        = new_id_from_chars(result_string, result_len);
-	obstack_free(&mobst, result_string);
-
 	mangle_ct_flush(&ct);
-	return result;
+	return make_ident();
 }
 
 ident *mangle_rtti_name(const char *classname)
 {
 	return mangle_member_name(classname, "class$", NULL);
+}
+
+ident *mangle_function(const char *name)
+{
+	assert(obstack_object_size(&mobst) == 0);
+	obstack_grow(&mobst, mangle_prefix, strlen(mangle_prefix));
+	obstack_grow(&mobst, name, strlen(name));
+	return make_ident();
 }
 
 void mangle_init(void)
@@ -440,6 +443,7 @@ void mangle_init(void)
 	mangle_add_name_substitution("not", "4not$");
 	mangle_add_name_substitution("xor", "4xor$");
 	mangle_add_name_substitution("delete", "7delete$");
+	obstack_init(&mobst);
 }
 
 void mangle_deinit(void)

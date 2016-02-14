@@ -27,6 +27,7 @@
 ident *mangle_member_name(const char *defining_class, const char *member_name, const char *member_signature);
 ident *mangle_vtable_name(const char *classname);
 ident *mangle_rtti_name(const char *classname);
+ident *mangle_function(const char *name);
 
 void mangle_init(void);
 void mangle_deinit(void);
