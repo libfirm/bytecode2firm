@@ -2919,11 +2919,7 @@ static ir_entity *find_method_entity(const char* classname, const char* methodna
 int main(int argc, char **argv)
 {
 	gen_firm_init();
-	init_types();
 	class_registry_init();
-	mangle_init();
-	oo_init();
-	gcji_init();
 	class_file_init();
 
 	if (argc < 2) {
@@ -3015,6 +3011,10 @@ int main(int argc, char **argv)
 	if (verbose)
 		classpath_print(stderr);
 
+	mangle_init();
+	init_types();
+	oo_init();
+	gcji_init();
 	worklist = new_pdeq();
 
 	/* read java.lang.Class first - this type is needed to construct RTTI
