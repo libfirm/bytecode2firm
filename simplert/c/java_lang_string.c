@@ -81,7 +81,7 @@ void _ZN4java4lang6String4initEJvP6JArrayIwEiib(java_lang_String *this_,
 		fprintf(stderr, "out of memory\n");
 		abort();
 	}
-	const jchar *chars_data = (const jchar*)get_array_data(chars) + offset;
+	const jchar *chars_data = get_array_data(const jchar, chars) + offset;
 	if (chars->length < count) {
 		fprintf(stderr, "chars array too short\n");
 		abort();
@@ -125,7 +125,7 @@ void _ZN4java4lang6String8getCharsEJviiP6JArrayIwEi(
 	jint len = srcEnd - srcBegin;
 	assert(len <= (dstArray->length - dstBegin));
 
-	jchar       *dst  = (jchar*)get_array_data(dstArray) + dstBegin;
+	jchar       *dst  = get_array_data(jchar, dstArray) + dstBegin;
 	const jchar *data = get_string_begin(this_) + srcBegin;
 
 	memcpy(dst, data, len * sizeof(dst[0]));

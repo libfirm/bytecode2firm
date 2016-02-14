@@ -15,7 +15,6 @@ java_lang_Class _Jv_shortClass;
 java_lang_Class _Jv_longClass;
 java_lang_Class _Jv_floatClass;
 java_lang_Class _Jv_doubleClass;
-java_lang_Class objarray_class;
 
 /* TODO: correct type */
 int _Jv_soleCompiledEngine;

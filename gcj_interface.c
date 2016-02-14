@@ -51,6 +51,9 @@ static ir_type *type_java_lang_object;
 static ir_type *type_java_lang_class;
 static ir_type *type_jarray;
 
+static unsigned array_header_size;
+static unsigned array_header_end_align;
+
 ident *superobject_ident;
 bool create_jcr_segment;
 
@@ -162,13 +165,9 @@ void gcji_create_array_type(void)
 	ident *length_id = new_id_from_str("length");
 	gcj_array_length = add_compound_member(type_jarray, length_id, type_int);
 
-	ir_type *data_array = new_type_array(type_byte);
-	set_array_variable_size(data_array, 1);
-	ident *data_id = new_id_from_str("data");
-	add_compound_member(type_jarray, data_id, data_array);
-	set_compound_variable_size(type_jarray, 1);
-
 	default_layout_compound_type(type_jarray);
+	array_header_size      = get_type_size_bytes(type_jarray);
+	array_header_end_align = get_type_alignment_bytes(type_int);
 }
 
 ir_entity *gcji_get_abstract_method_entity(void)
@@ -1318,4 +1317,13 @@ ir_entity *detect_call(ir_node* call) {
 		assert(false);
 
 	return NULL;
+}
+
+ir_node *gcji_array_data_addr(ir_node *addr)
+{
+	ir_mode *mode        = get_irn_mode(addr);
+	ir_mode *mode_offset = get_reference_offset_mode(mode);
+	unsigned offset      = array_header_size;
+	ir_node *offset_cnst = new_Const_long(mode_offset, offset);
+	return new_Add(addr, offset_cnst, mode);
 }

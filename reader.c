@@ -1118,25 +1118,14 @@ static void construct_xcmp(ir_mode *mode, ir_relation rel_1, ir_relation rel_2)
 	symbolic_push(res);
 }
 
-/**
- * Returns the offset into the data for an array object.
- */
-static ir_node *get_array_data_base(ir_node *addr)
-{
-	ir_mode *mode        = get_irn_mode(addr);
-	ir_mode *mode_offset = get_reference_offset_mode(mode);
-	ir_node *offset      = new_Const_long(mode_offset, GCJI_DATA_OFFSET);
-	return new_Add(addr, offset, mode);
-}
-
 static void construct_array_load(ir_type *array_type)
 {
 	ir_node *index     = symbolic_pop(mode_int);
 	ir_node *arr_addr  = symbolic_pop(mode_reference);
-	ir_node *base_addr = get_array_data_base(arr_addr);
+	ir_type *type      = get_array_element_type(array_type);
+	ir_node *base_addr = gcji_array_data_addr(arr_addr);
 	ir_node *addr      = new_Sel(base_addr, index, array_type);
 	ir_node *mem       = get_store();
-	ir_type *type      = get_array_element_type(array_type);
 	ir_mode *mode      = get_type_mode(type);
 	ir_node *load      = new_Load(mem, addr, mode, type, cons_none);
 	ir_node *new_mem   = new_Proj(load, mode_M, pn_Load_M);
@@ -1156,7 +1145,7 @@ static void construct_array_store(ir_type *array_type)
 	ir_node *value      = new_Conv(op, mode);       // ... obey the real type when writing to memory.
 	ir_node *index      = symbolic_pop(mode_int);
 	ir_node *arr_addr   = symbolic_pop(mode_reference);
-	ir_node *base_addr  = get_array_data_base(arr_addr);
+	ir_node *base_addr  = gcji_array_data_addr(arr_addr);
 	ir_node *addr       = new_Sel(base_addr, index, array_type);
 	ir_node *mem        = get_store();
 	ir_node *store      = new_Store(mem, addr, value, type, cons_none);

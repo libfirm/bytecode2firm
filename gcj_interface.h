@@ -4,9 +4,6 @@
 #include <libfirm/firm.h>
 #include "class_file.h"
 
-#define GCJI_LENGTH_OFFSET 4
-#define GCJI_DATA_OFFSET   8
-
 extern ident *superobject_ident;
 extern bool   create_jcr_segment;
 
@@ -35,5 +32,10 @@ ir_entity *gcji_get_abstract_method_entity(void);
 void       init_rta_callbacks(void);
 void       deinit_rta_callbacks(void);
 ir_entity *detect_call(ir_node *call);
+
+/**
+ * Returns a node for the address of the data of an array object.
+ */
+ir_node *gcji_array_data_addr(ir_node *addr);
 
 #endif

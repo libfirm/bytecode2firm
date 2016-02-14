@@ -90,13 +90,14 @@ static java_lang_Class *get_array_class(java_lang_Class *eltype)
 
 jarray _Jv_NewPrimArray(java_lang_Class *eltype, jint count)
 {
-	if (__builtin_expect (count < 0, false)) {
+	if (__builtin_expect(count < 0, false)) {
 		fprintf(stderr, "throw negative array size\n");
 		abort();
 	}
 
 	assert(eltype->vtable == (vtable_t*)-1);
 	int elsize = eltype->size_in_bytes;
+	assert(elsize > 0);
 	// TODO: check for overflow
 	size_t size = sizeof(array_header_t) + elsize * count;
 
@@ -109,7 +110,7 @@ jarray _Jv_NewPrimArray(java_lang_Class *eltype, jint count)
 jarray _Jv_NewObjectArray(jsize count, java_lang_Class *eltype, jobject init)
 {
 	(void)eltype;
-	if (__builtin_expect (count < 0, false)) {
+	if (__builtin_expect(count < 0, false)) {
 		fprintf(stderr, "throw negative array size\n");
 		abort();
 	}
@@ -118,11 +119,11 @@ jarray _Jv_NewObjectArray(jsize count, java_lang_Class *eltype, jobject init)
 	// TODO: check for overflow
 	size_t size = sizeof(array_header_t) + elsize * count;
 
-	array_header_t *result = calloc(1, size);
+	array_header_t *result = malloc(size);
 	result->base.vptr = get_array_class(eltype)->vtable;
 	result->length    = count;
 
-	java_lang_Object **data = (java_lang_Object**)get_array_data(result);
+	java_lang_Object **data = get_array_data(java_lang_Object*, result);
 	for (jsize i = 0; i < count; ++i) {
 		data[i] = init;
 	}
@@ -135,7 +136,7 @@ jarray _Z17_Jv_NewMultiArrayPN4java4lang5ClassEiPi(java_lang_Class *type,
 	assert(_ZN4java4lang5Class7isArrayEJbv(type));
 	java_lang_Class *eltype = type->me.element_type;
 
-	array_header_t *result;
+	jarray result;
 	if (_ZN4java4lang5Class11isPrimitiveEJbv(eltype)) {
 		assert(n_dims == 1);
 		result = _Jv_NewPrimArray(eltype, sizes[0]);
@@ -144,7 +145,7 @@ jarray _Z17_Jv_NewMultiArrayPN4java4lang5ClassEiPi(java_lang_Class *type,
 	}
 
 	if (n_dims > 1) {
-		jarray *contents = (jarray*)get_array_data(result);
+		jarray *contents = get_array_data(jarray, result);
 		for (jint i = 0; i < sizes[0]; ++i) {
 			contents[i]
 				= _Z17_Jv_NewMultiArrayPN4java4lang5ClassEiPi(eltype, n_dims-1,

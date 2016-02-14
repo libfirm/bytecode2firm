@@ -25,7 +25,7 @@ void JvRunMain(java_lang_Class *cls, int argc, const char **argv)
 	// construct array with commandline arguments
 	java_lang_Class *string = &_ZN4java4lang6String6class$E;
 	jarray           args   = _Jv_NewObjectArray(argc, string, NULL);
-	java_lang_String **data = (java_lang_String**)get_array_data(args);
+	java_lang_String **data = get_array_data(java_lang_String*, args);
 	for (int i = 0; i < argc; ++i) {
 		const char       *arg    = argv[i];
 		size_t            len    = strlen(arg);

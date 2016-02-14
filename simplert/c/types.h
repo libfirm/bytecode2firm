@@ -28,8 +28,8 @@ struct vtable_t {
 typedef struct vtable_t vtable_t;
 
 typedef struct extended_vtable_t {
-	uint32_t x0;
-	uint32_t x1;
+	void *x0;
+	void *x1;
 	vtable_t vtable;
 } extended_vtable_t;
 
@@ -150,8 +150,6 @@ typedef enum access_flags_t {
 	ACCESS_FLAG_STRICT          = 1U << 11
 } access_flags_t;
 
-extern java_lang_Class objarray_class;
-
 void init_prim_rtti(void);
 jobject _Jv_AllocObjectNoFinalizer(java_lang_Class *type);
 jv_method *get_method(java_lang_Class *cls, const utf8_const *name,
@@ -169,9 +167,7 @@ java_lang_String *double_to_string(jdouble value, bool is_float);
 
 unsigned calc_string_hash(const char *chars, size_t len);
 
-static inline void *get_array_data(jarray arr)
-{
-	return ((char*)arr) + sizeof(array_header_t);
-}
+#define get_array_data(type, array) \
+	((type*)(((char*)array) + sizeof(array_header_t)))
 
 #endif

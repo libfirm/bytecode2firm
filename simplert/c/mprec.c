@@ -428,7 +428,7 @@ _DEFUN (mult, (ptr, a, b), struct _reent * ptr _AND _Bigint * a _AND _Bigint * b
 #else
   for (; xb < xbe; xc0++)
     {
-      if (y = *xb++)
+      if ((y = *xb++))
 	{
 	  x = xa;
 	  xc = xc0;
@@ -532,11 +532,11 @@ _DEFUN (lshift, (ptr, b, k), struct _reent * ptr _AND _Bigint * b _AND int k)
       z = 0;
       do
 	{
-	  *x1++ = *x << k & 0xffff | z;
+	  *x1++ = ((*x << k) & 0xffff) | z;
 	  z = *x++ >> k1;
 	}
       while (x < xe);
-      if (*x1 = z)
+      if ((*x1 = z))
 	++n1;
     }
 #endif
@@ -762,18 +762,18 @@ _DEFUN (b2d, (a, e),
   if (k < Ebits + 16)
     {
       z = xa > xa0 ? *--xa : 0;
-      d0 = Exp_1 | y << k - Ebits | z >> Ebits + 16 - k;
+      d0 = Exp_1 | (y << (k - Ebits)) | (z >> (Ebits + 16 - k));
       w = xa > xa0 ? *--xa : 0;
       y = xa > xa0 ? *--xa : 0;
-      d1 = z << k + 16 - Ebits | w << k - Ebits | y >> 16 + Ebits - k;
+      d1 = (z << (k + 16 - Ebits)) | (w << (k - Ebits)) | (y >> (16 + Ebits - k));
       goto ret_d;
     }
   z = xa > xa0 ? *--xa : 0;
   w = xa > xa0 ? *--xa : 0;
   k -= Ebits + 16;
-  d0 = Exp_1 | y << k + 16 | z << k | w >> 16 - k;
+  d0 = Exp_1 | (y << (k + 16)) | (z << k) | (w >> (16 - k));
   y = xa > xa0 ? *--xa : 0;
-  d1 = w << k + 16 | y << k;
+  d1 = (w << (k + 16)) | y << k;
 #endif
 ret_d:
 #ifdef VAX
@@ -867,17 +867,17 @@ _DEFUN (d2b,
       if (k)
 	if (k >= 16)
 	  {
-	    x[0] = y | z << 32 - k & 0xffff;
-	    x[1] = z >> k - 16 & 0xffff;
+	    x[0] = y | ((z << (32 - k)) & 0xffff);
+	    x[1] = (z >> (k - 16)) & 0xffff;
 	    x[2] = z >> k;
 	    i = 2;
 	  }
 	else
 	  {
 	    x[0] = y & 0xffff;
-	    x[1] = y >> 16 | z << 16 - k & 0xffff;
+	    x[1] = (y >> 16) | ((z << (16 - k)) & 0xffff);
 	    x[2] = z >> k & 0xffff;
-	    x[3] = z >> k + 16;
+	    x[3] = z >> (k + 16);
 	    i = 3;
 	  }
       else

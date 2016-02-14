@@ -261,7 +261,10 @@ extern double rnd_prod(double, double), rnd_quot(double, double);
  */
 
 #ifndef Pack_32
-#if SIZEOF_VOID_P != 8
+#ifndef __SIZEOF_POINTER__
+#error Could not determine pointer size
+#endif
+#if __SIZEOF_POINTER__ != 8
 #define Pack_32
 #endif
 #endif

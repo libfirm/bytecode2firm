@@ -7,7 +7,7 @@
 void _ZN4java4lang6System9arraycopyEJvPNS0_6ObjectEiS3_ii(jobject src,
 	jint srcpos, jobject dst, jint dstpos, jint length)
 {
-	// TODO check that src+dest are actualle an array and of the same type
+	// TODO check that src+dest are actually an array and of the same type
 	assert(src->vptr == dst->vptr);
 	jarray srca = (jarray)src;
 	jarray dsta = (jarray)dst;
@@ -20,7 +20,7 @@ void _ZN4java4lang6System9arraycopyEJvPNS0_6ObjectEiS3_ii(jobject src,
 	jint element_size = src->vptr->rtti->me.element_type->size_in_bytes;
 	assert(element_size > 0);
 
-	memmove((char*)get_array_data(dsta) + (dstpos * element_size),
-	        (char*)get_array_data(srca) + (srcpos * element_size),
+	memmove(get_array_data(char, dsta) + (dstpos * element_size),
+	        get_array_data(const char, srca) + (srcpos * element_size),
 	        length * element_size);
 }
