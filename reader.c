@@ -2914,7 +2914,6 @@ static int link_executable(const char *startup_file, const char *asm_file,
 	obstack_init(&obst);
 
 	obstack_printf(&obst, "gcc -g");
-	obstack_printf(&obst, " -m32");
 	obstack_printf(&obst, " -x c %s", startup_file);
 	obstack_printf(&obst, " -x assembler %s", asm_file);
 
@@ -3032,6 +3031,13 @@ int main(int argc, char **argv)
 		classpath_print(stderr);
 
 	/* Initialize backend */
+#ifdef __i386__
+	be_parse_arg("isa=ia32");
+#endif
+#ifdef __x86_64__
+	be_parse_arg("isa=amd64");
+	be_parse_arg("pic=elf");
+#endif
 #ifdef EXCEPTIONS
 	be_parse_arg("omitfp=false");
 	be_parse_arg("ia32-emit_cfi_directives");

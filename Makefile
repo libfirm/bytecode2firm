@@ -34,7 +34,7 @@ SIMPLERT_HEADERS = $(shell find simplert/c -name "*.h")
 SIMPLERT_DIR = $(BUILDDIR)/simplert
 SIMPLERT_dll = $(SIMPLERT_DIR)/libsimplert$(DLLEXT)
 SIMPLERT_a = $(SIMPLERT_DIR)/libsimplert.a
-SIMPLERT_CFLAGS ?= -m32 -W
+SIMPLERT_CFLAGS ?= -fPIC -g3 -fPIC
 SIMPLERT_LINKFLAGS ?= -shared -lm
 
 GCJ_DIR = $(BUILDDIR)/gcj
