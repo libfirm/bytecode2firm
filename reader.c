@@ -188,7 +188,6 @@ static void init_types(void)
 	set_type_state(type_array_double, layout_fixed);
 
 	type_reference          = new_type_primitive(mode_reference);
-	set_type_alignment_bytes(type_reference, 4);
 	type_array_reference    = new_type_array(type_reference);
 	set_type_state(type_array_reference, layout_fixed);
 
