@@ -52,6 +52,7 @@ static ir_type *type_java_lang_class;
 static ir_type *type_jarray;
 
 ident *superobject_ident;
+bool create_jcr_segment;
 
 extern char* strdup(const char* s);
 static ir_entity *do_emit_utf8_const(const char *bytes, size_t len);
@@ -683,6 +684,9 @@ void gcji_create_rtti_entity(ir_type *type)
 
 static void add_pointer_in_jcr_segment(ir_entity *entity)
 {
+	if (!create_jcr_segment)
+		return;
+
 	ir_type   *segment = get_segment_type(IR_SEGMENT_JCR);
 	ident     *id  = id_unique("jcr_ptr.%u");
 	ir_entity *ptr = new_entity(segment, id, type_reference);

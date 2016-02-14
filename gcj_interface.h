@@ -8,6 +8,7 @@
 #define GCJI_DATA_OFFSET   8
 
 extern ident *superobject_ident;
+extern bool   create_jcr_segment;
 
 void       gcji_init(void);
 void       gcji_deinit(void);

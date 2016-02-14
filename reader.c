@@ -3001,9 +3001,11 @@ int main(int argc, char **argv)
 
 	if (runtime_type == RUNTIME_GCJ) {
 		classpath_append(CLASSPATH_GCJ, true);
-	}
-	if (runtime_type == RUNTIME_SIMPLERT) {
+		create_jcr_segment = true;
+	} else {
+		assert(runtime_type == RUNTIME_SIMPLERT);
 		classpath_append(CLASSPATH_SIMPLERT, false);
+		create_jcr_segment = false;
 	}
 	if (verbose)
 		classpath_print(stderr);
