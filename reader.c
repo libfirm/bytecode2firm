@@ -191,7 +191,7 @@ static void init_types(void)
 	type_array_reference    = new_type_array(type_reference);
 	set_type_state(type_array_reference, layout_fixed);
 
-	ident *abort_id = new_id_from_str("abort");
+	ident *abort_id = mangle_function("abort");
 	ir_type *abort_type = new_type_method(0, 0);
 	add_method_additional_properties(abort_type, mtp_property_noreturn);
 	abort_entity = create_compilerlib_entity(abort_id, abort_type);
