@@ -1,16 +1,18 @@
 -include config.mak
 
+DLLEXT ?= .so
+
 FIRM_HOME   ?= libfirm
 FIRM_BUILD  ?= $(FIRM_HOME)/build/debug
 FIRM_CFLAGS ?= -I$(FIRM_HOME)/include -I$(FIRM_HOME)/build/gen/include/libfirm
 FIRM_LIBS   ?= -L$(FIRM_BUILD) -Wl,-R$(shell pwd)/$(FIRM_BUILD) -lfirm -lm
-FIRM_FILE   ?= $(FIRM_BUILD)/libfirm.so
+FIRM_FILE   ?= $(FIRM_BUILD)/libfirm$(DLLEXT)
 
 LIBOO_HOME   ?= liboo
 LIBOO_BUILD  ?= $(LIBOO_HOME)/build
 LIBOO_CFLAGS ?= -I$(LIBOO_HOME)/include/
 LIBOO_LIBS   ?= -L$(LIBOO_BUILD) -Wl,-R$(shell pwd)/$(LIBOO_BUILD) -loo
-LIBOO_FILE   ?= $(LIBOO_BUILD)/liboo.so
+LIBOO_FILE   ?= $(LIBOO_BUILD)/liboo$(DLLEXT)
 
 INSTALL      ?= /usr/bin/install
 
@@ -30,7 +32,7 @@ SIMPLERT_CLASSES = $(SIMPLERT_DIR)/java/lang/Object.class # just a representativ
 SIMPLERT_C_SOURCES = $(shell find simplert/c -name "*.c")
 SIMPLERT_HEADERS = $(shell find simplert/c -name "*.h")
 SIMPLERT_DIR = $(BUILDDIR)/simplert
-SIMPLERT_so = $(SIMPLERT_DIR)/libsimplert.so
+SIMPLERT_dll = $(SIMPLERT_DIR)/libsimplert$(DLLEXT)
 SIMPLERT_a = $(SIMPLERT_DIR)/libsimplert.a
 SIMPLERT_CFLAGS ?= -m32 -W
 SIMPLERT_LINKFLAGS ?= -shared -lm
@@ -52,7 +54,7 @@ endif
 
 .PHONY: all libfirm liboo clean distclean test
 
-all: $(GOAL) $(SIMPLERT_so) $(SIMPLERT_a) $(SIMPLERT_CLASSES)
+all: $(GOAL) $(SIMPLERT_dll) $(SIMPLERT_a) $(SIMPLERT_CLASSES)
 
 libfirm:
 	$(Q)$(MAKE) -C $(FIRM_HOME)
@@ -78,7 +80,7 @@ $(BUILDDIR)/%.o: %.c
 	@echo '===> CC $<'
 	$(Q)$(CC) $(CPPFLAGS) $(CFLAGS_GOOD) -MP -MMD -c -o $@ $<
 
-$(SIMPLERT_so): $(SIMPLERT_C_SOURCES) $(SIMPLERT_HEADERS)
+$(SIMPLERT_dll): $(SIMPLERT_C_SOURCES) $(SIMPLERT_HEADERS)
 	@echo '===> CC $@'
 	$(Q)mkdir -p $(SIMPLERT_DIR)
 	$(Q)$(CC) $(CFLAGS) $(SIMPLERT_CFLAGS) $(SIMPLERT_C_SOURCES) $(SIMPLERT_LINKFLAGS) -o $@
