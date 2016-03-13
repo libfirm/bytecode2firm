@@ -40,6 +40,16 @@
 extern FILE *fdopen (int __fd, __const char *__modes);
 extern int mkstemp (char *__template);
 
+/**
+ * Keep the current block and memory.
+ * This is necessary for all loops, because they could become infinite.
+ */
+static void keep_loop(void)
+{
+	keep_alive(get_cur_block());
+	get_store(); /* force creation of PhiM in loops */
+}
+
 static pdeq    *worklist;
 static class_t *class_file;
 static const char *main_class_name;
@@ -2078,6 +2088,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			add_immBlock_pred(target_block, jmp);
 
 			keep_alive(target_block);
+			keep_loop();
 			set_cur_block(NULL);
 
 			continue;
