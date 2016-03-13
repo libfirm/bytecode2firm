@@ -37,8 +37,6 @@
 #include <liboo/eh.h>
 #include <liboo/opt.h>
 
-//#define EXCEPTIONS
-
 #ifndef CLASSPATH_GCJ
 #define CLASSPATH_GCJ "build/gcj"
 #endif
@@ -3041,8 +3039,7 @@ int main(int argc, char **argv)
 	be_parse_arg("pic=elf");
 #endif
 #ifdef EXCEPTIONS
-	be_parse_arg("omitfp=false");
-	be_parse_arg("ia32-emit_cfi_directives");
+	be_parse_arg("exceptions=yes");
 #endif
 #ifdef __APPLE__
 	be_parse_arg("objectformat=mach-o");
