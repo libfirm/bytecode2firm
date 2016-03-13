@@ -2938,16 +2938,42 @@ static int link_executable(const char *startup_file, const char *asm_file,
 	return system(cmd);
 }
 
+static void usage(char *const argv0)
+{
+	fprintf(stderr, "Syntax: %s [--classpath PATH] [-v] [-o FILE] [-f <firm option>]* [-b <backend option>]* class_file\n", argv0);
+}
+
+static void help(char *const argv0)
+{
+	usage(argv0);
+	fprintf(stderr, "\
+  --help, -h              show this message and quit \n\
+  -v                      enable verbose output \n\
+  --classpath       PATH  include PATH in classpath \n\
+  --bootclasspath   PATH  include PATH in bootclasspath \n\
+  --externclasspath PATH  include PATH in externclasspath \n\
+  -o FILE                 set output file \n\
+  -f <firm option>        pass <firm option> to libfirm \n\
+  -b <backend option>     pass <backend option> to libfirm backend \n\
+  -O                      enable optimizations \n\
+  -Orta                   enable rta optimizations\n\
+  --static-stdlib         statically link stdlib \n\
+  --save-temps            same intermediate files in CWD \n\
+  --simplert              use simplert runtime \n\
+  --gcj                   use GCJ runtime \n"
+	);
+}
+
 int main(int argc, char **argv)
 {
+	if (argc < 2) {
+		usage(argv[0]);
+		return 1;
+	}
+
 	gen_firm_init();
 	class_registry_init();
 	class_file_init();
-
-	if (argc < 2) {
-		fprintf(stderr, "Syntax: %s [-cp <classpath>] [-bootclasspath <bootclasspath>] [-externclasspath] [-o <output file name>] [-f <firm option>]* class_file\n", argv[0]);
-		return 0;
-	}
 
 	const char *output_name   = NULL;
 	bool        save_temps    = false;
@@ -2961,11 +2987,14 @@ int main(int argc, char **argv)
 #define WARN(...)             fprintf(stderr, "Warning: " __VA_ARGS__)
 #define FATAL(...)            do { fprintf(stderr, "Error: " __VA_ARGS__); return 1; } while (0)
 	while (curarg < argc) {
-		if (EQUALS_AND_HAS_ARG("-cp") || EQUALS_AND_HAS_ARG("--classpath")) {
+		if (EQUALS("--help") || EQUALS("-h")) {
+			help(argv[0]);
+			return 0;
+		} else if (EQUALS_AND_HAS_ARG("--classpath")) {
 			classpath_prepend(ARG_PARAM, false);
-		} else if (EQUALS_AND_HAS_ARG("-bootclasspath")) {
+		} else if (EQUALS_AND_HAS_ARG("--bootclasspath")) {
 			classpath_append(ARG_PARAM, false);
-		} else if (EQUALS_AND_HAS_ARG("-externcclasspath")) {
+		} else if (EQUALS_AND_HAS_ARG("--externcclasspath")) {
 			classpath_append(ARG_PARAM, true);
 		} else if (EQUALS_AND_HAS_ARG("-o")) {
 			output_name = ARG_PARAM;
@@ -2979,7 +3008,7 @@ int main(int argc, char **argv)
 			const char *param = ARG_PARAM;
 			if (!be_parse_arg(param))
 				WARN("'%s' is not a valid backend option - ignoring.\n", param);
-		} else if (EQUALS("-save-temps")) {
+		} else if (EQUALS("--save-temps")) {
 			save_temps = true;
 		} else if (EQUALS("-v")) {
 			verbose = true;
@@ -2991,13 +3020,16 @@ int main(int argc, char **argv)
 			optimize = true;
 		} else if (EQUALS("-Orta")) {
 			optimize_rta = true;
-		} else {
+		} else if (strncmp("-", argv[curarg], 1)) {
 			if (main_class_name == NULL) {
 				main_class_name = argv[curarg];
 			} else {
 				FATAL("Duplicate value for class_file: '%s' and '%s'\n", argv[curarg], main_class_name);
 				return 1;
 			}
+		} else {
+			FATAL("Unknown option '%s'\n", argv[curarg]);
+			return 1;
 		}
 		curarg++;
 	}
