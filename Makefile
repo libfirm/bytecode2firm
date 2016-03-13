@@ -14,6 +14,11 @@ LIBOO_CFLAGS ?= -I$(LIBOO_HOME)/include/
 LIBOO_LIBS   ?= -L$(LIBOO_BUILD) -Wl,-R$(shell pwd)/$(LIBOO_BUILD) -loo
 LIBOO_FILE   ?= $(LIBOO_BUILD)/liboo$(DLLEXT)
 
+guessed_target := $(shell $(CC) -dumpmachine)
+TARGET         ?= $(guessed_target)
+LIBOO_RT_DIR ?= $(LIBOO_BUILD)/$(TARGET)/
+LIBOO_RT_a   ?= $(LIBOO_RT_DIR)/liboo_rt.a
+
 INSTALL      ?= /usr/bin/install
 
 BUILDDIR      = build
@@ -41,9 +46,8 @@ GCJ_DIR = $(BUILDDIR)/gcj
 
 UNUSED := $(shell mkdir -p $(BUILDDIR) $(BUILDDIR)/adt $(BUILDDIR)/driver)
 
-CLASSPATH_SIMPLERT ?= -DCLASSPATH_SIMPLERT=\"$(abspath $(SIMPLERT_DIR))\"
 CLASSPATH_GCJ ?= -DCLASSPATH_GCJ=\"$(abspath $(GCJ_DIR))\"
-CPPFLAGS += $(CLASSPATH_SIMPLERT) $(CLASSPATH_GCJ)
+CPPFLAGS += $(CLASSPATH_GCJ) -DSIMPLERT_a=\"$(abspath $(SIMPLERT_a))\" -DSIMPLERT_DIR=\"$(abspath $(SIMPLERT_DIR))\" -DLIBOO_RT_DIR=\"$(abspath $(LIBOO_RT_DIR))\" -DLIBOO_RT_a=\"$(abspath $(LIBOO_RT_a))\"
 
 TESTDIR = testsuite
 

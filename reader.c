@@ -37,13 +37,6 @@
 #include <liboo/eh.h>
 #include <liboo/opt.h>
 
-#ifndef CLASSPATH_GCJ
-#define CLASSPATH_GCJ "build/gcj"
-#endif
-#ifndef CLASSPATH_SIMPLERT
-#define CLASSPATH_SIMPLERT "build/simplert"
-#endif
-
 extern FILE *fdopen (int __fd, __const char *__modes);
 extern int mkstemp (char *__template);
 
@@ -2921,13 +2914,14 @@ static int link_executable(const char *startup_file, const char *asm_file,
 	} else {
 		assert(runtime_type == RUNTIME_SIMPLERT);
 		if (static_stdlib) {
-			obstack_printf(&obst, " %s/libsimplert.a", CLASSPATH_SIMPLERT);
+			obstack_printf(&obst, " %s %s", SIMPLERT_a, LIBOO_RT_a);
 		} else {
-			obstack_printf(&obst, " -L%s -lsimplert", CLASSPATH_SIMPLERT);
+			obstack_printf(&obst, " -L%s -lsimplert -L%s -loo_rt", SIMPLERT_DIR, LIBOO_RT_DIR);
 #ifndef __APPLE__
-			obstack_printf(&obst, " -Wl,-R%s", CLASSPATH_SIMPLERT);
+			obstack_printf(&obst, " -Wl,-R%s", SIMPLERT_DIR);
 #endif
 		}
+		obstack_printf(&obst, " -lunwind");
 	}
 	obstack_printf(&obst, " -o %s", output_name);
 	obstack_1grow(&obst, '\0');
@@ -3056,7 +3050,7 @@ int main(int argc, char **argv)
 		create_jcr_segment = true;
 	} else {
 		assert(runtime_type == RUNTIME_SIMPLERT);
-		classpath_append(CLASSPATH_SIMPLERT, false);
+		classpath_append(SIMPLERT_DIR, false);
 		create_jcr_segment = false;
 	}
 	if (verbose)
