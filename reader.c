@@ -1239,8 +1239,13 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	}
 
 	/* arguments become local variables */
-	ir_node *first_block = get_cur_block();
-	set_cur_block(get_irg_start_block(irg));
+	ir_node *start_block = get_cur_block();
+	assert(get_irg_start_block(irg) == start_block);
+	set_cur_block(start_block);
+	ir_node *first_block = new_immBlock();
+	ir_node *jump        = new_Jmp();
+	add_immBlock_pred(first_block, jump);
+	set_cur_block(first_block);
 
 	ir_node *args         = get_irg_args(irg);
 	int      n_parameters = get_method_n_params(method_type);
