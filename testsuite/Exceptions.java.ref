@@ -1,0 +1,5 @@
+java.lang.Exception
+	at Exceptions.testException(Exceptions.java:9)
+	at Exceptions.main(Exceptions.java:26)
+caught X
+finally

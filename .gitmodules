@@ -4,3 +4,9 @@
 [submodule "libfirm"]
 	path = libfirm
 	url = http://pp.info.uni-karlsruhe.de/git/libfirm.git
+[submodule "sisyphus"]
+	path = testsuite/sisyphus
+	url = https://github.com/libfirm/sisyphus
+[submodule "testsuite/sisyphus"]
+	path = testsuite/sisyphus
+	url = git@github.com:libfirm/sisyphus.git

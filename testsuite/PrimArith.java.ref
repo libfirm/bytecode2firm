@@ -1,0 +1,57 @@
+int arith: 9223372034707324798
+float arith: 1.401298464324817E-45
+int/float comb.: 9.223372034707325E18
+int eq: true
+int neq: false
+long eq: true
+long neq: false
+long evil eq: false
+float eq: true
+float neq: false
+double eq: true
+double neq: false
+double < NaN: false
+double > NaN: false
+i2b: 46
+i2s: 18394
+i2l: -76789798
+i2f: -7.67898E7
+i2d: -7.6789798E7
+l2i: -76789798
+l2f: -7.67898E7
+l2d: -7.6789798E7
+f2i: -76789800
+f2l: -76789800
+f2d: -7.67898E7
+d2i: -76789800
+d2l: -76789800
+d2f: -7.67898E7
+Default values:
+false
+0
+0
+0
+0
+0.0
+0.0
+true
+1
+2
+3
+4
+5.0
+6.0
+false
+0
+0
+0
+0
+0.0
+0.0
+true
+8
+9
+10
+11
+12.0
+13.0

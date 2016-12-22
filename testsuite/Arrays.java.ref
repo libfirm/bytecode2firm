@@ -1,0 +1,11 @@
+array_sizes = 81
+[true, false, true, false, true]
+[-13, 0, 0, 117, 0, 23]
+[-1013, 0, 0, 10107, 0, 0, 230]
+[-130001, 0, 0, 0, 2147483647, 0, 0, 420000]
+[-Infinity, 0.0, 0.0, 0.0, 0.0, 37.25, 0.0, 0.0, 0.0, 5.125]
+[2.718281828459045, 0.0, 0.0, 0.0, 0.0, 17.7, 0.0, 0.0, 0.0, 0.0, NaN]
+[Hallo Welt!, null, null, null, null, null, 42, null, null, null, null, I'm the Arrays testcase]
+[I'm an Element, l=-559038737, null, null, null, null, null, I'm an Element, l=-1448314451, null, null, null, null, null, I'm an Element, l=0]
+5
+0
