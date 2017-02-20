@@ -6,7 +6,7 @@ if [ "$1" != "-f" ]; then
 	CONFIGS="config.mak libfirm/config.mak liboo/config.mak"
 	for f in $CONFIGS; do
 		if [ -e "$f" ]; then
-			echo "Error: One or more of these files already exist $CONFIGS (override wiht -f)"
+			echo "Error: One or more of these files already exist $CONFIGS (override with -f)"
 			exit 1
 		fi
 	done
@@ -17,7 +17,7 @@ FIRM_FILE = $(FIRM_BUILD)/libfirm.a
 FIRM_LIBS  = $(FIRM_FILE) -lm
 LIBOO_FILE = $(LIBOO_BUILD)/liboo.a
 LIBOO_LIBS = $(LIBOO_FILE)
-SIMPLERT_LINKFLAGS = -shared -lm -undefined dynamic_lookup
+SIMPLERT_LINKFLAGS = -dynamiclib -install_name $(abspath $(SIMPLERT_DIR)/libsimplert.dylib) -lm -undefined dynamic_lookup
 DLLEXT = .dylib
 __END__
 

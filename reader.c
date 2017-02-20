@@ -136,24 +136,19 @@ static ir_node *get_value_as(ir_node *node, ir_mode *mode)
 
 static void init_types(void)
 {
-	mode_byte
-		= new_int_mode("B", irma_twos_complement, 8, 1, 8);
+	mode_byte = new_int_mode("B", 8, true, 8);
 	type_byte = new_type_primitive(mode_byte);
 
-	mode_char
-		= new_int_mode("C", irma_twos_complement, 16, 0, 16);
+	mode_char = new_int_mode("C", 16, false, 16);
 	type_char = new_type_primitive(mode_char);
 
-	mode_short
-		= new_int_mode("S", irma_twos_complement, 16, 1, 16);
+	mode_short = new_int_mode("S", 16, true, 16);
 	type_short = new_type_primitive(mode_short);
 
-	mode_int
-		= new_int_mode("I", irma_twos_complement, 32, 1, 32);
+	mode_int = new_int_mode("I", 32, true, 32);
 	type_int = new_type_primitive(mode_int);
 
-	mode_long
-		= new_int_mode("J", irma_twos_complement, 64, 1, 64);
+	mode_long = new_int_mode("J", 64, true, 64);
 	type_long = new_type_primitive(mode_long);
 	set_type_alignment(type_long, 4);
 
@@ -163,8 +158,7 @@ static void init_types(void)
 	/* Note: ir_overflow_min_max is incompatible with the x86 backend, we should
 	 * support both style and select whatever backend_params.float_int_overflow
 	 * reports. This however needs some fixup code to be generated here. */
-	mode_float
-		= new_float_mode("F", irma_ieee754, 8, 23, ir_overflow_min_max);
+	mode_float = new_float_mode("F", irma_ieee754, 8, 23, ir_overflow_min_max);
 	type_float = new_type_primitive(mode_float);
 
 	mode_double
@@ -174,28 +168,28 @@ static void init_types(void)
 
 	mode_reference = mode_P;
 
-	type_array_byte_boolean = new_type_array(type_byte);
+	type_array_byte_boolean = new_type_array(type_byte, 0);
 	set_type_state(type_array_byte_boolean, layout_fixed);
-	type_array_short        = new_type_array(type_short);
+	type_array_short        = new_type_array(type_short, 0);
 	set_type_state(type_array_short, layout_fixed);
-	type_array_char         = new_type_array(type_char);
+	type_array_char         = new_type_array(type_char, 0);
 	set_type_state(type_array_char, layout_fixed);
-	type_array_int          = new_type_array(type_int);
+	type_array_int          = new_type_array(type_int, 0);
 	set_type_state(type_array_int, layout_fixed);
-	type_array_long         = new_type_array(type_long);
+	type_array_long         = new_type_array(type_long, 0);
 	set_type_state(type_array_long, layout_fixed);
-	type_array_float        = new_type_array(type_float);
+	type_array_float        = new_type_array(type_float, 0);
 	set_type_state(type_array_float, layout_fixed);
-	type_array_double       = new_type_array(type_double);
+	type_array_double       = new_type_array(type_double, 0);
 	set_type_state(type_array_double, layout_fixed);
 
 	type_reference          = new_type_primitive(mode_reference);
-	type_array_reference    = new_type_array(type_reference);
+	type_array_reference    = new_type_array(type_reference, 0);
 	set_type_state(type_array_reference, layout_fixed);
 
 	ident *abort_id = mangle_function("abort");
-	ir_type *abort_type = new_type_method(0, 0);
-	add_method_additional_properties(abort_type, mtp_property_noreturn);
+	ir_type *abort_type
+		= new_type_method(0, 0, false, 0, mtp_property_noreturn);
 	abort_entity = create_compilerlib_entity(abort_id, abort_type);
 }
 
@@ -264,7 +258,8 @@ static ir_type *method_descriptor_to_type(const char *descriptor,
 		      descriptor);
 	}
 
-	ir_type *method_type = new_type_method(ARR_LEN(arguments), n_res);
+	ir_type *method_type
+		= new_type_method(ARR_LEN(arguments), n_res, false, 0, 0);
 	for (size_t i = 0; i < ARR_LEN(arguments); ++i) {
 		set_method_param_type(method_type, i, arguments[i]);
 	}
@@ -320,7 +315,7 @@ static void create_field_entity(field_t *field, ir_type *owner)
 	} else
 		entity = new_entity(owner, id, type);
 
-	const char *classname    = get_class_name(owner);
+	const char *classname    = get_compound_name(owner);
 	ident      *ld_id        = mangle_member_name(classname, name, NULL);
 	set_entity_ld_ident(entity, ld_id);
 
@@ -567,8 +562,8 @@ static ir_entity *get_method_entity(uint16_t index)
 
 		entity = find_entity(classtype, methodname, descriptor);
 		if (entity == NULL)
-			panic("Couldn't find method %s.%s (%s)", get_class_name(classtype),
-			      methodname, descriptor);
+			panic("Couldn't find method %s.%s (%s)",
+				  get_compound_name(classtype), methodname, descriptor);
 
 		assert(entity && is_method_entity(entity));
 		methodref->base.link = entity;
@@ -763,47 +758,43 @@ static void construct_cond(uint16_t pc_true, uint16_t pc_false,
 	set_cur_block(NULL);
 }
 
-static ir_node *simple_new_Div(ir_node *left, ir_node *right, ir_mode *mode)
+static ir_node *simple_new_Div(ir_node *left, ir_node *right)
 {
 	ir_node *mem     = get_store();
-	ir_mode *amode   = get_ir_mode_arithmetic(mode);
-	left             = get_value_as(left, amode);
-	right            = get_value_as(right, amode);
-	ir_node *div     = new_Div(mem, left, right, amode, op_pin_state_pinned);
+	ir_node *div     = new_Div(mem, left, right, op_pin_state_pinned);
 	ir_node *new_mem = new_Proj(div, mode_M, pn_Div_M);
 	set_store(new_mem);
+	ir_mode *amode   = get_irn_mode(left);
 	ir_node *proj    = new_Proj(div, amode, pn_Div_res);
-	return get_value_as(proj, mode);
+	return proj;
 }
 
-static ir_node *simple_new_Mod(ir_node *left, ir_node *right, ir_mode *mode)
+static ir_node *simple_new_Mod(ir_node *left, ir_node *right)
 {
 	ir_node *mem     = get_store();
-	ir_mode *amode   = get_ir_mode_arithmetic(mode);
-	left             = get_value_as(left, amode);
-	right            = get_value_as(right, amode);
-	ir_node *div     = new_Mod(mem, left, right, amode, op_pin_state_pinned);
-	ir_node *new_mem = new_Proj(div, mode_M, pn_Div_M);
+	ir_node *div     = new_Mod(mem, left, right, op_pin_state_pinned);
+	ir_node *new_mem = new_Proj(div, mode_M, pn_Mod_M);
 	set_store(new_mem);
-	ir_node *proj    = new_Proj(div, amode, pn_Div_res);
-	return get_value_as(proj, mode);
+	ir_mode *amode   = get_irn_mode(left);
+	ir_node *proj    = new_Proj(div, amode, pn_Mod_res);
+	return proj;
 }
 
 static void construct_arith(ir_mode *mode,
-		ir_node *(*construct_func)(ir_node *, ir_node *, ir_mode *))
+                            ir_node *(*construct_func)(ir_node *, ir_node *))
 {
 	ir_node *right  = symbolic_pop(mode);
 	ir_node *left   = symbolic_pop(mode);
 	ir_mode *amode  = get_ir_mode_arithmetic(mode);
 	left            = get_value_as(left, amode);
 	right           = get_value_as(right, amode);
-	ir_node *result = construct_func(left, right, amode);
+	ir_node *result = construct_func(left, right);
 	result          = get_value_as(result, mode);
 	symbolic_push(result);
 }
 
 static void construct_shift_arith(ir_mode *mode,
-		ir_node *(*construct_func)(ir_node *, ir_node *, ir_mode *))
+		ir_node *(*construct_func)(ir_node *, ir_node *))
 {
 	ir_node *right   = symbolic_pop(mode_int);
 	ir_node *left    = symbolic_pop(mode);
@@ -811,18 +802,18 @@ static void construct_shift_arith(ir_mode *mode,
 	left             = get_value_as(left, amode);
 	right            = get_value_as(right, amode);
 	ir_node *right_u = new_Conv(right, mode_Iu);
-	ir_node *result  = construct_func(left, right_u, amode);
+	ir_node *result  = construct_func(left, right_u);
 	result           = get_value_as(result, mode);
 	symbolic_push(result);
 }
 
 static void construct_arith_unop(ir_mode *mode,
-		ir_node *(*construct_func)(ir_node *, ir_mode *))
+                                 ir_node *(*construct_func)(ir_node *))
 {
 	ir_node *value  = symbolic_pop(mode);
 	ir_mode *amode  = get_ir_mode_arithmetic(mode);
 	value           = get_value_as(value, amode);
-	ir_node *result = construct_func(value, amode);
+	ir_node *result = construct_func(value);
 	result          = get_value_as(result, mode);
 	symbolic_push(result);
 }
@@ -1113,7 +1104,7 @@ static void construct_xcmp(ir_mode *mode, ir_relation rel_1, ir_relation rel_2)
 	ir_node *cmp_gt  = new_Cmp(val1, val2, rel_2);
 	ir_node *conv_lt = create_conv_for_mode_b(cmp_lt, mode_int);
 	ir_node *conv_gt = create_conv_for_mode_b(cmp_gt, mode_int);
-	ir_node *res     = new_Sub(conv_gt, conv_lt, mode_int);
+	ir_node *res     = new_Sub(conv_gt, conv_lt);
 
 	symbolic_push(res);
 }
@@ -1946,7 +1937,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			int8_t   cnst  = (int8_t) code->code[i++];
 			ir_node *val   = get_local(index, mode_int);
 			ir_node *cnode = new_Const_long(mode_int, cnst);
-			ir_node *add   = new_Add(val, cnode, mode_int);
+			ir_node *add   = new_Add(val, cnode);
 			set_local(index, add);
 			continue;
 		}
@@ -1984,7 +1975,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 				int16_t  cnst  = (int16_t) get_16bit_arg(&i);
 				ir_node *val   = get_local(index, mode_int);
 				ir_node *cnode = new_Const_long(mode_int, cnst);
-				ir_node *add   = new_Add(val, cnode, mode_int);
+				ir_node *add   = new_Add(val, cnode);
 				set_local(index, add);
 				continue;
 			}
@@ -2351,7 +2342,7 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 			uint16_t index        = get_16bit_arg(&i);
 			ir_type *element_type = get_classref_type(index);
 			finalize_class_type(element_type);
-			ir_type *type         = new_type_array(element_type);
+			ir_type *type         = new_type_array(element_type, 0);
 			set_type_state(type, layout_fixed);
 			ir_node *count        = symbolic_pop(mode_int);
 			construct_new_array(type, count);
@@ -2552,11 +2543,6 @@ static void code_to_firm(ir_entity *entity, const attribute_code_t *new_code)
 	mature_immBlock(end_block);
 
 	DEL_ARR_F(basic_blocks);
-
-	ir_type *frame_type = get_irg_frame_type(current_ir_graph);
-	set_type_size(frame_type, 0);
-	set_type_alignment(frame_type, 4);
-	set_type_state(frame_type, layout_fixed);
 }
 
 static ir_entity *get_class_member_by_name(ir_type *cls, ident *ident)
@@ -2598,7 +2584,7 @@ static void create_method_entity(method_t *method, ir_type *owner)
 	oo_set_entity_link(entity, method);
 	method->link = entity;
 
-	const char *classname = get_class_name(owner);
+	const char *classname = get_compound_name(owner);
 	ident      *ld_id     = mangle_member_name(classname, name, descriptor);
 	set_entity_ld_ident(entity, ld_id);
 
@@ -2732,7 +2718,8 @@ static ir_type *get_classref_type(uint16_t index)
 static ir_type *construct_class_methods(ir_type *type)
 {
 	if (verbose)
-		fprintf(stderr, "==> Construct methods of %s\n", get_class_name(type));
+		fprintf(stderr, "==> Construct methods of %s\n",
+		        get_compound_name(type));
 
 	class_t *old_class    = class_file;
 	class_t *linked_class = (class_t*) oo_get_type_link(type);
@@ -2769,7 +2756,7 @@ static void link_interface_methods(ir_type *cls, ir_type *interface)
 		// find the implementation of the method (or return abstract_method)
 		if (implementation == NULL) {
 			if (!oo_get_class_is_abstract(cls)) {
-				panic("%s: implementation of method %s from interface %s missing in non-abstract class\n", get_class_name(cls), get_id_str(ident), get_class_name(interface));
+				panic("%s: implementation of method %s from interface %s missing in non-abstract class\n", get_compound_name(cls), get_id_str(ident), get_compound_name(interface));
 			} else {
 				implementation = gcji_get_abstract_method_entity();
 			}
@@ -2814,7 +2801,7 @@ static void finalize_class_type(ir_type *type)
 		oo_set_class_vptr_entity(type, vptr);
 	} else {
 		/* java.lang.Object is the only class without a superclass */
-		assert(strcmp(get_class_name(type), "java/lang/Object") == 0);
+		assert(strcmp(get_compound_name(type), "java/lang/Object") == 0);
 
 		/* create a new vptr field */
 		ident     *vptr_ident = new_id_from_str("@vptr");
@@ -2826,7 +2813,7 @@ static void finalize_class_type(ir_type *type)
 		field_t *field = class_file->fields[f];
 		create_field_entity(field, type);
 	}
-	if (strcmp(get_class_name(type), "java/lang/Class") == 0) {
+	if (strcmp(get_compound_name(type), "java/lang/Class") == 0) {
 		gcji_add_java_lang_class_fields(type);
 		/* now is a good time to create the class types */
 		gcji_create_array_type();
@@ -2942,7 +2929,7 @@ static int link_executable(const char *startup_file, const char *asm_file,
 
 int main(int argc, char **argv)
 {
-	gen_firm_init();
+	init_firm_opt();
 	class_registry_init();
 	class_file_init();
 
@@ -3180,7 +3167,7 @@ int main(int argc, char **argv)
 
 	generate_code(asm_out, main_class_name);
 
-	gen_firm_finish();
+	exit_firm_opt();
 
 	fclose(asm_out);
 

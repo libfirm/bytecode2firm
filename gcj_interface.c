@@ -141,16 +141,14 @@ static ir_type *create_field_desc_type(void)
 
 static ir_type *create_utf8_const_type(void)
 {
-	ir_type *type_byte = get_type_for_mode(mode_Bu);
-	ir_type *type_var_char_array = new_type_array(type_byte);
-	set_array_variable_size(type_var_char_array, 1);
+	ir_type *type_byte           = get_type_for_mode(mode_Bu);
+	ir_type *type_var_char_array = new_type_array(type_byte, 0);
 
 	ident *id = new_id_from_str("utf8_const");
 	ir_type *type = new_type_struct(id);
 	add_compound_member(type, "hash", type_ushort);
 	add_compound_member(type, "len", type_ushort);
 	add_compound_member(type, "data", type_var_char_array);
-	set_compound_variable_size(type, 1);
 	default_layout_compound_type(type);
 	return type;
 }
@@ -221,7 +219,7 @@ void gcji_add_java_lang_class_fields(ir_type *type)
 
 void gcji_create_vtable_entity(ir_type *type)
 {
-	const char *name         = get_class_name(type);
+	const char *name         = get_compound_name(type);
 	ident      *vtable_ident = mangle_vtable_name(name);
 	ir_type    *unknown      = get_unknown_type();
 	ir_type    *glob         = get_glob_type();
@@ -470,7 +468,7 @@ static ir_entity *do_emit_utf8_const(const char *bytes, size_t len)
 	set_compound_init_num(cinit, 1, mode_ushort, len);
 	set_initializer_compound_value(cinit, 2, data_init);
 
-	ident     *id    = id_unique("_Utf8_%u_");
+	ident     *id    = id_unique("_Utf8");
 	ir_entity *utf8c = new_entity(get_glob_type(), id, type_utf8_const);
 	set_entity_initializer(utf8c, cinit);
 	set_entity_ld_ident(utf8c, id);
@@ -520,8 +518,7 @@ static ir_entity *emit_method_table(ir_type *classtype)
 	assert(linked_class);
 	uint16_t n_methods = linked_class->n_methods;
 
-	ir_type *array_type = new_type_array(type_method_desc);
-	set_array_size_int(array_type, n_methods);
+	ir_type *array_type = new_type_array(type_method_desc, n_methods);
 	unsigned size = n_methods * get_type_size(type_method_desc);
 	set_type_size(array_type, size);
 
@@ -532,7 +529,7 @@ static ir_entity *emit_method_table(ir_type *classtype)
 		set_initializer_compound_value(cinit, i, method_desc);
 	}
 
-	ident     *id     = id_unique("_MT_%u_");
+	ident     *id     = id_unique("_MT");
 	ir_entity *mt_ent = new_entity(get_glob_type(), id, array_type);
 	set_entity_initializer(mt_ent, cinit);
 	set_entity_ld_ident(mt_ent, id);
@@ -619,8 +616,7 @@ static ir_entity *emit_field_table(ir_type *classtype)
 	if (n_fields == 0)
 		return NULL;
 
-	ir_type *type_array = new_type_array(type_field_desc);
-	set_array_size_int(type_array, n_fields);
+	ir_type *type_array = new_type_array(type_field_desc, n_fields);
 	unsigned size = n_fields * get_type_size(type_field_desc);
 	set_type_size(type_array, size);
 
@@ -631,7 +627,7 @@ static ir_entity *emit_field_table(ir_type *classtype)
 		set_initializer_compound_value(init, i, desc);
 	}
 
-	ident     *id     = id_unique("_FT_%u_");
+	ident     *id     = id_unique("_FT");
 	ir_entity *ft_ent = new_entity(get_glob_type(), id, type_array);
 	set_entity_initializer(ft_ent, init);
 	set_entity_ld_ident(ft_ent, id);
@@ -646,8 +642,7 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 	if (n_interfaces == 0)
 		return NULL;
 
-	ir_type *type_array = new_type_array(type_reference);
-	set_array_size_int(type_array, n_interfaces);
+	ir_type *type_array = new_type_array(type_reference, n_interfaces);
 	unsigned size = n_interfaces * get_type_size(type_reference);
 	set_type_size(type_array, size);
 
@@ -664,7 +659,7 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 		set_compound_init_entref(init, i, rtti_entity);
 	}
 
-	ident     *id     = id_unique("_IF_%u_");
+	ident     *id     = id_unique("_IF");
 	ir_entity *if_ent = new_entity(get_glob_type(), id, type_array);
 	set_entity_initializer(if_ent, init);
 	set_entity_ld_ident(if_ent, id);
@@ -673,7 +668,7 @@ static ir_entity *emit_interface_table(ir_type *classtype)
 
 void gcji_create_rtti_entity(ir_type *type)
 {
-	const char *name = get_class_name(type);
+	const char *name = get_compound_name(type);
 	/* create RTTI object entity (actual initializer is constructed in liboo) */
 	ident     *rtti_ident  = mangle_rtti_name(name);
 	ir_type   *unknown     = get_unknown_type();
@@ -687,7 +682,7 @@ static void add_pointer_in_jcr_segment(ir_entity *entity)
 		return;
 
 	ir_type   *segment = get_segment_type(IR_SEGMENT_JCR);
-	ident     *id  = id_unique("jcr_ptr.%u");
+	ident     *id  = id_unique("jcr_ptr");
 	ir_entity *ptr = new_entity(segment, id, type_reference);
 	ir_graph  *irg = get_const_code_irg();
 	ir_node   *val = new_r_Address(irg, entity);
@@ -696,7 +691,8 @@ static void add_pointer_in_jcr_segment(ir_entity *entity)
 	set_entity_visibility(ptr, ir_visibility_private);
 	set_entity_linkage(ptr, IR_LINKAGE_CONSTANT|IR_LINKAGE_HIDDEN_USER);
 	set_entity_alignment(ptr, 1);
-	set_atomic_ent_value(ptr, val);
+	ir_initializer_t *const init = create_initializer_const(val);
+	set_entity_initializer(ptr, init);
 }
 
 static ir_node *get_vtable_ref(ir_type *type)
@@ -711,7 +707,7 @@ static ir_node *get_vtable_ref(ir_type *type)
 	ir_mode *offset_mode = get_reference_offset_mode(mode_reference);
 	ir_node *cnst  = new_r_Const_long(ccode, offset_mode, offset);
 	ir_node *block = get_r_cur_block(ccode);
-	ir_node *add   = new_r_Add(block, addr, cnst, mode_reference);
+	ir_node *add   = new_r_Add(block, addr, cnst);
 	return add;
 }
 
@@ -870,7 +866,7 @@ static ir_entity *emit_type_signature(ir_type *type)
 	} else {
 		assert(is_Class_type(curtype));
 		obstack_1grow(&obst, 'L');
-		obstack_printf(&obst, "%s", get_class_name(curtype));
+		obstack_printf(&obst, "%s", get_compound_name(curtype));
 		obstack_1grow(&obst, ';');
 		obstack_1grow(&obst, '\0');
 	}
@@ -1065,17 +1061,17 @@ void gcji_init()
 	ir_type *t_size = new_type_primitive(mode_Iu);
 
 	// gcj_alloc
-	ir_type *gcj_alloc_method_type = new_type_method(1, 1);
+	ir_type *gcj_alloc_method_type
+		= new_type_method(1, 1, false, 0, mtp_property_malloc);
 	set_method_param_type(gcj_alloc_method_type, 0, t_ptr);
 	set_method_res_type(gcj_alloc_method_type, 0, t_ptr);
-	set_method_additional_properties(gcj_alloc_method_type, mtp_property_malloc);
 
 	ident *gcj_alloc_id = mangle_function("_Jv_AllocObjectNoFinalizer");
 	gcj_alloc_entity = new_entity(glob, gcj_alloc_id, gcj_alloc_method_type);
 	set_entity_visibility(gcj_alloc_entity, ir_visibility_external);
 
 	// gcj_init
-	ir_type *gcj_init_method_type = new_type_method(1, 0);
+	ir_type *gcj_init_method_type = new_type_method(1, 0, false, 0, 0);
 	set_method_param_type(gcj_init_method_type, 0, t_ptr);
 
 	ident *gcj_init_id = mangle_function("_Jv_InitClass");
@@ -1083,7 +1079,7 @@ void gcji_init()
 	set_entity_visibility(gcj_init_entity, ir_visibility_external);
 
 	// gcj_new_string
-	ir_type *gcj_new_string_method_type = new_type_method(1, 1);
+	ir_type *gcj_new_string_method_type = new_type_method(1, 1, false, 0, 0);
 	set_method_param_type(gcj_new_string_method_type, 0, t_ptr);
 	set_method_res_type(gcj_new_string_method_type, 0, t_ptr);
 
@@ -1092,7 +1088,8 @@ void gcji_init()
 	set_entity_visibility(gcj_new_string_entity, ir_visibility_external);
 
 	// gcj_new_prim_array
-	ir_type *gcj_new_prim_array_method_type = new_type_method(2, 1);
+	ir_type *gcj_new_prim_array_method_type
+		= new_type_method(2, 1, false, 0, 0);
 	set_method_param_type(gcj_new_prim_array_method_type, 0, t_ptr);
 	set_method_param_type(gcj_new_prim_array_method_type, 1, t_size);
 	set_method_res_type(gcj_new_prim_array_method_type, 0, t_ptr);
@@ -1102,7 +1099,8 @@ void gcji_init()
 	set_entity_visibility(gcj_new_prim_array_entity, ir_visibility_external);
 
 	// gcj_new_object_array
-	ir_type *gcj_new_object_array_method_type = new_type_method(3, 1);
+	ir_type *gcj_new_object_array_method_type
+		= new_type_method(3, 1, false, 0, 0);
 	set_method_param_type(gcj_new_object_array_method_type, 0, t_size);
 	set_method_param_type(gcj_new_object_array_method_type, 1, t_ptr);
 	set_method_param_type(gcj_new_object_array_method_type, 2, t_ptr);
@@ -1113,12 +1111,12 @@ void gcji_init()
 	set_entity_visibility(gcj_new_object_array_entity, ir_visibility_external);
 
 	// gcji_abstract_method
-	ir_type *gcj_abstract_method_type = new_type_method(0, 0);
+	ir_type *gcj_abstract_method_type = new_type_method(0, 0, false, 0, 0);
 	gcj_abstract_method_entity = new_entity(glob, mangle_function("_Jv_ThrowAbstractMethodError"), gcj_abstract_method_type);
 	set_entity_visibility(gcj_abstract_method_entity, ir_visibility_external);
 
 	// gcji_lookup_interface
-	ir_type *gcj_lookup_interface_type = new_type_method(3,1);
+	ir_type *gcj_lookup_interface_type = new_type_method(3, 1, false, 0, 0);
 	set_method_param_type(gcj_lookup_interface_type, 0, t_ptr);
 	set_method_param_type(gcj_lookup_interface_type, 1, t_ptr);
 	set_method_param_type(gcj_lookup_interface_type, 2, t_ptr);
@@ -1127,7 +1125,7 @@ void gcji_init()
 	set_entity_visibility(gcj_lookup_interface_entity, ir_visibility_external);
 
 	// gcji_instanceof
-	ir_type *gcj_instanceof_type = new_type_method(2,1);
+	ir_type *gcj_instanceof_type = new_type_method(2, 1, false, 0, 0);
 	set_method_param_type(gcj_instanceof_type, 0, type_reference);
 	set_method_param_type(gcj_instanceof_type, 1, type_reference);
 	set_method_res_type(gcj_instanceof_type, 0, type_int);
@@ -1135,14 +1133,14 @@ void gcji_init()
 	set_entity_visibility(gcj_instanceof_entity, ir_visibility_external);
 
 	// gcji_checkcast
-	ir_type *gcj_checkcast_type = new_type_method(2,0);
+	ir_type *gcj_checkcast_type = new_type_method(2, 0, false, 0, 0);
 	set_method_param_type(gcj_checkcast_type, 0, type_reference);
 	set_method_param_type(gcj_checkcast_type, 1, type_reference);
 	gcj_checkcast_entity = new_entity(glob, mangle_function("_Jv_CheckCast"), gcj_checkcast_type);
 	set_entity_visibility(gcj_checkcast_entity, ir_visibility_external);
 
 	// gcji_get_array_class
-	ir_type *gcj_get_array_class_type = new_type_method(2,1);
+	ir_type *gcj_get_array_class_type = new_type_method(2, 1, false, 0, 0);
 	set_method_param_type(gcj_get_array_class_type, 0, type_reference);
 	set_method_param_type(gcj_get_array_class_type, 1, type_reference);
 	set_method_res_type(gcj_get_array_class_type, 0, type_reference);
@@ -1150,7 +1148,7 @@ void gcji_init()
 	set_entity_visibility(gcj_get_array_class_entity, ir_visibility_external);
 
 	// gcji_new_multi_array
-	ir_type *gcj_new_multiarray_type = new_type_method(3,1);
+	ir_type *gcj_new_multiarray_type = new_type_method(3, 1, false, 0, 0);
 	set_method_param_type(gcj_new_multiarray_type, 0, type_reference);
 	set_method_param_type(gcj_new_multiarray_type, 1, type_int);
 	set_method_param_type(gcj_new_multiarray_type, 2, type_reference); // XXX: actually int[]
@@ -1176,7 +1174,7 @@ void gcji_init()
 	set_entity_visibility(gcj_float_rtti_entity, ir_visibility_external);
 	set_entity_visibility(gcj_double_rtti_entity, ir_visibility_external);
 
-	mode_ushort = new_int_mode("US", irma_twos_complement, 16, 0, 16);
+	mode_ushort = new_int_mode("US", 16, 0, 16);
 	type_ushort = new_type_primitive(mode_ushort);
 
 	cpset_init(&scp, scp_hash, scp_cmp);
@@ -1283,7 +1281,7 @@ void init_rta_callbacks() {
 			char *classname = read_classname_from_clinit_ldname(get_entity_ld_name(entity));
 			ir_type *klass = class_registry_get(classname);
 			assert(klass);
-			//printf(" %s -> %s (%s)\n", get_class_name(klass), get_entity_name(entity), get_entity_ld_name(entity));
+			//printf(" %s -> %s (%s)\n", get_compound_name(klass), get_entity_name(entity), get_entity_ld_name(entity));
 			cpmap_set(&class2init, klass, entity);
 			free(classname);
 		}
@@ -1325,5 +1323,5 @@ ir_node *gcji_array_data_addr(ir_node *addr)
 	ir_mode *mode_offset = get_reference_offset_mode(mode);
 	unsigned offset      = array_header_size;
 	ir_node *offset_cnst = new_Const_long(mode_offset, offset);
-	return new_Add(addr, offset_cnst, mode);
+	return new_Add(addr, offset_cnst);
 }

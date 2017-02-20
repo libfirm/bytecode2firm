@@ -6,6 +6,7 @@
 #define FIRM_OPT_H
 
 #include <stdio.h>
+#include <stdbool.h>
 #include <libfirm/firm_types.h>
 #include <libfirm/dbginfo.h>
 
@@ -95,13 +96,24 @@ enum rts_names {
 	rts_max
 };
 
+typedef enum optimization_level_t {
+	OPT_0,
+	OPT_1,
+	OPT_2,
+	OPT_3,
+	OPT_fast,
+	OPT_s,
+	OPT_z,
+	OPT_g,
+} optimization_level_t;
+
 extern ir_entity *rts_entities[rts_max];
 
-/** Initialize for the Firm-generating back end. */
-void gen_firm_init(void);
+/** Initializes the firm optimization manager. */
+void init_firm_opt(void);
 
-/** free resources hold by firm-generating back end */
-void gen_firm_finish(void);
+/** Frees resources used by the firm optimization manager. */
+void exit_firm_opt(void);
 
 /**
  * Transform, optimize and generate code
@@ -114,18 +126,24 @@ void generate_code(FILE *out, const char *input_filename);
 /** process optimization commandline option */
 int firm_option(const char *opt);
 
+void optimize_lower_ir_prog(void);
+
+bool firm_is_inlining_enabled(void);
+
 typedef void (*print_option_help_func)(const char *name, const char *description);
 
 void firm_option_help(print_option_help_func func);
 
 /** Choose an optimization level. (Typically used to interpret the -O compiler
  * switches) */
-void choose_optimization_pack(int level);
+void set_optimization_level(optimization_level_t opt_level);
 
 /**
  * Initialize implicit optimization settings in firm. Frontends should call this
  * before starting graph construction
  */
 void init_implicit_optimizations(void);
+
+void set_be_option(char const *arg);
 
 #endif

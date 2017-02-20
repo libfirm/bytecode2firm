@@ -16,9 +16,10 @@
 #include <libfirm/firm.h>
 
 #include "firm_opt.h"
-#include "firm_timing.h"
+#include "adt/panic.h"
 #include "adt/strutil.h"
 #include "adt/util.h"
+#include "driver/timing.h"
 
 /* optimization settings */
 struct a_firm_opt {
@@ -36,16 +37,6 @@ struct a_firm_opt {
 	unsigned inline_maxsize;  /**< Maximum function size for inlining. */
 	unsigned inline_threshold;/**< Inlining benefice threshold. */
 };
-
-/** statistic options */
-typedef enum a_firmstat_selection_tag {
-	STAT_NONE        = 0x00000000,
-	STAT_BEFORE_OPT  = 0x00000001,
-	STAT_AFTER_OPT   = 0x00000002,
-	STAT_AFTER_LOWER = 0x00000004,
-	STAT_FINAL_IR    = 0x00000008,
-	STAT_FINAL       = 0x00000010,
-} a_firmstat_selection;
 
 /* dumping options */
 struct a_firm_dump {
@@ -71,7 +62,11 @@ static struct a_firm_opt firm_opt = {
 	.mods             =  true,
 	.strict_alias     =  false,
 	.no_alias         =  false,
+#ifdef NO_DEFAULT_VERIFY
+	.verify           =  false,
+#else
 	.verify           =  true,
+#endif
 	.check_all        =  true,
 	.clone_threshold  =  DEFAULT_CLONE_THRESHOLD,
 	.inline_maxsize   =  750,
@@ -84,7 +79,6 @@ static struct a_firm_dump firm_dump = {
 	.all_types    = false,
 	.ir_graph     = false,
 	.all_phases   = false,
-	.statistic    = STAT_NONE,
 };
 
 #define X(a)  a, sizeof(a)-1
@@ -128,13 +122,6 @@ static const struct params {
   { X("dump-all-types"),         &firm_dump.all_types,       1, "dump graph of all types" },
   { X("dump-all-phases"),        &firm_dump.all_phases,      1, "dump graphs for all optimization phases" },
   { X("dump-filter=<string>"),   NULL,                       0, "set dumper filter" },
-
-  /* misc */
-  { X("stat-before-opt"),        &firm_dump.statistic,       STAT_BEFORE_OPT,  "Firm statistic output before optimizations" },
-  { X("stat-after-opt"),         &firm_dump.statistic,       STAT_AFTER_OPT,   "Firm statistic output after optimizations" },
-  { X("stat-after-lower"),       &firm_dump.statistic,       STAT_AFTER_LOWER, "Firm statistic output after lowering" },
-  { X("stat-final-ir"),          &firm_dump.statistic,       STAT_FINAL_IR,    "Firm statistic after final optimization" },
-  { X("stat-final"),             &firm_dump.statistic,       STAT_FINAL,       "Firm statistic after code generation" },
 };
 
 #undef X
@@ -306,6 +293,7 @@ typedef struct {
 } opt_config_t;
 
 static opt_config_t *get_opt(const char *name);
+static void after_transform(ir_graph *irg, const char *name);
 
 static void do_stred(ir_graph *irg)
 {
@@ -317,7 +305,12 @@ static void after_inline_opt(ir_graph *irg)
 	opt_config_t *const config = get_opt("inline");
 	timer_stop(config->timer);
 
+	/* dump the graph immediate after inlining before we start the "cleanup"
+	 * phases below. */
+	after_transform(irg, "inline");
+
 	do_irg_opt(irg, "scalar-replace");
+	do_irg_opt(irg, "opt-load-store");
 	do_irg_opt(irg, "local");
 	do_irg_opt(irg, "control-flow");
 	do_irg_opt(irg, "combo");
@@ -349,8 +342,8 @@ static void do_gcse(ir_graph *irg)
 }
 
 static opt_config_t opts[] = {
-#define IRG(a, b, c, d) { OPT_TARGET_IRG, a, .u.transform_irg = (transform_irg_func)b, c, d }
-#define IRP(a, b, c, d) { OPT_TARGET_IRP, a, .u.transform_irp = b,                     c, d }
+#define IRG(a, b, c, d) { OPT_TARGET_IRG, a, .u.transform_irg = b, c, d }
+#define IRP(a, b, c, d) { OPT_TARGET_IRP, a, .u.transform_irp = b, c, d }
 	IRG("bool",              opt_bool,                 "bool simplification",                                   OPT_FLAG_NONE),
 	IRG("combo",             combo,                    "combined CCE, UCE and GVN",                             OPT_FLAG_NONE),
 	IRG("confirm",           construct_confirms,       "confirm optimization",                                  OPT_FLAG_HIDE_OPTIONS),
@@ -367,6 +360,7 @@ static opt_config_t opts[] = {
 	IRG("lower",             lower_highlevel_graph,    "lowering",                                              OPT_FLAG_HIDE_OPTIONS | OPT_FLAG_ESSENTIAL),
 	IRG("lower-mux",         do_lower_mux,             "mux lowering",                                          OPT_FLAG_NONE),
 	IRG("opt-load-store",    optimize_load_store,      "load store optimization",                               OPT_FLAG_NONE),
+	IRG("memcombine",        combine_memops,           "combine adjacent memory operations",                    OPT_FLAG_NONE),
 	IRG("opt-tail-rec",      opt_tail_rec_irg,         "tail-recursion elimination",                            OPT_FLAG_NONE),
 	IRG("parallelize-mem",   opt_parallelize_mem,      "parallelize memory",                                    OPT_FLAG_NONE),
 	IRG("gcse",              do_gcse,                  "global common subexpression elimination",               OPT_FLAG_NONE),
@@ -418,6 +412,18 @@ static bool get_opt_enabled(const char *name)
 	return (config->flags & OPT_FLAG_ENABLED) != 0;
 }
 
+static void after_transform(ir_graph *irg, const char *name)
+{
+	if (firm_dump.all_phases && firm_dump.ir_graph)
+		dump_ir_graph(irg, name);
+
+	if (firm_opt.verify) {
+		timer_push(t_verify);
+		irg_assert_verify(irg);
+		timer_pop(t_verify);
+	}
+}
+
 /**
  * perform an optimization on a single graph
  *
@@ -431,24 +437,12 @@ static bool do_irg_opt(ir_graph *irg, const char *name)
 	if (! (config->flags & OPT_FLAG_ENABLED))
 		return false;
 
-	ir_graph *const old_irg = current_ir_graph;
-	current_ir_graph = irg;
-
 	timer_start(config->timer);
 	config->u.transform_irg(irg);
 	timer_stop(config->timer);
 
-	if (firm_dump.all_phases && firm_dump.ir_graph) {
-		dump_ir_graph(irg, name);
-	}
+	after_transform(irg, name);
 
-	if (firm_opt.verify) {
-		timer_push(t_verify);
-		irg_assert_verify(irg);
-		timer_pop(t_verify);
-	}
-
-	current_ir_graph = old_irg;
 	return true;
 }
 
@@ -464,17 +458,15 @@ static void do_irp_opt(const char *name)
 	timer_stop(config->timer);
 
 	if (firm_dump.ir_graph && firm_dump.all_phases) {
-		int i;
-		for (i = get_irp_n_irgs() - 1; i >= 0; --i) {
+		for (size_t i = get_irp_n_irgs(); i-- > 0; ) {
 			ir_graph *irg = get_irp_irg(i);
 			dump_ir_graph(irg, name);
 		}
 	}
 
 	if (firm_opt.verify) {
-		int i;
 		timer_push(t_verify);
-		for (i = get_irp_n_irgs() - 1; i >= 0; --i) {
+		for (size_t i = get_irp_n_irgs(); i-- > 0; ) {
 			irg_assert_verify(get_irp_irg(i));
 		}
 		timer_pop(t_verify);
@@ -519,7 +511,7 @@ static void enable_safe_defaults(void)
  */
 static void do_firm_optimizations(void)
 {
-	size_t   i;
+	be_set_after_transform_func(after_transform);
 
 	unsigned aa_opt = aa_opt_none;
 	if (firm_opt.strict_alias)
@@ -533,12 +525,16 @@ static void do_firm_optimizations(void)
 	set_opt_enabled("confirm", firm_opt.confirm);
 	set_opt_enabled("remove-confirms", firm_opt.confirm);
 
+	/* first remove unused functions, to avoid spending unnecessary time
+	 * optimizing them */
+	do_irp_opt("remove-unused");
+
 	/* osr supersedes remove_phi_cycles */
 	if (get_opt_enabled("ivopts"))
 		set_opt_enabled("remove-phi-cycles", false);
 
 	/* first step: kill dead code */
-	for (i = 0; i < get_irp_n_irgs(); i++) {
+	for (size_t i = 0; i < get_irp_n_irgs(); i++) {
 		ir_graph *irg = get_irp_irg(i);
 		do_irg_opt(irg, "rts");
 		do_irg_opt(irg, "combo");
@@ -546,15 +542,18 @@ static void do_firm_optimizations(void)
 		do_irg_opt(irg, "control-flow");
 	}
 
-	do_irp_opt("remove-unused");
-	for (i = 0; i < get_irp_n_irgs(); ++i) {
+	for (size_t i = 0; i < get_irp_n_irgs(); ++i) {
 		ir_graph *irg = get_irp_irg(i);
 		do_irg_opt(irg, "opt-tail-rec");
 	}
 	do_irp_opt("opt-func-call");
 	do_irp_opt("lower-const");
 
-	for (i = 0; i < get_irp_n_irgs(); i++) {
+	/* 2nd round of unused function removal before we perform expensive
+	 * optimisations */
+	do_irp_opt("remove-unused");
+
+	for (size_t i = 0; i < get_irp_n_irgs(); i++) {
 		ir_graph *irg = get_irp_irg(i);
 
 		do_irg_opt(irg, "scalar-replace");
@@ -606,7 +605,7 @@ static void do_firm_optimizations(void)
 	do_irp_opt("inline");
 	do_irp_opt("opt-proc-clone");
 
-	for (i = 0; i < get_irp_n_irgs(); i++) {
+	for (size_t i = 0; i < get_irp_n_irgs(); i++) {
 		ir_graph *irg = get_irp_irg(i);
 		do_irg_opt(irg, "local");
 		do_irg_opt(irg, "control-flow");
@@ -614,17 +613,19 @@ static void do_firm_optimizations(void)
 		do_irg_opt(irg, "local");
 		do_irg_opt(irg, "control-flow");
 
-		if( do_irg_opt(irg, "vrp") ) { // if vrp is enabled
+		if (do_irg_opt(irg, "vrp")) { // if vrp is enabled
 			do_irg_opt(irg, "local");
 			do_irg_opt(irg, "vrp");
 			do_irg_opt(irg, "local");
 			do_irg_opt(irg, "vrp");
 		}
+
+		do_irg_opt(irg, "reassociation");
 	}
 
 	if (firm_dump.ir_graph) {
 		/* recompute backedges for nicer dumps */
-		for (i = 0; i < get_irp_n_irgs(); i++)
+		for (size_t i = 0; i < get_irp_n_irgs(); i++)
 			construct_cf_backedges(get_irp_irg(i));
 	}
 
@@ -636,26 +637,15 @@ static void do_firm_optimizations(void)
  */
 static void do_firm_lowering(void)
 {
-	int i;
-
-	/* enable architecture dependent optimizations */
-	arch_dep_set_opts((arch_dep_opts_t)
-			((firm_opt.muls ? arch_dep_mul_to_shift : arch_dep_none) |
-			 (firm_opt.divs ? arch_dep_div_by_const : arch_dep_none) |
-			 (firm_opt.mods ? arch_dep_mod_by_const : arch_dep_none) ));
-	for (i = get_irp_n_irgs() - 1; i >= 0; --i) {
-		ir_graph *irg = get_irp_irg(i);
-		do_irg_opt(irg, "reassociation");
-		do_irg_opt(irg, "local");
-	}
-
 	do_irp_opt("target-lowering");
 
-	for (i = get_irp_n_irgs() - 1; i >= 0; --i) {
+	for (size_t i = get_irp_n_irgs(); i-- > 0; ) {
 		ir_graph *irg = get_irp_irg(i);
 
+		do_irg_opt(irg, "lower");
 		do_irg_opt(irg, "local");
 		do_irg_opt(irg, "deconv");
+		do_irg_opt(irg, "occults");
 		do_irg_opt(irg, "control-flow");
 		do_irg_opt(irg, "opt-load-store");
 		do_irg_opt(irg, "gcse");
@@ -679,6 +669,8 @@ static void do_firm_lowering(void)
 		do_irg_opt(irg, "local");
 
 		do_irg_opt(irg, "parallelize-mem");
+		do_irg_opt(irg, "memcombine");
+		do_irg_opt(irg, "local");
 		do_irg_opt(irg, "frame");
 	}
 	/* hack so we get global initializers constant folded even at -O0 */
@@ -692,13 +684,21 @@ static void do_firm_lowering(void)
 	dump_all("low-opt");
 }
 
-/**
- * Initialize for the Firm-generating back end.
- */
-void gen_firm_init(void)
+void set_be_option(char const *const arg)
+{
+	int res = be_parse_arg(arg);
+	if (!res)
+		panic("setting firm backend option '%s' failed (maybe an outdated version of firm is used)", arg);
+}
+
+void init_firm_opt(void)
 {
 	ir_init();
 	enable_safe_defaults();
+
+#ifdef NO_DEFAULT_VERIFY
+	set_be_option("verify=off");
+#endif
 
 	FOR_EACH_OPT(i) {
 		i->timer = ir_timer_new();
@@ -714,17 +714,14 @@ void gen_firm_init(void)
 	timer_register(t_backend, "Firm: backend");
 }
 
-/**
- * Called, after the Firm generation is completed,
- * do all optimizations and backend call here.
- *
- * @param out                a file handle for the output, may be NULL
- * @param input_filename     the name of the (main) source file
- */
-void generate_code(FILE *out, const char *input_filename)
+static void dump_types(char const *const name)
 {
-	int i;
+	if (firm_dump.all_types)
+		dump_ir_prog_ext(dump_typegraph, name);
+}
 
+void optimize_lower_ir_prog(void)
+{
 	/* initialize implicit opts, just to be sure because really the frontend
 	 * should have called it already before starting graph construction */
 	init_implicit_optimizations();
@@ -733,7 +730,7 @@ void generate_code(FILE *out, const char *input_filename)
 	firm_dump.ir_graph = (bool) (firm_dump.ir_graph | firm_dump.all_phases);
 
 	ir_add_dump_flags(ir_dump_flag_keepalive_edges
-			| ir_dump_flag_consts_local | ir_dump_flag_dominance);
+	                  | ir_dump_flag_consts_local | ir_dump_flag_dominance);
 	ir_remove_dump_flags(ir_dump_flag_loops | ir_dump_flag_ld_names);
 
 	/* FIXME: cloning might ADD new graphs. */
@@ -743,10 +740,7 @@ void generate_code(FILE *out, const char *input_filename)
 	ir_timer_init_parent(t_vcg_dump);
 	timer_start(t_all_opt);
 
-	if (firm_dump.all_types) {
-		dump_ir_prog_ext(dump_typegraph, "types.vcg");
-	}
-
+	dump_types("types.vcg");
 	dump_all("");
 
 	if (firm_opt.verify) {
@@ -755,16 +749,23 @@ void generate_code(FILE *out, const char *input_filename)
 		timer_pop(t_verify);
 	}
 
-	/* BEWARE: kill unreachable code before doing compound lowering */
-	for (i = get_irp_n_irgs() - 1; i >= 0; --i) {
-		ir_graph *irg = get_irp_irg(i);
-		do_irg_opt(irg, "control-flow");
-	}
-
 	do_firm_optimizations();
 	do_firm_lowering();
+	dump_types("types-low.vcg");
 
 	timer_stop(t_all_opt);
+}
+
+/**
+ * Called, after the Firm generation is completed,
+ * do all optimizations and backend call here.
+ *
+ * @param out                a file handle for the output, may be NULL
+ * @param input_filename     the name of the (main) source file
+ */
+void generate_code(FILE *out, const char *input_filename)
+{
+	optimize_lower_ir_prog();
 
 	/* run the code generator */
 	timer_start(t_backend);
@@ -772,7 +773,7 @@ void generate_code(FILE *out, const char *input_filename)
 	timer_stop(t_backend);
 }
 
-void gen_firm_finish(void)
+void exit_firm_opt(void)
 {
 	ir_finish();
 }
@@ -878,13 +879,6 @@ int firm_option(const char *const opt)
 	return 0;
 }
 
-static void set_be_option(const char *arg)
-{
-	int res = be_parse_arg(arg);
-	(void) res;
-	assert(res);
-}
-
 static void set_option(const char *arg)
 {
 	int res = firm_option(arg);
@@ -892,31 +886,41 @@ static void set_option(const char *arg)
 	assert(res);
 }
 
-void choose_optimization_pack(int level)
+bool firm_is_inlining_enabled(void)
 {
-	/* apply optimization level */
-	switch(level) {
-	case 0:
-		set_option("no-opt");
-		break;
-	case 1:
-		set_option("no-inline");
-		break;
-	default:
-	case 4:
-		/* use_builtins = true; */
-		/* fallthrough */
-	case 3:
+	opt_config_t *const config = get_opt("inline");
+	return config->flags & OPT_FLAG_ENABLED;
+}
+
+void set_optimization_level(optimization_level_t level)
+{
+	switch (level) {
+	case OPT_fast:
+	case OPT_3:
+		set_option("bool");
 		set_option("thread-jumps");
 		set_option("if-conversion");
-		/* fallthrough */
-	case 2:
+		/* FALLTHROUGH */
+	case OPT_2:
 		set_option("inline");
 		set_option("occults");
 		set_option("deconv");
+		set_option("memcombine");
 		set_be_option("omitfp");
-		break;
+		return;
+
+	case OPT_s:
+	case OPT_z:
+	case OPT_1:
+		set_option("no-inline");
+		return;
+
+	case OPT_g:
+	case OPT_0:
+		set_option("no-opt");
+		return;
 	}
+	panic("Invalid optimization level");
 }
 
 void init_implicit_optimizations(void)
