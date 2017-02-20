@@ -187,10 +187,12 @@ static void init_types(void)
 	type_array_reference    = new_type_array(type_reference, 0);
 	set_type_state(type_array_reference, layout_fixed);
 
-	ident *abort_id = mangle_function("abort");
+	ident *abort_id = ir_platform_mangle_global("abort");
 	ir_type *abort_type
 		= new_type_method(0, 0, false, 0, mtp_property_noreturn);
-	abort_entity = create_compilerlib_entity(abort_id, abort_type);
+	abort_entity = new_global_entity(get_glob_type(), abort_id, abort_type,
+	                                 ir_visibility_external,
+	                                 IR_LINKAGE_DEFAULT);
 }
 
 static ir_type *descriptor_to_type(const char **descriptor);
@@ -2929,6 +2931,11 @@ static int link_executable(const char *startup_file, const char *asm_file,
 
 int main(int argc, char **argv)
 {
+	ir_init_library();
+	ir_machine_triple_t *target = ir_get_host_machine_triple();
+	ir_target_set_triple(target);
+	ir_free_machine_triple(target);
+
 	init_firm_opt();
 	class_registry_init();
 	class_file_init();
@@ -2964,9 +2971,9 @@ int main(int argc, char **argv)
 			const char *param = ARG_PARAM;
 			if (!firm_option(param))
 				WARN("'%s' is not a valid Firm option - ignoring.\n", param);
-		} else if (EQUALS_AND_HAS_ARG("-b")) {
+		} else if (EQUALS_AND_HAS_ARG("-m")) {
 			const char *param = ARG_PARAM;
-			if (!be_parse_arg(param))
+			if (!ir_target_option(param))
 				WARN("'%s' is not a valid backend option - ignoring.\n", param);
 		} else if (EQUALS("-save-temps")) {
 			save_temps = true;
@@ -3020,23 +3027,10 @@ int main(int argc, char **argv)
 		classpath_print(stderr);
 
 	/* Initialize backend */
-#ifdef __i386__
-	be_parse_arg("isa=ia32");
-#endif
-#ifdef __x86_64__
-	be_parse_arg("isa=amd64");
-	be_parse_arg("pic=elf");
-#endif
-#ifdef EXCEPTIONS
-	be_parse_arg("omitfp=false");
-	be_parse_arg("ia32-emit_cfi_directives");
-#endif
-#ifdef __APPLE__
-	be_parse_arg("objectformat=mach-o");
-	be_parse_arg("pic=mach-o");
-#endif
-	const backend_params *params = be_get_backend_param();
-	mode_float_arithmetic = params->mode_float_arithmetic;
+	ir_target_option("emit_cfi_directives");
+	ir_target_option("pic");
+	ir_target_init();
+	mode_float_arithmetic = ir_target_float_arithmetic_mode();
 	be_dwarf_set_source_language(DW_LANG_Java);
 
 	mangle_init();

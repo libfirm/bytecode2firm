@@ -684,21 +684,9 @@ static void do_firm_lowering(void)
 	dump_all("low-opt");
 }
 
-void set_be_option(char const *const arg)
-{
-	int res = be_parse_arg(arg);
-	if (!res)
-		panic("setting firm backend option '%s' failed (maybe an outdated version of firm is used)", arg);
-}
-
 void init_firm_opt(void)
 {
-	ir_init();
 	enable_safe_defaults();
-
-#ifdef NO_DEFAULT_VERIFY
-	set_be_option("verify=off");
-#endif
 
 	FOR_EACH_OPT(i) {
 		i->timer = ir_timer_new();
@@ -765,6 +753,10 @@ void optimize_lower_ir_prog(void)
  */
 void generate_code(FILE *out, const char *input_filename)
 {
+	char const *const experimental = ir_target_experimental();
+	if (experimental)
+		fprintf(stderr, "Warning: %s\n", experimental);
+
 	optimize_lower_ir_prog();
 
 	/* run the code generator */
@@ -906,7 +898,6 @@ void set_optimization_level(optimization_level_t level)
 		set_option("occults");
 		set_option("deconv");
 		set_option("memcombine");
-		set_be_option("omitfp");
 		return;
 
 	case OPT_s:

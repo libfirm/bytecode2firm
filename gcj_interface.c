@@ -1052,6 +1052,13 @@ static void dummy(ir_type *t)
 	(void)t;
 }
 
+static ir_entity *extvar(char const *const name, ir_type *const type)
+{
+	ident *id = ir_platform_mangle_global(name);
+	return new_global_entity(get_glob_type(), id, type, ir_visibility_external,
+	                         IR_LINKAGE_DEFAULT);
+}
+
 void gcji_init()
 {
 	class_dollar_ident = new_id_from_str("class$");
@@ -1066,7 +1073,8 @@ void gcji_init()
 	set_method_param_type(gcj_alloc_method_type, 0, t_ptr);
 	set_method_res_type(gcj_alloc_method_type, 0, t_ptr);
 
-	ident *gcj_alloc_id = mangle_function("_Jv_AllocObjectNoFinalizer");
+	ident *gcj_alloc_id
+		= ir_platform_mangle_global("_Jv_AllocObjectNoFinalizer");
 	gcj_alloc_entity = new_entity(glob, gcj_alloc_id, gcj_alloc_method_type);
 	set_entity_visibility(gcj_alloc_entity, ir_visibility_external);
 
@@ -1074,7 +1082,7 @@ void gcji_init()
 	ir_type *gcj_init_method_type = new_type_method(1, 0, false, 0, 0);
 	set_method_param_type(gcj_init_method_type, 0, t_ptr);
 
-	ident *gcj_init_id = mangle_function("_Jv_InitClass");
+	ident *gcj_init_id = ir_platform_mangle_global("_Jv_InitClass");
 	gcj_init_entity = new_entity(glob, gcj_init_id, gcj_init_method_type);
 	set_entity_visibility(gcj_init_entity, ir_visibility_external);
 
@@ -1083,7 +1091,8 @@ void gcji_init()
 	set_method_param_type(gcj_new_string_method_type, 0, t_ptr);
 	set_method_res_type(gcj_new_string_method_type, 0, t_ptr);
 
-	ident *gcj_new_string_id = mangle_function("_Z22_Jv_NewStringUtf8ConstP13_Jv_Utf8Const");
+	ident *gcj_new_string_id
+		= ir_platform_mangle_global("_Z22_Jv_NewStringUtf8ConstP13_Jv_Utf8Const");
 	gcj_new_string_entity = new_entity(glob, gcj_new_string_id, gcj_new_string_method_type);
 	set_entity_visibility(gcj_new_string_entity, ir_visibility_external);
 
@@ -1094,7 +1103,8 @@ void gcji_init()
 	set_method_param_type(gcj_new_prim_array_method_type, 1, t_size);
 	set_method_res_type(gcj_new_prim_array_method_type, 0, t_ptr);
 
-	ident *gcj_new_prim_array_id = mangle_function("_Jv_NewPrimArray");
+	ident *gcj_new_prim_array_id
+		= ir_platform_mangle_global("_Jv_NewPrimArray");
 	gcj_new_prim_array_entity = new_entity(glob, gcj_new_prim_array_id, gcj_new_prim_array_method_type);
 	set_entity_visibility(gcj_new_prim_array_entity, ir_visibility_external);
 
@@ -1106,13 +1116,15 @@ void gcji_init()
 	set_method_param_type(gcj_new_object_array_method_type, 2, t_ptr);
 	set_method_res_type(gcj_new_object_array_method_type, 0, t_ptr);
 
-	ident *gcj_new_object_array_id = mangle_function("_Jv_NewObjectArray");
+	ident *gcj_new_object_array_id
+		= ir_platform_mangle_global("_Jv_NewObjectArray");
 	gcj_new_object_array_entity = new_entity(glob, gcj_new_object_array_id, gcj_new_object_array_method_type);
 	set_entity_visibility(gcj_new_object_array_entity, ir_visibility_external);
 
 	// gcji_abstract_method
 	ir_type *gcj_abstract_method_type = new_type_method(0, 0, false, 0, 0);
-	gcj_abstract_method_entity = new_entity(glob, mangle_function("_Jv_ThrowAbstractMethodError"), gcj_abstract_method_type);
+	gcj_abstract_method_entity
+		= new_entity(glob, ir_platform_mangle_global("_Jv_ThrowAbstractMethodError"), gcj_abstract_method_type);
 	set_entity_visibility(gcj_abstract_method_entity, ir_visibility_external);
 
 	// gcji_lookup_interface
@@ -1121,7 +1133,7 @@ void gcji_init()
 	set_method_param_type(gcj_lookup_interface_type, 1, t_ptr);
 	set_method_param_type(gcj_lookup_interface_type, 2, t_ptr);
 	set_method_res_type(gcj_lookup_interface_type, 0, t_ptr);
-	gcj_lookup_interface_entity = new_entity(glob, mangle_function("_Jv_LookupInterfaceMethod"), gcj_lookup_interface_type);
+	gcj_lookup_interface_entity = new_entity(glob, ir_platform_mangle_global("_Jv_LookupInterfaceMethod"), gcj_lookup_interface_type);
 	set_entity_visibility(gcj_lookup_interface_entity, ir_visibility_external);
 
 	// gcji_instanceof
@@ -1129,14 +1141,14 @@ void gcji_init()
 	set_method_param_type(gcj_instanceof_type, 0, type_reference);
 	set_method_param_type(gcj_instanceof_type, 1, type_reference);
 	set_method_res_type(gcj_instanceof_type, 0, type_int);
-	gcj_instanceof_entity = new_entity(glob, mangle_function("_Jv_IsInstanceOf"), gcj_instanceof_type);
+	gcj_instanceof_entity = new_entity(glob, ir_platform_mangle_global("_Jv_IsInstanceOf"), gcj_instanceof_type);
 	set_entity_visibility(gcj_instanceof_entity, ir_visibility_external);
 
 	// gcji_checkcast
 	ir_type *gcj_checkcast_type = new_type_method(2, 0, false, 0, 0);
 	set_method_param_type(gcj_checkcast_type, 0, type_reference);
 	set_method_param_type(gcj_checkcast_type, 1, type_reference);
-	gcj_checkcast_entity = new_entity(glob, mangle_function("_Jv_CheckCast"), gcj_checkcast_type);
+	gcj_checkcast_entity = new_entity(glob, ir_platform_mangle_global("_Jv_CheckCast"), gcj_checkcast_type);
 	set_entity_visibility(gcj_checkcast_entity, ir_visibility_external);
 
 	// gcji_get_array_class
@@ -1144,7 +1156,8 @@ void gcji_init()
 	set_method_param_type(gcj_get_array_class_type, 0, type_reference);
 	set_method_param_type(gcj_get_array_class_type, 1, type_reference);
 	set_method_res_type(gcj_get_array_class_type, 0, type_reference);
-	gcj_get_array_class_entity = new_entity(glob, mangle_function("_Z17_Jv_GetArrayClassPN4java4lang5ClassEPNS0_11ClassLoaderE"), gcj_get_array_class_type);
+	gcj_get_array_class_entity
+		= new_entity(glob, ir_platform_mangle_global("_Z17_Jv_GetArrayClassPN4java4lang5ClassEPNS0_11ClassLoaderE"), gcj_get_array_class_type);
 	set_entity_visibility(gcj_get_array_class_entity, ir_visibility_external);
 
 	// gcji_new_multi_array
@@ -1153,26 +1166,19 @@ void gcji_init()
 	set_method_param_type(gcj_new_multiarray_type, 1, type_int);
 	set_method_param_type(gcj_new_multiarray_type, 2, type_reference); // XXX: actually int[]
 	set_method_res_type(gcj_new_multiarray_type, 0, type_reference);
-	gcj_new_multiarray_entity = new_entity(glob, mangle_function("_Z17_Jv_NewMultiArrayPN4java4lang5ClassEiPi"), gcj_new_multiarray_type);
+	gcj_new_multiarray_entity
+		= new_entity(glob, ir_platform_mangle_global("_Z17_Jv_NewMultiArrayPN4java4lang5ClassEiPi"), gcj_new_multiarray_type);
 	set_entity_visibility(gcj_new_multiarray_entity, ir_visibility_external);
 
 	// primitive classes
-	gcj_boolean_rtti_entity= new_entity(glob, mangle_function("_Jv_booleanClass"), type_reference);
-	gcj_byte_rtti_entity   = new_entity(glob, mangle_function("_Jv_byteClass"), type_reference);
-	gcj_char_rtti_entity   = new_entity(glob, mangle_function("_Jv_charClass"), type_reference);
-	gcj_short_rtti_entity  = new_entity(glob, mangle_function("_Jv_shortClass"), type_reference);
-	gcj_int_rtti_entity    = new_entity(glob, mangle_function("_Jv_intClass"), type_reference);
-	gcj_long_rtti_entity   = new_entity(glob, mangle_function("_Jv_longClass"), type_reference);
-	gcj_float_rtti_entity  = new_entity(glob, mangle_function("_Jv_floatClass"), type_reference);
-	gcj_double_rtti_entity = new_entity(glob, mangle_function("_Jv_doubleClass"), type_reference);
-	set_entity_visibility(gcj_boolean_rtti_entity, ir_visibility_external);
-	set_entity_visibility(gcj_byte_rtti_entity, ir_visibility_external);
-	set_entity_visibility(gcj_char_rtti_entity, ir_visibility_external);
-	set_entity_visibility(gcj_short_rtti_entity, ir_visibility_external);
-	set_entity_visibility(gcj_int_rtti_entity, ir_visibility_external);
-	set_entity_visibility(gcj_long_rtti_entity, ir_visibility_external);
-	set_entity_visibility(gcj_float_rtti_entity, ir_visibility_external);
-	set_entity_visibility(gcj_double_rtti_entity, ir_visibility_external);
+	gcj_boolean_rtti_entity= extvar("_Jv_booleanClass", type_reference);
+	gcj_byte_rtti_entity   = extvar("_Jv_byteClass", type_reference);
+	gcj_char_rtti_entity   = extvar("_Jv_charClass", type_reference);
+	gcj_short_rtti_entity  = extvar("_Jv_shortClass", type_reference);
+	gcj_int_rtti_entity    = extvar("_Jv_intClass", type_reference);
+	gcj_long_rtti_entity   = extvar("_Jv_longClass", type_reference);
+	gcj_float_rtti_entity  = extvar("_Jv_floatClass", type_reference);
+	gcj_double_rtti_entity = extvar("_Jv_doubleClass", type_reference);
 
 	mode_ushort = new_int_mode("US", 16, 0, 16);
 	type_ushort = new_type_primitive(mode_ushort);

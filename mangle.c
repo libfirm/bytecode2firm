@@ -6,12 +6,6 @@
 #include "adt/cpset.h"
 #include "adt/error.h"
 
-#ifdef __APPLE__
-static const char *mangle_prefix = "_";
-#else
-static const char *mangle_prefix = "";
-#endif
-
 static struct obstack mobst;
 static const char *base36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
@@ -355,7 +349,9 @@ ident *mangle_member_name(const char *defining_class, const char *member_name, c
 	mangle_ct_init(&ct);
 
 	assert(obstack_object_size(&mobst) == 0);
-	obstack_grow(&mobst, mangle_prefix, strlen(mangle_prefix));
+	char user_label_prefix = ir_platform_user_label_prefix();
+	if (user_label_prefix != 0)
+		obstack_1grow(&mobst, user_label_prefix);
 	obstack_grow(&mobst, "_Z", 2);
 
 	mangle_qualified_class_name(defining_class, false, &mobst, &ct);
@@ -407,7 +403,9 @@ ident *mangle_vtable_name(const char *classname)
 	mangle_ct_init(&ct);
 
 	assert(obstack_object_size(&mobst) == 0);
-	obstack_grow(&mobst, mangle_prefix, strlen(mangle_prefix));
+	char user_label_prefix = ir_platform_user_label_prefix();
+	if (user_label_prefix != 0)
+		obstack_1grow(&mobst, user_label_prefix);
 	obstack_grow(&mobst, "_ZTV", 4);
 
 	int emitted_N = mangle_qualified_class_name(classname, false, &mobst, &ct);
@@ -422,14 +420,6 @@ ident *mangle_vtable_name(const char *classname)
 ident *mangle_rtti_name(const char *classname)
 {
 	return mangle_member_name(classname, "class$", NULL);
-}
-
-ident *mangle_function(const char *name)
-{
-	assert(obstack_object_size(&mobst) == 0);
-	obstack_grow(&mobst, mangle_prefix, strlen(mangle_prefix));
-	obstack_grow(&mobst, name, strlen(name));
-	return make_ident();
 }
 
 void mangle_init(void)
